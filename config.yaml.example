@@ -1,0 +1,27 @@
+# NumaSec Configuration
+# This file is auto-generated on first run or you can create it manually
+# Location: ~/.numasec/config.yaml
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API Keys (required - at least one)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# DeepSeek (Recommended - $0.12/pentest avg)
+# Get key: https://platform.deepseek.com
+DEEPSEEK_API_KEY: sk-your-deepseek-key-here
+
+# Anthropic Claude (Fallback)
+# Get key: https://console.anthropic.com
+# ANTHROPIC_API_KEY: sk-ant-your-claude-key-here
+
+# OpenAI GPT-4 (Fallback)
+# Get key: https://platform.openai.com
+# OPENAI_API_KEY: sk-your-openai-key-here
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Optional Settings (future use)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# default_budget: 5.0  # Max cost per session ($USD)
+# show_browser: false  # Show browser window during tests
+# verbose: false       # Enable debug logging

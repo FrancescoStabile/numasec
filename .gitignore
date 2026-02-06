@@ -1,0 +1,101 @@
+# ── Virtual environments ──
+.venv/
+venv/
+ENV/
+env/
+
+# ── Node ──
+node_modules/
+package-lock.json
+
+# ── Python bytecode & packaging ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.so
+.Python
+
+# ── Testing & coverage ──
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ── Linters & type checkers ──
+.ruff_cache/
+.mypy_cache/
+
+# ── Data files (local databases, sessions) ──
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── CTF artifacts (output files) ──
+*_context.txt
+*_extracted/
+*_carved/
+*_foremost/
+*_http_objects/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+.github/copilot-instructions.md
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Temp & log files ──
+test.*
+*.tmp
+*.bak
+*.log
+*_results.txt
+*_debug.txt
+debug_*.txt
+reproduction_*.txt
+
+# ── Knowledge base cache ──
+.numasec_kb_cache/
+.numasec_vector_db/
+
+# ── Workspace sessions (generated) ──
+workspace/sessions/
+
+# ── Binaries downloaded during CTF ──
+*.elf
+*.exe
+*.dll
+
+# ── Large files ──
+*.raw
+*.dd
+*.img
+*.vmem
+
+# ── Secrets & runtime data ──
+.env
+.env.*
+!.env.example
+config.yaml
+evidence/
+
+# ── Private docs (not for public repo) ──
+docs/STRATEGY.md
+docs/LAUNCH_CONTENT.md
+docs/notes/
+
+# ── Misc ──
+.trash/
+.agent/

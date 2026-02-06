@@ -1,0 +1,127 @@
+# Docker Compose for NumaSec Development & Testing
+#
+# This setup includes:
+# - NumaSec container
+# - DVWA (Damn Vulnerable Web Application) for testing
+# - Network configuration for inter-container communication
+
+services:
+  # NumaSec - AI Pentesting Agent
+  numasec:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: numasec
+    stdin_open: true
+    tty: true
+    networks:
+      - pentest_network
+    volumes:
+      # Persist session data
+      - numasec_data:/root/.numasec
+      # Mount current directory for development (optional)
+      # - .:/workspace
+    environment:
+      # LLM API Keys - Set these or pass via .env file
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Configuration
+      - PYTHONUNBUFFERED=1
+    # Uncomment to use host network (needed for scanning host machine)
+    # network_mode: host
+    depends_on:
+      - dvwa
+
+  # DVWA - Testing Target
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: dvwa
+    ports:
+      - "8080:80"
+    networks:
+      - pentest_network
+    environment:
+      - MYSQL_ROOT_PASSWORD=dvwa
+      - MYSQL_DATABASE=dvwa
+      - MYSQL_USER=dvwa
+      - MYSQL_PASSWORD=p@ssw0rd
+
+  # Juice Shop - Alternative Testing Target (optional)
+  # juice-shop:
+  #   image: bkimminich/juice-shop:latest
+  #   container_name: juice-shop
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - pentest_network
+
+networks:
+  pentest_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  numasec_data:
+    driver: local
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Usage Instructions
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 1. Setup:
+#    $ echo "DEEPSEEK_API_KEY=sk-..." > .env
+#    $ docker-compose up -d
+#
+# 2. Access DVWA:
+#    Open browser: http://localhost:8080
+#    Default credentials: admin / password
+#    Setup database (click button)
+#    Set Security Level: Low
+#
+# 3. Run NumaSec:
+#    $ docker-compose exec numasec numasec
+#    You: test dvwa for SQL injection
+#
+# 4. Test from NumaSec:
+#    You: what's running on dvwa:80?
+#    You: test dvwa:80 for vulnerabilities
+#    You: find SQL injection in dvwa login form
+#
+# 5. Cleanup:
+#    $ docker-compose down
+#    $ docker-compose down -v  # Also remove volumes
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# Development Mode
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# To develop NumaSec with live code changes:
+#
+# 1. Uncomment the volume mount in numasec service:
+#    volumes:
+#      - .:/workspace
+#
+# 2. Run with local code:
+#    $ docker-compose run --rm numasec bash
+#    # cd /workspace
+#    # pip install -e .
+#    # numasec
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# Network Modes
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Bridge Network (default):
+# - NumaSec can access: dvwa, juice-shop
+# - NumaSec CANNOT access: host machine, external networks
+# - Use: docker-compose exec numasec numasec
+#   You: test dvwa:80
+#
+# Host Network (uncomment network_mode: host):
+# - NumaSec can access: everything on host
+# - Use for: scanning host machine, accessing localhost services
+# - Security: More dangerous, use carefully
+#
