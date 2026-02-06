@@ -252,7 +252,7 @@ class NumaSecCLI:
                 elif event.type == "plan_generated":
                     plan_text = event.data.get("plan", "")
                     if plan_text:
-                        self.console.print(f"\n  [{CYBER_PURPLE}]◆ ATTACK PLAN[/]")
+                        self.console.print(f"\n  [{MATRIX_GREEN}]◆ ATTACK PLAN[/]")
                         for raw_line in plan_text.split("\n"):
                             line = raw_line.strip()
                             if not line:
@@ -262,7 +262,7 @@ class NumaSecCLI:
                             line = line.replace("**", "")
                             # Render checkboxes as icons
                             if line.startswith("[ ] "):
-                                self.console.print(f"    [{ELECTRIC_CYAN}]○ {line[4:]}[/]")
+                                self.console.print(f"    [{MATRIX_GREEN}]○ {line[4:]}[/]")
                             elif line.startswith("[x] ") or line.startswith("[X] "):
                                 self.console.print(f"    [{MATRIX_GREEN}]✓ {line[4:]}[/]")
                             elif line.lower().startswith("objective:"):
@@ -641,7 +641,7 @@ class NumaSecCLI:
             color = {
                 "pending": GHOST_GRAY,
                 "active": MATRIX_GREEN,
-                "complete": ELECTRIC_CYAN,
+                "complete": MATRIX_GREEN,
                 "skipped": DIM_GRAY,
             }.get(phase.status.value, GHOST_GRAY)
 

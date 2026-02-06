@@ -39,12 +39,12 @@ class _ANSI:
     # Colors (24-bit, matches theme.py palette)
     GREEN       = "\033[38;2;0;255;65m"
     BRIGHT_GREEN= "\033[38;2;57;255;20m"
-    CYAN        = "\033[38;2;0;255;255m"
+    CYAN        = "\033[38;2;125;207;255m"   # Softer sky blue
     PURPLE      = "\033[38;2;185;104;255m"
-    RED         = "\033[38;2;255;0;81m"
-    GOLD        = "\033[38;2;255;215;0m"
-    GRAY        = "\033[38;2;200;200;200m"
-    DIM_GRAY    = "\033[38;2;140;140;140m"
+    RED         = "\033[38;2;255;85;85m"     # Warm red
+    GOLD        = "\033[38;2;229;192;123m"   # Warm amber
+    GRAY        = "\033[38;2;212;212;212m"   # Bright — agent text is the star
+    DIM_GRAY    = "\033[38;2;110;110;110m"   # Subtle secondary
     # Modifiers
     BOLD        = "\033[1m"
     DIM         = "\033[2m"
@@ -54,14 +54,16 @@ class _ANSI:
 ANSI = _ANSI()
 
 # Rich color aliases (for console.print calls)
+# 3-tier visual hierarchy: content (_TEXT) > labels (_DIM) > structure (_BORDER)
 _GREEN   = "#00ff41"
-_CYAN    = "#00ffff"
+_CYAN    = "#7dcfff"    # Softer sky blue — readable, not blinding
 _PURPLE  = "#b968ff"
-_RED     = "#ff0051"
-_GOLD    = "#ffd700"
-_TEXT    = "#c8c8c8"    # Primary readable text
-_DIM     = "#808080"    # Chrome, labels, pipes
-_GRAY    = "#666666"    # Fallback, unknown severity
+_RED     = "#ff5555"    # Warm red — critical findings, errors
+_GOLD    = "#e5c07b"    # Warm amber — medium findings, warnings
+_TEXT    = "#d4d4d4"    # Bright content — the star of every line
+_DIM     = "#6e6e6e"    # Labels, counters, secondary info
+_BORDER  = "#444444"    # Structural chrome — pipes, dashes, connectors
+_GRAY    = "#555555"    # Fallback, unknown severity
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -193,26 +195,26 @@ class StreamRenderer:
         self.end_stream()
         self.console.print()
 
-        # Minimal horizontal rule
+        # Top border — brand green, cohesive
         rule = Text()
-        rule.append("  ───────────────────────────────────────────────────────", style=f"bold {_RED}")
+        rule.append("  ─────────────────────────────────────────────────", style=_GREEN)
         self.console.print(rule)
 
         # Title
         title = Text()
-        title.append("  ◉ ", style=f"bold {_RED}")
-        title.append("TARGET ACQUIRED", style=f"bold {_RED}")
+        title.append("  ◉ ", style=f"bold {_GREEN}")
+        title.append("TARGET ACQUIRED", style=f"bold {_GREEN}")
         self.console.print(title)
 
-        # Target line
+        # Target URL
         tgt = target[:52] if len(target) <= 52 else target[:49] + "..."
         tl = Text()
         tl.append(f"  {tgt}", style=f"bold {_GREEN}")
         self.console.print(tl)
 
-        # Bottom rule
+        # Bottom border
         rule2 = Text()
-        rule2.append("  ───────────────────────────────────────────────────────", style=f"bold {_RED}")
+        rule2.append("  ─────────────────────────────────────────────────", style=_GREEN)
         self.console.print(rule2)
         self.console.print()
 
@@ -222,7 +224,7 @@ class StreamRenderer:
         self.console.print()
 
         rule = Text()
-        rule.append("  ═══════════════════════════════════════════════════════", style=f"bold {_GREEN}")
+        rule.append("  ─────────────────────────────────────────────────", style=_BORDER)
         self.console.print(rule)
 
         line = Text()
@@ -230,12 +232,12 @@ class StreamRenderer:
         line.append(completed_phase.upper(), style=f"bold {_GREEN}")
         line.append(" COMPLETE", style=f"bold {_GREEN}")
         if next_phase:
-            line.append("  →  ", style=_DIM)
+            line.append("  →  ", style=_BORDER)
             line.append(next_phase.upper(), style=f"bold {_CYAN}")
         self.console.print(line)
 
         rule2 = Text()
-        rule2.append("  ═══════════════════════════════════════════════════════", style=f"bold {_GREEN}")
+        rule2.append("  ─────────────────────────────────────────────────", style=_BORDER)
         self.console.print(rule2)
         self.console.print()
 
@@ -251,12 +253,12 @@ class StreamRenderer:
         self._tool_start_time = time.monotonic()
 
         header = Text()
-        header.append("\n  ── ", style=_DIM)
+        header.append("\n  ── ", style=_BORDER)
         if tool_number > 0:
             header.append(f"[{tool_number}] ", style=_DIM)
         header.append(name, style=f"bold {_CYAN}")
         if desc:
-            header.append(" → ", style=_DIM)
+            header.append(" → ", style=_BORDER)
             header.append(desc, style=_TEXT)
 
         self.console.print(header)
@@ -281,7 +283,7 @@ class StreamRenderer:
             if not line.strip():
                 continue
             row = Text()
-            row.append("  │ ", style=_DIM)
+            row.append("  │ ", style=_BORDER)
             stripped = line.strip()
 
             if is_failure:
@@ -310,7 +312,7 @@ class StreamRenderer:
 
         # Close bracket with elapsed time
         close = Text()
-        close.append("  └─", style=_DIM)
+        close.append("  └─", style=_BORDER)
         if elapsed_str:
             close.append(f" {elapsed_str}", style=_DIM)
         self.console.print(close)
@@ -737,7 +739,7 @@ class StreamRenderer:
         self.end_stream()
         self.console.print()
         d = Text()
-        d.append("  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─", style=_DIM)
+        d.append("  · · · · · · · · · · · · · · ·", style=_BORDER)
         self.console.print(d)
 
     def assessment_complete(
