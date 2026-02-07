@@ -29,7 +29,7 @@ from typing import AsyncGenerator, Any, Union
 
 from numasec.router import LLMRouter, Provider, TaskType
 from numasec.state import State, Finding
-from numasec.tools import create_tool_registry, ToolRegistry
+from numasec.tools import create_tool_registry, ToolRegistry, check_tool_availability, format_tool_availability
 from numasec.error_recovery import inject_recovery_guidance
 from numasec.tools.browser_fallback import should_retry_with_browser, format_browser_suggestion
 from numasec.context import smart_trim_context, should_trim_context, estimate_tokens
@@ -146,6 +146,10 @@ class Agent:
         self._recent_tool_hashes: deque[str] = deque(maxlen=10)
         self._loop_threshold = 2  # Block after 2 identical calls
         
+        # Tool availability: detect which external tools are installed
+        self._tool_availability = check_tool_availability()
+        self._tool_availability_prompt = format_tool_availability(self._tool_availability)
+        
         # Load base system prompt
         self._base_system_prompt = self._load_system_prompt()
     
@@ -166,6 +170,10 @@ class Agent:
         5. Relevant knowledge (context-aware)
         """
         parts = [self._base_system_prompt]
+        
+        # Tool availability — tell LLM what's installed
+        if self._tool_availability_prompt:
+            parts.append("\n" + self._tool_availability_prompt)
         
         # TargetProfile summary
         profile_summary = self.state.profile.to_prompt_summary()
@@ -469,20 +477,46 @@ class Agent:
                 if text_buffer and not tool_calls:
                     self.state.add_message("assistant", text_buffer)
                     
+                    # ── TERMINATION DETECTION ──
+                    # The LLM is talking without calling tools.
+                    # If it signals completion, stop immediately.
                     done_indicators = [
-                        "I have completed",
+                        "i have completed",
                         "testing complete",
                         "no further",
                         "that's all",
-                        "finished",
-                        "no more",
+                        "finished the",
+                        "no more tests",
                         "assessment complete",
                         "pentest complete",
+                        "security assessment is complete",
+                        "all phases",
+                        "assessment is done",
+                        "testing is complete",
+                        "completed the assessment",
+                        "completed my assessment",
+                        "here is a summary",
+                        "here's a summary",
+                        "in summary",
+                        "to summarize",
+                        "wrapping up",
                     ]
                     text_lower = text_buffer.lower()
                     is_done = any(indicator in text_lower for indicator in done_indicators)
                     
-                    if is_done or (self.state.plan and self.state.plan.is_complete()):
+                    # Also terminate if the plan is fully complete
+                    plan_done = self.state.plan and self.state.plan.is_complete()
+                    
+                    # Also terminate after 2+ consecutive text-only responses
+                    # (the LLM is just talking, not acting)
+                    consecutive_text = 0
+                    for msg in reversed(self.state.messages):
+                        if isinstance(msg.get("content"), str) and msg.get("role") == "assistant":
+                            consecutive_text += 1
+                        else:
+                            break
+                    
+                    if is_done or plan_done or consecutive_text >= 3:
                         break
                     else:
                         continue

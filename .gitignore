@@ -45,6 +45,9 @@ htmlcov/
 *_foremost/
 *_http_objects/
 
+# ── Generated reports ──
+numasec_report_*
+
 # ── IDE ──
 .vscode/
 .idea/

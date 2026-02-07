@@ -21,8 +21,8 @@ class TestGeneratePlan:
 
     def test_phase_names(self, attack_plan):
         phase_names = [p.name.lower() for p in attack_plan.phases]
-        # Should have recon phase
-        assert any("recon" in n for n in phase_names)
+        # Should have discovery phase
+        assert any("discovery" in n for n in phase_names)
 
     def test_each_phase_has_steps(self, attack_plan):
         for phase in attack_plan.phases:

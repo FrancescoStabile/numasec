@@ -112,7 +112,7 @@ class AttackPlan:
 
     def to_prompt_summary(self) -> str:
         """Generate plan summary for LLM context injection."""
-        lines = [f"## Attack Plan: {self.objective}\n"]
+        lines = [f"## Testing Plan: {self.objective}\n"]
 
         for i, phase in enumerate(self.phases, 1):
             status_icon = {
@@ -140,8 +140,8 @@ class AttackPlan:
                         lines.append(f"       result: {step.result_summary}")
 
         lines.append("")
-        lines.append("**INSTRUCTION**: Follow the active phase ([>]). Complete each step, then move to next.")
-        lines.append("If a phase doesn't apply (e.g., no web service), skip it and explain why.")
+        lines.append("**INSTRUCTION**: Follow the active phase ([>]). Complete each step, then move to the next.")
+        lines.append("If a phase doesn't apply to this target, skip it and explain why.")
 
         return "\n".join(lines)
 
@@ -208,8 +208,8 @@ def generate_plan(objective: str, profile: TargetProfile) -> AttackPlan:
     ))
 
     plan.phases.append(AttackPhase(
-        name="Reconnaissance",
-        objective="Discover all attack surface: ports, services, technologies, endpoints",
+        name="Discovery",
+        objective="Find what's running: ports, services, technologies, endpoints",
         steps=recon_steps,
     ))
 
@@ -230,8 +230,8 @@ def generate_plan(objective: str, profile: TargetProfile) -> AttackPlan:
     ]
 
     plan.phases.append(AttackPhase(
-        name="Enumeration",
-        objective="Map all endpoints, parameters, and technologies for testing",
+        name="Mapping",
+        objective="Map all pages, forms, and inputs that need testing",
         steps=enum_steps,
         skip_condition="No web service found",
     ))
@@ -265,15 +265,15 @@ def generate_plan(objective: str, profile: TargetProfile) -> AttackPlan:
     ]
 
     plan.phases.append(AttackPhase(
-        name="Vulnerability Testing",
-        objective="Test all discovered endpoints for common vulnerabilities",
+        name="Security Testing",
+        objective="Test all discovered pages and inputs for security issues",
         steps=vuln_steps,
     ))
 
     # ── Phase 4: Exploitation ──
     plan.phases.append(AttackPhase(
-        name="Exploitation",
-        objective="Exploit confirmed vulnerabilities, escalate access",
+        name="Deep Analysis",
+        objective="Verify and demonstrate confirmed vulnerabilities with proof",
         steps=[
             AttackStep(
                 description="Exploit confirmed vulnerabilities for proof-of-concept",
@@ -289,8 +289,8 @@ def generate_plan(objective: str, profile: TargetProfile) -> AttackPlan:
 
     # ── Phase 5: Reporting ──
     plan.phases.append(AttackPhase(
-        name="Reporting",
-        objective="Document all findings with evidence and remediation",
+        name="Results",
+        objective="Summarize what was found, how to fix it, and what to do first",
         steps=[
             AttackStep(
                 description="Report each vulnerability with [FINDING: SEVERITY] format",

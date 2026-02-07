@@ -28,6 +28,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Configuration
       - PYTHONUNBUFFERED=1
+      - TERM=xterm-256color
+      - COLORTERM=truecolor
     # Uncomment to use host network (needed for scanning host machine)
     # network_mode: host
     depends_on:

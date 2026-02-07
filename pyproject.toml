@@ -1,4 +1,4 @@
-# NumaSec - AI Pentester with SOTA Prompt Engineering
+# NumaSec — AI Security Testing for Apps
 # Modern Python packaging (PEP 621)
 
 [build-system]
@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 [project]
 name = "numasec"
 version = "3.0.0"
-description = "AI-powered pentesting agent with SOTA prompt engineering. One prompt. Full pentest. Real vulnerabilities."
+description = "AI security testing for apps. Paste a URL, get a full security report. Like having a pentester on your team for $0.12."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -33,22 +33,21 @@ classifiers = [
     "Typing :: Typed",
 ]
 keywords = [
-    "pentesting",
     "security",
+    "security-testing",
+    "ai-security",
+    "web-security",
+    "app-security",
+    "vulnerability-scanner",
+    "security-check",
+    "vibe-security",
     "ai",
     "llm",
-    "cybersecurity",
-    "vulnerability-scanning",
-    "bug-bounty",
-    "ethical-hacking",
     "deepseek",
     "claude",
-    "prompt-engineering",
-    "nmap",
-    "sqlmap",
-    "nuclei",
+    "pentesting",
+    "cybersecurity",
     "playwright",
-    "xss",
 ]
 
 dependencies = [

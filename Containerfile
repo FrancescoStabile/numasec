@@ -9,7 +9,9 @@ FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    TERM=xterm-256color \
+    COLORTERM=truecolor
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Stage 1: System Dependencies + Security Tools

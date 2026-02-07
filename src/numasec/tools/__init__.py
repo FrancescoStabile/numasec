@@ -85,7 +85,7 @@ class ToolRegistry:
         Check if tool arguments are within allowed scope.
         Returns error message if out of scope, None if OK.
         
-        Only checks network-targeting tools.
+        Uses proper URL/domain parsing — no substring tricks.
         """
         if not self.allowed_targets:
             return None  # No scope set = allow everything
@@ -113,14 +113,65 @@ class ToolRegistry:
         if not target_value:
             return None
         
-        # Check if target matches any allowed target
-        target_lower = target_value.lower()
-        for allowed in self.allowed_targets:
-            allowed_lower = allowed.lower()
-            if allowed_lower in target_lower or target_lower in allowed_lower:
-                return None
+        # Proper scope check with URL/domain parsing
+        if self._is_in_scope(target_value):
+            return None
         
         return f"SCOPE ERROR: {target_value} is not in allowed targets: {self.allowed_targets}. Adjust your target or ask user for permission."
+    
+    def _is_in_scope(self, target_value: str) -> bool:
+        """
+        Check if a target value matches any allowed scope entry.
+        
+        Uses proper hostname extraction — prevents bypasses like:
+        - evil-example.com matching example.com
+        - localhost.attacker.com matching localhost
+        """
+        from urllib.parse import urlparse
+        import ipaddress
+        
+        def _extract_host(value: str) -> str:
+            """Extract hostname from URL, IP, or raw hostname."""
+            v = value.strip()
+            # Add scheme if missing so urlparse works
+            if "://" not in v:
+                v = "http://" + v
+            parsed = urlparse(v)
+            host = parsed.hostname or ""
+            return host.lower().rstrip(".")
+        
+        target_host = _extract_host(target_value)
+        if not target_host:
+            return False
+        
+        for allowed in self.allowed_targets:
+            scope_host = _extract_host(allowed)
+            if not scope_host:
+                continue
+            
+            # Exact match
+            if target_host == scope_host:
+                return True
+            
+            # Subdomain match: target is sub.example.com, scope is example.com
+            if target_host.endswith("." + scope_host):
+                return True
+            
+            # IP range check (CIDR)
+            try:
+                target_ip = ipaddress.ip_address(target_host)
+                try:
+                    scope_net = ipaddress.ip_network(scope_host, strict=False)
+                    if target_ip in scope_net:
+                        return True
+                except ValueError:
+                    scope_ip = ipaddress.ip_address(scope_host)
+                    if target_ip == scope_ip:
+                        return True
+            except ValueError:
+                pass  # Not an IP, already handled by hostname matching
+        
+        return False
     
     async def call(self, name: str, args: dict) -> str:
         """Call a tool directly."""
@@ -486,3 +537,62 @@ def create_tool_registry() -> ToolRegistry:
     registry.register("browser_clear_session", browser_clear_session, BROWSER_SCHEMAS["browser_clear_session"])
     
     return registry
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tool Availability Detection
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def check_tool_availability() -> dict[str, bool]:
+    """
+    Check which external security tools are actually installed.
+    
+    Returns dict of tool_name → is_available.
+    Only checks tools that shell out to external binaries.
+    Core tools (http, read_file, write_file, browser_*) are always available.
+    """
+    import shutil
+    
+    external_tools = {
+        "nmap": "nmap",
+        "sqlmap": "sqlmap",
+        "nuclei": "nuclei",
+        "ffuf": "ffuf",
+        "httpx": "httpx",
+        "subfinder": "subfinder",
+    }
+    
+    availability: dict[str, bool] = {}
+    for tool_name, binary_name in external_tools.items():
+        availability[tool_name] = shutil.which(binary_name) is not None
+    
+    # Browser: check if playwright browsers are installed
+    try:
+        from playwright.sync_api import sync_playwright
+        availability["browser"] = True
+    except (ImportError, Exception):
+        availability["browser"] = False
+    
+    return availability
+
+
+def format_tool_availability(availability: dict[str, bool]) -> str:
+    """
+    Format tool availability for injection into system prompt.
+    Returns a string that tells the LLM what tools are available.
+    """
+    available = [t for t, ok in availability.items() if ok]
+    missing = [t for t, ok in availability.items() if not ok]
+    
+    if not missing:
+        return ""  # All tools available, no need to mention
+    
+    lines = ["\n## Tool Availability\n"]
+    if available:
+        lines.append(f"**Installed:** {', '.join(available)}")
+    if missing:
+        lines.append(f"**NOT installed (do NOT use these):** {', '.join(missing)}")
+        lines.append("Use `http` requests and browser tools as alternatives for missing tools.")
+    
+    return "\n".join(lines)

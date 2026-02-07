@@ -17,7 +17,7 @@ from rich.style import Style
 
 # Primary Matrix Green (dominant)
 MATRIX_GREEN = "#00ff41"  # Brighter, more aggressive
-NEON_GREEN = "#39ff14"    # Screaming neon
+NEON_GREEN = "#00ff41"    # Same as MATRIX_GREEN — unified
 
 # Accent colors
 CYBER_PURPLE = "#b968ff"  # More electric
@@ -53,25 +53,25 @@ CYBERPUNK_THEME = Theme({
 
 
 class CyberpunkAssets:
-    """MATRIX VISUAL ARSENAL - Hacker Elite Edition"""
+    """VISUAL ARSENAL — Vibe Security Edition"""
     
     # Header
     BANNER_SMALL = f"[{MATRIX_GREEN}]NumaSec[/] [{GHOST_GRAY}]v3.0[/]"
     
     # Matrix Banner (ASCII Art)
-    MATRIX_BANNER = f"""[{MATRIX_GREEN}]
+    MATRIX_BANNER = f"""[bold {MATRIX_GREEN}]
 ███╗   ██╗██╗   ██╗███╗   ███╗ █████╗ ███████╗███████╗ ██████╗
 ████╗  ██║██║   ██║████╗ ████║██╔══██╗██╔════╝██╔════╝██╔════╝
 ██╔██╗ ██║██║   ██║██╔████╔██║███████║███████╗█████╗  ██║     
 ██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══██║╚════██║██╔══╝  ██║     
 ██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████║███████╗╚██████╗
 ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝
-[/][{CYBER_PURPLE}]           The Neural Penetration Framework[/]
+[/][{CYBER_PURPLE}]              Vibe Security — AI for Everyone[/]
 [{GHOST_GRAY}]                    v3.0.0 | 2026[/]
 """
     
     # Matrix rain characters
-    MATRIX_CHARS = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン"
+    MATRIX_CHARS = "0123456789abcdef#@$!>|{}[]<>=+-~:.%&*^"
     
     # Tree symbols
     TREE_BRANCH = "├──"

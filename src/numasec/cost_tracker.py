@@ -20,7 +20,7 @@ class ProviderPricing:
 PRICING = {
     "deepseek": ProviderPricing(input_per_million=0.14, output_per_million=0.28),
     "claude": ProviderPricing(input_per_million=3.00, output_per_million=15.00),
-    "openai": ProviderPricing(input_per_million=2.50, output_per_million=10.00),
+    "openai": ProviderPricing(input_per_million=0.15, output_per_million=0.60),  # gpt-4o-mini
     "ollama": ProviderPricing(input_per_million=0.0, output_per_million=0.0),  # Local
 }
 

@@ -23,6 +23,8 @@ import json
 import re
 import sys
 import time
+import asyncio
+import threading
 
 from rich.console import Console
 from rich.text import Text
@@ -38,7 +40,7 @@ class _ANSI:
     """ANSI escape sequences for direct terminal output."""
     # Colors (24-bit, matches theme.py palette)
     GREEN       = "\033[38;2;0;255;65m"
-    BRIGHT_GREEN= "\033[38;2;57;255;20m"
+    BRIGHT_GREEN= "\033[38;2;0;255;65m"   # Same as GREEN — unified
     CYAN        = "\033[38;2;125;207;255m"   # Softer sky blue
     PURPLE      = "\033[38;2;185;104;255m"
     RED         = "\033[38;2;255;85;85m"     # Warm red
@@ -67,6 +69,119 @@ _GRAY    = "#555555"    # Fallback, unknown severity
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Matrix Spinner — Shows during LLM thinking
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class MatrixSpinner:
+    """
+    Non-blocking matrix-style spinner for LLM thinking periods.
+    
+    Uses ANSI direct writes (no Rich) for zero-flicker updates.
+    Automatically disappears when text arrives.
+    Thread-based so it doesn't block the async event loop.
+    """
+    
+    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    _GLITCH = ["░", "▒", "▓", "█", "▓", "▒"]
+    
+    def __init__(self, out=None):
+        self._out = out or sys.stdout
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._frame = 0
+    
+    def start(self, label: str = "thinking"):
+        """Start the spinner in a background thread."""
+        if self._running:
+            return
+        self._running = True
+        self._frame = 0
+        self._label = label
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+    
+    def stop(self):
+        """Stop the spinner and clear the line."""
+        if not self._running:
+            return
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=0.2)
+            self._thread = None
+        # Clear the spinner line
+        self._out.write(f"\r\033[2K")
+        self._out.flush()
+    
+    def _spin(self):
+        """Background spin loop."""
+        while self._running:
+            frame = self._FRAMES[self._frame % len(self._FRAMES)]
+            glitch = self._GLITCH[self._frame % len(self._GLITCH)]
+            self._out.write(
+                f"\r  {ANSI.GREEN}{glitch} {frame} {self._label}{ANSI.RESET}\033[K"
+            )
+            self._out.flush()
+            self._frame += 1
+            time.sleep(0.08)
+
+
+def matrix_rain(console: Console, duration: float = 1.2, width: int = 60):
+    """
+    Brief matrix rain effect for startup. Pure ANSI, <2 seconds.
+    
+    Creates falling green characters that resolve into the brand.
+    """
+    import random
+    out = console.file or sys.stdout
+    chars = "0123456789abcdef#@$!>|{}[]<>=+-~:.%&*^"
+    rows = 8
+    
+    # Build the rain
+    grid = [[" "] * width for _ in range(rows)]
+    drops = [random.randint(-rows, 0) for _ in range(width)]
+    
+    frames = int(duration / 0.06)
+    for frame_idx in range(frames):
+        # Update drops
+        for col in range(width):
+            drops[col] += 1
+            if drops[col] >= 0 and drops[col] < rows:
+                grid[drops[col]][col] = random.choice(chars)
+            # Fade old chars
+            if drops[col] - 3 >= 0 and drops[col] - 3 < rows:
+                grid[drops[col] - 3][col] = " "
+            # Reset drops that fell off
+            if drops[col] > rows + 3:
+                drops[col] = random.randint(-4, -1)
+        
+        # Render
+        out.write(f"\033[{rows}A" if frame_idx > 0 else "")
+        for row in range(rows):
+            line = ""
+            for col in range(width):
+                c = grid[row][col]
+                if c != " ":
+                    # Bold at drop head for visual depth
+                    if any(drops[col] == row + offset for offset in range(2)):
+                        line += f"\033[1m{ANSI.GREEN}{c}\033[22m"
+                    else:
+                        line += f"{ANSI.GREEN}{c}"
+                else:
+                    line += " "
+            out.write(f"  {line}{ANSI.RESET}\n")
+        out.flush()
+        time.sleep(0.06)
+    
+    # Clear rain area
+    out.write(f"\033[{rows}A")
+    for _ in range(rows):
+        out.write(f"\033[2K\n")
+    out.write(f"\033[{rows}A")
+    out.flush()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Stream Renderer
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -89,6 +204,20 @@ class StreamRenderer:
         self._tag_buffer = ""
         self._needs_newline = False
         self._suppressing = False  # True while inside <thinking>...</thinking>
+        # Matrix spinner
+        self._spinner = MatrixSpinner(self._out)
+
+    # ──────────────────────────────────────────────────────────
+    # Spinner control
+    # ──────────────────────────────────────────────────────────
+
+    def spinner_start(self, label: str = "thinking"):
+        """Show matrix spinner during LLM waits."""
+        self._spinner.start(label)
+    
+    def spinner_stop(self):
+        """Stop the spinner (called automatically when text arrives)."""
+        self._spinner.stop()
 
     # ──────────────────────────────────────────────────────────
     # Agent text streaming
@@ -191,11 +320,11 @@ class StreamRenderer:
     # ──────────────────────────────────────────────────────────
 
     def target_acquired(self, target: str):
-        """Print cinematic TARGET ACQUIRED banner — the opening shot."""
+        """Print the opening banner when scanning begins."""
         self.end_stream()
         self.console.print()
 
-        # Top border — brand green, cohesive
+        # Top border
         rule = Text()
         rule.append("  ─────────────────────────────────────────────────", style=_GREEN)
         self.console.print(rule)
@@ -203,7 +332,7 @@ class StreamRenderer:
         # Title
         title = Text()
         title.append("  ◉ ", style=f"bold {_GREEN}")
-        title.append("TARGET ACQUIRED", style=f"bold {_GREEN}")
+        title.append("SCANNING", style=f"bold {_GREEN}")
         self.console.print(title)
 
         # Target URL
@@ -851,6 +980,13 @@ class StreamRenderer:
         # Empty line
         self.console.print(Text(f"  │{' ' * w}│", style=border))
 
+        # What This Means — human-readable summary
+        summary = self._human_risk_summary(risk, counts, total_findings)
+        if summary:
+            for sline in self._textwrap(summary, w - 4):
+                self._card_line(f"  {sline}", w, border, _TEXT)
+            self.console.print(Text(f"  │{' ' * w}│", style=border))
+
         # Tools used
         if tools_used > 0:
             self._card_line(f"  Tools Used:  {tools_used}", w, border, _DIM)
@@ -858,13 +994,13 @@ class StreamRenderer:
 
         # Hints
         self._card_line("  /report       →  Full HTML report", w, border, _DIM)
-        self._card_line("  /findings     →  All vulnerabilities", w, border, _DIM)
+        self._card_line("  /findings     →  All issues found", w, border, _DIM)
 
         # Empty line before footer
         self.console.print(Text(f"  │{' ' * w}│", style=border))
 
         # Branding footer — every screenshot is marketing
-        footer_text = "Powered by NumaSec v3"
+        footer_text = "numasec.com — Vibe Security"
         fpad = (w - len(footer_text)) // 2
         fl = Text()
         fl.append("  │", style=border)
@@ -887,6 +1023,38 @@ class StreamRenderer:
         row.append(padded[:width], style=text_color)
         row.append("│", style=border_color)
         self.console.print(row)
+
+    @staticmethod
+    def _human_risk_summary(risk: str, counts: dict, total: int) -> str:
+        """Generate a plain-language 'What This Means' summary — impersonal, tool-like."""
+        if total == 0:
+            return "No security issues identified during this assessment."
+        
+        if risk == "CRITICAL":
+            return (
+                f"Critical security issues detected — immediate action required. "
+                f"Potential full system compromise or complete data breach. "
+                f"Prioritize critical findings first."
+            )
+        elif risk == "HIGH":
+            return (
+                f"{total} issue{'s' if total != 1 else ''} identified, including "
+                f"high-severity vulnerabilities. User accounts and private data "
+                f"are at risk. Address these before going live."
+            )
+        elif risk == "MEDIUM":
+            return (
+                f"{total} issue{'s' if total != 1 else ''} identified. No critical "
+                f"flaws, but misconfigurations and information leaks increase "
+                f"the attack surface. Worth addressing."
+            )
+        elif risk == "LOW":
+            return (
+                f"Only minor issues found — mostly missing security headers "
+                f"and minor information leaks. Good to fix when possible, "
+                f"not urgent."
+            )
+        return f"{total} issue{'s' if total != 1 else ''} identified — review recommended."
 
     @staticmethod
     def _extract_payload(finding) -> str:

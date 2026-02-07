@@ -172,10 +172,15 @@ class BrowserManager:
     async def get_browser(self) -> Browser:
         """Get or create browser instance."""
         if not PLAYWRIGHT_AVAILABLE:
-            raise RuntimeError("Playwright not installed. Run: pip install playwright && playwright install chromium")
+            raise RuntimeError(
+                "Playwright not installed. Run: pip install playwright && playwright install chromium"
+            )
         
         if self._browser is None:
-            self._playwright = await async_playwright().start()
+            try:
+                self._playwright = await async_playwright().start()
+            except Exception as e:
+                raise RuntimeError(f"Playwright failed to start: {e}. Run: pip install playwright && playwright install chromium")
             
             # Check if --show-browser flag is set via environment
             headless = not os.environ.get("NUMASEC_SHOW_BROWSER", "")
@@ -185,10 +190,20 @@ class BrowserManager:
                 logger.debug("No DISPLAY found, falling back to headless mode")
                 headless = True
             
-            self._browser = await self._playwright.chromium.launch(
-                headless=headless,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
-            )
+            try:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=headless,
+                    args=['--no-sandbox', '--disable-setuid-sandbox']
+                )
+            except Exception as e:
+                # Chromium not downloaded — most common failure
+                await self._playwright.stop()
+                self._playwright = None
+                raise RuntimeError(
+                    f"Browser launch failed: {e}. "
+                    "Run: playwright install chromium"
+                )
+            
             # Initialize context pool with browser
             self._context_pool = BrowserContextPool(ttl_minutes=10, max_contexts=3)
         
@@ -327,6 +342,15 @@ def _urls_match(page_url: str, target_url: str) -> bool:
     return page_url.rstrip("/") == target_url.rstrip("/")
 
 
+def _browser_not_available_error() -> str:
+    """Standard error message when browser is unavailable."""
+    return json.dumps({
+        "error": "Browser not available",
+        "hint": "Install with: pip install playwright && playwright install chromium",
+        "fallback": "Use the 'http' tool instead for non-JS targets"
+    })
+
+
 async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int = 30000, use_session: bool = True) -> str:
     """
     Navigate to URL with Playwright.
@@ -345,7 +369,7 @@ async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int
     - Subsequent calls with use_session=False: <100ms (reuses pooled context)
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -384,6 +408,8 @@ async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int
         
     except PlaywrightTimeout:
         return json.dumps({"error": f"Navigation timeout after {timeout}ms"})
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Navigation failed: {str(e)}"})
 
@@ -403,7 +429,7 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
         JSON with result and response
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -468,6 +494,8 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
             "html": html_preview
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Fill failed: {str(e)}"})
 
@@ -486,7 +514,7 @@ async def browser_click(url: str, selector: str, wait_after: int = 2000, use_ses
         JSON with result
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -519,6 +547,8 @@ async def browser_click(url: str, selector: str, wait_after: int = 2000, use_ses
             "html": html_preview
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Click failed: {str(e)}"})
 
@@ -537,7 +567,7 @@ async def browser_screenshot(url: str, filename: str, selector: Optional[str] = 
         JSON with screenshot path
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -580,6 +610,8 @@ async def browser_screenshot(url: str, filename: str, selector: Optional[str] = 
             "size_kb": filepath.stat().st_size / 1024
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Screenshot failed: {str(e)}"})
 
@@ -609,7 +641,7 @@ async def browser_login(
         JSON with login result and session status
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -664,6 +696,8 @@ async def browser_login(
             "message": "Login successful - session saved" if login_success and use_session else "Login may have failed"
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Login failed: {str(e)}"})
 
@@ -680,7 +714,7 @@ async def browser_get_cookies(url: str) -> str:
         JSON with cookie list
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -702,6 +736,8 @@ async def browser_get_cookies(url: str) -> str:
             "count": len(cookies)
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Failed to get cookies: {str(e)}"})
 
@@ -718,7 +754,7 @@ async def browser_set_cookies(url: str, cookies: list[dict]) -> str:
         JSON with result
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -736,6 +772,8 @@ async def browser_set_cookies(url: str, cookies: list[dict]) -> str:
             "message": "Cookies set in session"
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Failed to set cookies: {str(e)}"})
 
@@ -749,7 +787,7 @@ async def browser_clear_session() -> str:
         JSON with result
     """
     if not PLAYWRIGHT_AVAILABLE:
-        return json.dumps({"error": "Playwright not installed"})
+        return _browser_not_available_error()
     
     manager = BrowserManager()
     
@@ -761,6 +799,8 @@ async def browser_clear_session() -> str:
             "message": "Browser session cleared"
         }, indent=2)
         
+    except RuntimeError as e:
+        return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
         return json.dumps({"error": f"Failed to clear session: {str(e)}"})
 

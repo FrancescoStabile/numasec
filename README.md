@@ -2,9 +2,9 @@
 
 # NumaSec
 
-**Autonomous AI agent for penetration testing.**
+**AI security testing for your apps.**
 
-Describe a target in natural language. Get real vulnerabilities, evidence, and professional reports.
+Paste a URL. Get a security report. Fix what matters.
 
 <img src="docs/assets/demo.gif" alt="NumaSec Demo" width="700">
 
@@ -18,43 +18,39 @@ Describe a target in natural language. Get real vulnerabilities, evidence, and p
 
 ---
 
-NumaSec is an open-source CLI agent that runs security assessments autonomously. You type what you want to test — it plans the attack, executes 19 integrated tools, extracts findings with evidence, and generates a professional report.
+**Vibe coding gave everyone the power to build. NumaSec gives everyone the power to secure what they build.**
 
-Average cost per assessment: **$0.12** with DeepSeek. Average time: **5 minutes**.
+NumaSec is an open-source CLI that checks your app for security vulnerabilities — automatically. You tell it what to test, it figures out the rest: finds open ports, checks for SQL injection, tests your forms, and generates a report explaining what's wrong and how to fix it.
+
+No security expertise required. Average cost: **$0.12** with DeepSeek. Average time: **5 minutes**.
 
 ```
-You: test http://localhost:3000 for vulnerabilities
+You: check http://localhost:3000 for security issues
 
-  ◉ TARGET ACQUIRED
+  ◉ SCANNING
   http://localhost:3000
 
-  ── [1] nmap → localhost -sV -sC
-  │ 22/tcp   open  ssh      OpenSSH 8.2p1
-  │ 80/tcp   open  http     Apache 2.4.41
-  │ 3000/tcp open  http     Node.js Express
-  └─ 1.2s
-
-  ── [2] ffuf → http://localhost:3000/FUZZ
-  │ 200  /api
-  │ 200  /admin
-  │ 200  /ftp
-  │ 301  /login
-  └─ 3.4s
-
-  ── [3] http → GET http://localhost:3000/ftp
+  ── [1] http → GET http://localhost:3000/
   │ 200
-  │ content-type: text/html
-  │ confidential.md, package.json.bak, coupons_2026.md
+  │ server: Express
+  │ x-powered-by: Express
+  └─ 0.1s
+
+  ── [2] http → GET http://localhost:3000/.env
+  │ 200
+  │ DATABASE_URL=postgresql://admin:supersecret@db:5432/myapp
+  │ JWT_SECRET=mysecretkey123
   └─ 0.2s
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ▲ HIGH — Directory Listing Exposes Sensitive Files
+  ▲▲ CRITICAL — Environment File Exposed
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  │ The /ftp endpoint lists files publicly, exposing
-  │ backup archives and internal documentation.
+  │ The .env file is publicly accessible. It contains the
+  │ database password, JWT secret, and API keys. Anyone can
+  │ read them.
   │
-  │ Evidence:   GET /ftp → 200 OK, 7 files listed
-  │ Impact:     Sensitive data exposure
+  │ Evidence:   GET /.env → 200 OK with credentials
+  │ Fix:        Block .env in Express static config
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   ┌──────────────────────────────────────────────────────┐
@@ -64,10 +60,13 @@ You: test http://localhost:3000 for vulnerabilities
   │  Duration:  4m 23s                                   │
   │  Cost:      $0.12                                    │
   │                                                      │
-  │  ▲▲ 0 CRITICAL   ▲ 2 HIGH                            │
-  │  ■  3 MEDIUM     ● 1 LOW                             │
+  │  ▲▲ 2 CRITICAL   ▲ 1 HIGH                            │
+  │  ■  1 MEDIUM     ● 1 LOW                             │
   │                                                      │
-  │  Risk Level: HIGH                                    │
+  │  Risk Level: CRITICAL                                │
+  │                                                      │
+  │  Critical security issues detected — immediate       │
+  │  action required. Fix critical findings first.       │
   └──────────────────────────────────────────────────────┘
 ```
 
@@ -81,10 +80,16 @@ You: test http://localhost:3000 for vulnerabilities
 pip install numasec
 ```
 
+### See it in action (no API key needed)
+
+```bash
+numasec --demo
+```
+
 ### Configure
 
 ```bash
-# DeepSeek (cheapest — ~$0.12/assessment, 1M free tokens for new accounts)
+# DeepSeek (cheapest — ~$0.12/scan, 1M free tokens for new accounts)
 export DEEPSEEK_API_KEY="sk-..."
 
 # Or Claude / OpenAI (automatic fallback)
@@ -92,13 +97,14 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 ```
 
-### Run
+### Check your app
 
 ```bash
-numasec
+numasec                              # Interactive mode
+numasec check http://localhost:3000  # Quick one-shot check
 ```
 
-That's it. Describe what you want to test and the agent handles the rest.
+That's it. Describe what you want to test and NumaSec handles the rest.
 
 ### Optional: Full Power
 
@@ -115,21 +121,21 @@ sudo apt install nmap sqlmap
 
 ## How It Works
 
-NumaSec is a **ReAct agent** — it reasons about what to do, acts by calling security tools, observes the results, and repeats until the assessment is complete.
+NumaSec is an AI agent that thinks like a security tester. It plans what to check, uses real security tools, analyzes the results, and adapts — just like a human would, but faster and cheaper.
 
 ```
-User prompt
-  → LLM generates attack plan (recon → exploit → post-exploit)
+Your app URL
+  → AI plans the assessment (discovery → testing → results)
   → For each step:
-      → LLM selects tool + arguments
-      → Tool executes (nmap, sqlmap, browser, etc.)
-      → Extractors parse output → structured TargetProfile
-      → Reflection engine analyzes results → next action
-  → Findings registered with evidence
-  → Professional report generated
+      → AI picks the right tool + arguments
+      → Tool runs (http requests, browser tests, scanners)
+      → Results are analyzed automatically
+      → AI decides what to check next
+  → Security issues documented with evidence
+  → Report generated with fixes
 ```
 
-The agent adapts in real-time. If it discovers a new endpoint during recon, it tests it. If a SQL injection is confirmed, it escalates through a pre-built attack chain. If it gets stuck, the reflection engine suggests a different approach.
+The agent adapts in real-time. If it finds a suspicious endpoint, it tests it. If SQL injection is confirmed, it digs deeper. If a tool isn't installed, it falls back to HTTP requests and browser automation.
 
 ---
 
@@ -157,20 +163,20 @@ numasec --show-browser
 
 ```
 cli.py          → Interactive REPL with streaming output
-agent.py        → ReAct loop (max 50 iterations, loop detection, circuit breaker)
-router.py       → Multi-provider LLM routing (DeepSeek → Claude → OpenAI → Ollama)
-planner.py      → 5-phase attack plan (recon → enum → exploit → post-exploit → report)
-state.py        → Structured memory (TargetProfile: ports, endpoints, techs, creds, vulns)
+agent.py        → AI loop (max 50 iterations, loop detection, circuit breaker)
+router.py       → Multi-provider AI routing (DeepSeek → Claude → OpenAI → Ollama)
+planner.py      → 5-phase testing plan (discovery → mapping → testing → analysis → results)
+state.py        → Structured memory (what's been found so far)
 extractors.py   → 14 extractors parse tool output into structured data
-reflection.py   → 7 tool-specific reflectors guide the agent's next action
+reflection.py   → 7 tool-specific analyzers guide what to check next
 chains.py       → 14 escalation chains (SQLi→RCE, LFI→RCE, SSTI→RCE, etc.)
 knowledge/      → 46 attack patterns, cheatsheets, and payload references
-report.py       → Professional reports in Markdown, HTML, and JSON
+report.py       → Reports in Markdown, HTML, and JSON
 plugins.py      → Extend with custom tools, chains, and extractors
-renderer.py     → Continuous-scroll terminal UI with real-time streaming
+renderer.py     → Terminal UI with real-time streaming
 ```
 
-**11,400 lines of Python. 184 tests. 5 core dependencies.**
+**11,800+ lines of Python. 184 tests. 5 core dependencies.**
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical details.
 
@@ -181,28 +187,29 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical details.
 ### CLI
 
 ```bash
-numasec                        # Interactive mode
-numasec --demo                 # Mocked demo (no API key needed)
-numasec --show-browser         # See browser in real-time
-numasec --verbose              # Debug logging
-numasec --budget 5.0           # Set cost limit
-numasec --resume <session-id>  # Resume a previous session
+numasec                              # Interactive mode
+numasec check http://localhost:3000  # Quick one-shot check
+numasec --demo                       # See it in action (no API key)
+numasec --show-browser               # Watch the browser testing in real-time
+numasec --verbose                    # Debug logging
+numasec --budget 5.0                 # Set cost limit
+numasec --resume <session-id>        # Resume a previous session
 ```
 
 ### Commands
 
 ```
-/plan          Show current attack plan and progress
-/findings      List all discovered vulnerabilities
-/report html   Generate full HTML report (dark theme)
+/plan          Show testing progress
+/findings      List discovered security issues
+/report html   Generate full HTML report
 /export md     Export Markdown report
 /export json   Export JSON report
 /cost          Show cost breakdown by provider
 /stats         Session statistics
 /history       Recent sessions
 /resume <id>   Resume a session
-/demo          Run mocked demo assessment
-/clear         Clear screen and reset
+/demo          Run demo assessment
+/clear         Reset session
 /quit          Exit
 ```
 
@@ -247,8 +254,8 @@ Set any combination of API keys. NumaSec routes to the cheapest available provid
 
 | Approach | Cost | Time |
 |----------|------|------|
-| Security consultant | $2,000–10,000 | 1–2 weeks |
-| Manual testing | Free | 4–8 hours |
+| Hiring a security consultant | $2,000–10,000 | 1–2 weeks |
+| Learning security yourself | Free | Months |
 | NumaSec + DeepSeek | **$0.10–0.15** | 5–15 minutes |
 | NumaSec + Claude | $0.30–0.80 | 5–15 minutes |
 
@@ -256,15 +263,17 @@ Set any combination of API keys. NumaSec routes to the cheapest available provid
 
 ## Legal & Ethics
 
-**NumaSec is for authorized testing only.**
+**Only test apps you own or have permission to test.**
 
-Authorized use:
-- Systems you own or operate
-- Bug bounty programs (HackerOne, Bugcrowd)
-- Penetration tests with written authorization
+✅ OK to test:
+- Your own apps (localhost, staging, production)
+- Bug bounty targets (HackerOne, Bugcrowd)
 - Practice environments (DVWA, Juice Shop, HackTheBox)
+- Systems with written authorization
 
-Unauthorized access to computer systems is illegal. You are responsible for how you use this tool.
+❌ Not OK:
+- Other people's apps without permission
+- Random websites on the internet
 
 ---
 
@@ -289,7 +298,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Issues, PRs, and feedback are welcome.
 
 ## Author
 
-**Francesco Stabile** — Building the future of AI security testing.
+**Francesco Stabile** — Making security accessible to every developer.
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/francesco-stabile-dev)
 [![X](https://img.shields.io/badge/X-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/Francesco_Sta)

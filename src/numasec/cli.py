@@ -49,7 +49,7 @@ except ImportError:
     GOLD = "yellow"
 
 from numasec.agent import Agent
-from numasec.renderer import StreamRenderer
+from numasec.renderer import StreamRenderer, matrix_rain
 
 from numasec.session import SessionManager
 from numasec.cost_tracker import CostTracker
@@ -75,7 +75,10 @@ class NumaSecCLI:
         if show_browser:
             os.environ["NUMASEC_SHOW_BROWSER"] = "1"
 
-        self.console = Console(theme=CYBERPUNK_THEME if CYBERPUNK_THEME else None)
+        self.console = Console(
+            theme=CYBERPUNK_THEME if CYBERPUNK_THEME else None,
+            color_system="truecolor",
+        )
         self.agent: Agent | None = None
         self.session: PromptSession | None = None
         self.config: Config | None = None
@@ -101,7 +104,21 @@ class NumaSecCLI:
         self.config = ensure_config()
 
         if not self.config.has_api_key():
-            self.console.print(f"[{HACK_RED}]No API keys configured. Run setup again or edit ~/.numasec/config.yaml[/]")
+            # No API key — show demo first, then guide to setup
+            self.console.print()
+            self.console.print(f"  [{ELECTRIC_CYAN}]No API key found. Here's what NumaSec can do:[/]")
+            self.console.print()
+            from numasec.demo import run_demo
+            await run_demo(self.console)
+            self.console.print()
+            self.console.print(f"  [{MATRIX_GREEN}]Run it on a real target — set up an API key:[/]")
+            self.console.print()
+            self.console.print(f"  [{GHOST_GRAY}]Option 1: export DEEPSEEK_API_KEY=\"sk-...\"  (cheapest — ~$0.12/scan)[/]")
+            self.console.print(f"  [{GHOST_GRAY}]Option 2: export ANTHROPIC_API_KEY=\"sk-ant-...\"[/]")
+            self.console.print(f"  [{GHOST_GRAY}]Option 3: export OPENAI_API_KEY=\"sk-...\"[/]")
+            self.console.print()
+            self.console.print(f"  [{GHOST_GRAY}]Or run: numasec  (interactive setup will guide you)[/]")
+            self.console.print()
             return
 
         # Set API keys in environment
@@ -146,7 +163,7 @@ class NumaSecCLI:
                     cost_suffix = f" <{color}>${total_cost:.3f}</{color}>"
 
                 user_input = await self.session.prompt_async(
-                    HTML(f"<ansibrightgreen>\u03bb</ansibrightgreen>{cost_suffix} ")
+                    HTML(f'<span fg="#00ff41">\u03bb</span>{cost_suffix} ')
                 )
 
                 if not user_input.strip():
@@ -183,6 +200,46 @@ class NumaSecCLI:
         if self.agent:
             await self.agent.close()
 
+    async def run_check(self, url: str):
+        """
+        Non-interactive mode: run a single security check and exit.
+        Called by `numasec check <url>`.
+        """
+        # Load config
+        self.config = ensure_config()
+
+        if not self.config.has_api_key():
+            self.console.print(f"[{HACK_RED}]No API key configured.[/]")
+            self.console.print(f"[{GHOST_GRAY}]Set one: export DEEPSEEK_API_KEY=\"sk-...\"[/]")
+            self.console.print(f"[{GHOST_GRAY}]Or run: numasec --demo  (no API key needed)[/]")
+            return
+
+        # Set API keys
+        for key, value in self.config.get_api_keys().items():
+            os.environ[key] = value
+
+        # Create agent
+        try:
+            self.agent = Agent()
+        except Exception as e:
+            self.console.print(f"[{HACK_RED}]Failed to initialize: {e}[/]")
+            return
+
+        self.current_target = url
+        prompt = f"Run a security assessment on {url}. Check for common vulnerabilities."
+
+        self.console.print(f"\n  [{MATRIX_GREEN}]NumaSec — checking {url}[/]\n")
+
+        # Run the agent
+        await self._run_agent(prompt)
+
+        # Auto-generate HTML report
+        if self.agent and self.agent.state.findings:
+            await self._generate_report("html")
+
+        if self.agent:
+            await self.agent.close()
+
     # ──────────────────────────────────────────────────────────
     # Agent execution — the core
     # ──────────────────────────────────────────────────────────
@@ -208,11 +265,16 @@ class NumaSecCLI:
         target_banner_shown = False
 
         try:
+            # Start spinner while waiting for first LLM response
+            renderer.spinner_start("thinking")
+            
             async for event in self.agent.run(user_input):
                 if event.type == "text":
+                    renderer.spinner_stop()
                     renderer.stream_text(event.content)
 
                 elif event.type == "tool_start":
+                    renderer.spinner_stop()
                     # Show target acquired banner before first tool call
                     if not target_banner_shown:
                         target_display = self.current_target or self._extract_target(user_input)
@@ -228,13 +290,17 @@ class NumaSecCLI:
                 elif event.type == "tool_end":
                     renderer.tool_result(event.tool_name, event.tool_result, current_args)
                     current_args = {}
+                    # Restart spinner while LLM processes tool results
+                    renderer.spinner_start("analyzing")
 
                 elif event.type == "finding":
+                    renderer.spinner_stop()
                     renderer.finding(event.finding)
                     # Auto-save session
                     self._save_current_state()
 
                 elif event.type == "usage":
+                    renderer.spinner_stop()
                     input_tok = event.data.get("input_tokens", 0)
                     output_tok = event.data.get("output_tokens", 0)
                     cache_read = event.data.get("cache_read_tokens", 0)
@@ -246,13 +312,15 @@ class NumaSecCLI:
                     self.cost_tracker.add_tokens(provider, input_tok, output_tok)
 
                 elif event.type == "error":
+                    renderer.spinner_stop()
                     renderer.error(event.data.get("message", "Unknown error"))
                     break
 
                 elif event.type == "plan_generated":
+                    renderer.spinner_stop()
                     plan_text = event.data.get("plan", "")
                     if plan_text:
-                        self.console.print(f"\n  [{MATRIX_GREEN}]◆ ATTACK PLAN[/]")
+                        self.console.print(f"\n  [bold {MATRIX_GREEN}]◆ TESTING PLAN[/]")
                         for raw_line in plan_text.split("\n"):
                             line = raw_line.strip()
                             if not line:
@@ -262,9 +330,9 @@ class NumaSecCLI:
                             line = line.replace("**", "")
                             # Render checkboxes as icons
                             if line.startswith("[ ] "):
-                                self.console.print(f"    [{MATRIX_GREEN}]○ {line[4:]}[/]")
+                                self.console.print(f"    [bold {MATRIX_GREEN}]○ {line[4:]}[/]")
                             elif line.startswith("[x] ") or line.startswith("[X] "):
-                                self.console.print(f"    [{MATRIX_GREEN}]✓ {line[4:]}[/]")
+                                self.console.print(f"    [bold {MATRIX_GREEN}]✓ {line[4:]}[/]")
                             elif line.lower().startswith("objective:"):
                                 self.console.print(f"        [{GHOST_GRAY}]{line}[/]")
                             elif "attack plan" in line.lower():
@@ -274,6 +342,7 @@ class NumaSecCLI:
                         self.console.print()
 
                 elif event.type == "phase_complete":
+                    renderer.spinner_stop()
                     phase_name = event.data.get("phase_name", "")
                     next_phase = event.data.get("next_phase", "")
                     renderer.phase_transition(phase_name, next_phase)
@@ -284,10 +353,12 @@ class NumaSecCLI:
                     pass
 
                 elif event.type == "done":
+                    renderer.spinner_stop()
                     break
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             interrupted = True
+            renderer.spinner_stop()
             if self.agent:
                 self.agent.pause()
             self.console.print(f"\n\n  [{CYBER_PURPLE}]Agent paused[/]")
@@ -322,10 +393,17 @@ class NumaSecCLI:
                     tools_used=self.cost_tracker.tool_calls,
                 )
             elif total > 0.01:
-                # No findings but cost incurred — show cost summary
+                # No findings but cost incurred — show clean assessment
                 self.console.print()
-                summary = self.cost_tracker.format_summary()
-                self.console.print(f"[{GHOST_GRAY}]{summary}[/]")
+                duration = time.monotonic() - assessment_start
+                target_display = self.current_target or "unknown"
+                renderer.assessment_complete(
+                    target=target_display,
+                    duration_s=duration,
+                    cost=total,
+                    findings=[],
+                    tools_used=self.cost_tracker.tool_calls,
+                )
 
         # Iteration divider
         renderer.divider()
@@ -493,10 +571,19 @@ class NumaSecCLI:
     # ──────────────────────────────────────────────────────────
 
     def _print_banner(self):
-        """Print startup banner — ASCII art + status, no panels."""
+        """Print startup banner — matrix rain + ASCII art + status."""
         from numasec.theme import CyberpunkAssets
 
         self.console.clear()
+
+        # Matrix rain intro — brief, cinematic, <1.5s
+        try:
+            term_width = self.console.width or 80
+            rain_width = min(term_width - 4, 70)
+            self.console.print()  # breathing room
+            matrix_rain(self.console, duration=1.0, width=rain_width)
+        except Exception:
+            pass  # Terminal doesn't support ANSI? Skip gracefully
 
         # ASCII art
         self.console.print(CyberpunkAssets.MATRIX_BANNER)
@@ -513,14 +600,13 @@ class NumaSecCLI:
             except Exception:
                 pass
 
-        self.console.print(f"  [{MATRIX_GREEN}]● SYSTEM READY[/]")
-        self.console.print(f"  [{GHOST_GRAY}]● LLM: {provider_name}[/]")
-        self.console.print(f"  [{GHOST_GRAY}]● Tools: {tools_count} integrated[/]")
-        self.console.print(f"  [{CYBER_PURPLE}]● Mode: AUTONOMOUS PENTESTING[/]")
+        self.console.print(f"  [bold {MATRIX_GREEN}]● Ready[/]")
+        self.console.print(f"  [{GHOST_GRAY}]● AI: {provider_name}[/]")
+        self.console.print(f"  [{GHOST_GRAY}]● Tools: {tools_count} available[/]")
         if os.environ.get("NUMASEC_SHOW_BROWSER"):
-            self.console.print(f"  [{ELECTRIC_CYAN}]● Browser: VISIBLE MODE[/]")
+            self.console.print(f"  [{ELECTRIC_CYAN}]● Browser: visible mode[/]")
         self.console.print()
-        self.console.print(f"  [{GHOST_GRAY}]Describe your target or type /help[/]")
+        self.console.print(f"  [{GHOST_GRAY}]Paste a URL or describe what to check. /help for commands.[/]")
         self.console.print()
 
     def _print_help(self):
@@ -530,16 +616,16 @@ class NumaSecCLI:
         self.console.print()
 
         cmds = [
-            ("/clear",        "clear session and reset"),
-            ("/findings",     "show all findings"),
-            ("/plan",         "show current attack plan"),
-            ("/report [fmt]", "generate full report (html|md|json)"),
+            ("/clear",        "reset session and start fresh"),
+            ("/findings",     "show discovered security issues"),
+            ("/plan",         "show testing progress"),
+            ("/report [fmt]", "generate report (html|md|json)"),
             ("/export [fmt]", "export report (md|json|html)"),
             ("/stats",        "session statistics"),
             ("/cost",         "cost breakdown"),
             ("/history",      "recent sessions"),
             ("/resume <id>",  "resume a session"),
-            ("/demo",         "run mocked demo assessment"),
+            ("/demo",         "see NumaSec in action (no API key)"),
             ("/reset",        "reset session and cost tracker"),
             ("/quit",         "exit"),
         ]
@@ -623,12 +709,12 @@ class NumaSecCLI:
     def _print_plan(self):
         """Print current attack plan — clean lines."""
         if not self.agent or not self.agent.state.plan or not self.agent.state.plan.objective:
-            self.console.print(f"  [{GHOST_GRAY}]No attack plan yet. Start a scan first.[/]")
+            self.console.print(f"  [{GHOST_GRAY}]No testing plan yet. Start a scan first.[/]")
             return
 
         plan = self.agent.state.plan
         self.console.print()
-        self.console.print(f"  [{ELECTRIC_CYAN}]Attack Plan: {plan.objective}[/]")
+        self.console.print(f"  [{ELECTRIC_CYAN}]Testing Plan: {plan.objective}[/]")
         self.console.print()
 
         for phase in plan.phases:

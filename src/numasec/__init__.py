@@ -1,8 +1,8 @@
-"""NumaSec v3 — AI-powered autonomous pentesting agent."""
+"""NumaSec — AI security testing for your apps."""
 
 __version__ = "3.0.0"
 __author__ = "Francesco Stabile"
-__description__ = "AI-powered autonomous pentesting agent with SOTA prompt engineering"
+__description__ = "AI security testing for apps. Paste a URL, get a security report."
 
 # Export key components
 from numasec.config import load_config, ensure_config, Config

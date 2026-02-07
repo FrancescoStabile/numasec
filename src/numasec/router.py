@@ -102,8 +102,8 @@ PROVIDERS = {
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "api_key_env": "OPENAI_API_KEY",
-        "cost_per_1k_in": 0.00015,
-        "cost_per_1k_out": 0.0006,
+        "cost_per_1k_in": 0.00015,  # $0.15 per 1M input tokens
+        "cost_per_1k_out": 0.0006,  # $0.60 per 1M output tokens
     },
     Provider.LOCAL: {
         "base_url": "http://localhost:11434/v1",

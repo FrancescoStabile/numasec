@@ -123,18 +123,18 @@ class Config:
 
 
 def interactive_setup() -> Config:
-    """Interactive first-time setup."""
+    """Interactive first-time setup — friendly and fast."""
     from rich.console import Console
     from rich.prompt import Prompt
     
-    console = Console()
+    console = Console(color_system="truecolor")
     config = Config()
     
-    console.print("\n[bold cyan]NumaSec Configuration[/]")
-    console.print("Let's set up your API keys. You need at least one.\n")
+    console.print("\n[bold cyan]NumaSec Setup[/]")
+    console.print("One API key is needed to start.\n")
     
-    console.print("[bold green]DeepSeek[/] (Recommended - $0.12/pentest avg)")
-    console.print("Get key: https://platform.deepseek.com\n")
+    console.print("[bold #00ff41]DeepSeek[/]")
+    console.print("[dim]  → https://platform.deepseek.com/api_keys[/]\n")
     deepseek_key = Prompt.ask(
         "DeepSeek API Key",
         default=config.get("DEEPSEEK_API_KEY", ""),
@@ -143,20 +143,20 @@ def interactive_setup() -> Config:
     if deepseek_key:
         config.set("DEEPSEEK_API_KEY", deepseek_key)
     
-    console.print("\n[bold yellow]Anthropic Claude[/] (Fallback)")
-    console.print("Get key: https://console.anthropic.com\n")
+    console.print("\n[bold yellow]Anthropic Claude[/]")
+    console.print("[dim]  → https://console.anthropic.com/settings/keys[/]\n")
     claude_key = Prompt.ask(
-        "Claude API Key (optional)",
+        "Claude API Key (Enter to skip)",
         default=config.get("ANTHROPIC_API_KEY", ""),
         password=True,
     )
     if claude_key:
         config.set("ANTHROPIC_API_KEY", claude_key)
     
-    console.print("\n[bold blue]OpenAI GPT-4[/] (Fallback)")
-    console.print("Get key: https://platform.openai.com\n")
+    console.print("\n[bold blue]OpenAI[/]")
+    console.print("[dim]  → https://platform.openai.com/api-keys[/]\n")
     openai_key = Prompt.ask(
-        "OpenAI API Key (optional)",
+        "OpenAI API Key (Enter to skip)",
         default=config.get("OPENAI_API_KEY", ""),
         password=True,
     )
@@ -164,8 +164,9 @@ def interactive_setup() -> Config:
         config.set("OPENAI_API_KEY", openai_key)
     
     if not config.has_api_key():
-        console.print("\n[bold red][!] No API keys configured![/]")
-        console.print("You need at least one API key to use NumaSec.\n")
+        console.print("\n[bold yellow]No API keys configured.[/]")
+        console.print("Try the demo first: [bold #00ff41]numasec --demo[/]\n")
+        console.print("Then set a key: [dim]export DEEPSEEK_API_KEY=\"sk-...\"[/]\n")
         return config
     
     # Save config (may fail in container, that's OK)
@@ -173,11 +174,11 @@ def interactive_setup() -> Config:
     
     # Check if save was successful
     if CONFIG_FILE.exists():
-        console.print(f"\n[bold green][+] Config saved to:[/] {CONFIG_FILE}")
-        console.print("\nYou can edit it anytime: [cyan]~/.numasec/config.yaml[/]\n")
+        console.print(f"\n[bold #00ff41]✓ Config saved:[/] {CONFIG_FILE}")
+        console.print("Edit anytime: [cyan]~/.numasec/config.yaml[/]\n")
     else:
-        console.print(f"\n[bold yellow][+] Config loaded (session-only)[/]")
-        console.print("Note: Could not save to disk (container permissions).")
+        console.print(f"\n[bold yellow]✓ Config loaded (session-only)[/]")
+        console.print("Could not save to disk (container permissions).")
         console.print("Use environment variables for persistent config.\n")
     
     return config
