@@ -70,6 +70,16 @@ You: check http://localhost:3000 for security issues
   └──────────────────────────────────────────────────────┘
 ```
 
+### The Report You Get
+
+Every assessment produces a clean, human-readable HTML report — findings ranked by severity, evidence included, fixes explained step by step.
+
+<div align="center">
+<img src="docs/assets/report.gif" alt="NumaSec Security Report" width="700">
+<br>
+<sub>Real report from a scan. Generated automatically.</sub>
+</div>
+
 ---
 
 ## Quick Start
