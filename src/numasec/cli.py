@@ -49,7 +49,7 @@ except ImportError:
     GOLD = "yellow"
 
 from numasec.agent import Agent
-from numasec.renderer import StreamRenderer, matrix_rain
+from numasec.renderer import StreamRenderer, matrix_rain, startup_animation
 
 from numasec.session import SessionManager
 from numasec.cost_tracker import CostTracker
@@ -264,6 +264,27 @@ class NumaSecCLI:
         tool_call_number = 0
         target_banner_shown = False
 
+        # ── Status tracking for visual feedback ──
+        finding_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        last_status_tool = 0  # show status bar every N tools
+        STATUS_BAR_INTERVAL = 3  # show status bar every 3 tool calls
+
+        # ── Intel tracking: snapshot profile to detect changes ──
+        def _snapshot_profile():
+            """Capture profile state to detect new discoveries."""
+            if not self.agent:
+                return {}
+            p = self.agent.state.profile
+            return {
+                "ports": len(p.ports) if hasattr(p, "ports") else 0,
+                "endpoints": len(p.endpoints) if hasattr(p, "endpoints") else 0,
+                "techs": len(p.technologies) if hasattr(p, "technologies") else 0,
+                "creds": len(p.credentials) if hasattr(p, "credentials") else 0,
+                "hypotheses": len(p.hypotheses) if hasattr(p, "hypotheses") else 0,
+            }
+
+        profile_snapshot = _snapshot_profile()
+
         try:
             # Start spinner while waiting for first LLM response
             renderer.spinner_start("thinking")
@@ -290,12 +311,62 @@ class NumaSecCLI:
                 elif event.type == "tool_end":
                     renderer.tool_result(event.tool_name, event.tool_result, current_args)
                     current_args = {}
+
+                    # ── Intel feed: show what the AI learned ──
+                    new_snapshot = _snapshot_profile()
+                    delta_ports = new_snapshot["ports"] - profile_snapshot["ports"]
+                    delta_endpoints = new_snapshot["endpoints"] - profile_snapshot["endpoints"]
+                    delta_techs = new_snapshot["techs"] - profile_snapshot["techs"]
+                    delta_creds = new_snapshot["creds"] - profile_snapshot["creds"]
+                    delta_hyp = new_snapshot["hypotheses"] - profile_snapshot["hypotheses"]
+                    if any([delta_ports, delta_endpoints, delta_techs, delta_creds, delta_hyp]):
+                        renderer.intel_update(
+                            new_ports=max(0, delta_ports),
+                            new_endpoints=max(0, delta_endpoints),
+                            new_techs=max(0, delta_techs),
+                            new_creds=max(0, delta_creds),
+                            new_hypotheses=max(0, delta_hyp),
+                        )
+                    profile_snapshot = new_snapshot
+
+                    # ── Status bar: periodic progress update ──
+                    if tool_call_number - last_status_tool >= STATUS_BAR_INTERVAL:
+                        last_status_tool = tool_call_number
+                        current_phase_name = ""
+                        phase_num = 0
+                        total_phases = 0
+                        if self.agent and self.agent.state.plan:
+                            plan = self.agent.state.plan
+                            total_phases = len(plan.phases)
+                            for i, phase in enumerate(plan.phases):
+                                if phase.status.value == "active":
+                                    current_phase_name = phase.name
+                                    phase_num = i + 1
+                                    break
+                                elif phase.status.value == "complete":
+                                    phase_num = i + 1
+                        elapsed = time.monotonic() - assessment_start
+                        total_cost = self.cost_tracker.get_total_cost()
+                        renderer.status_bar(
+                            phase_name=current_phase_name,
+                            phase_num=phase_num,
+                            total_phases=total_phases,
+                            finding_counts=finding_counts,
+                            tool_count=tool_call_number,
+                            cost=total_cost,
+                            elapsed_s=elapsed,
+                        )
+
                     # Restart spinner while LLM processes tool results
                     renderer.spinner_start("analyzing")
 
                 elif event.type == "finding":
                     renderer.spinner_stop()
                     renderer.finding(event.finding)
+                    # Track severity counts for status bar
+                    sev = event.finding.severity if hasattr(event.finding, "severity") else "info"
+                    if sev in finding_counts:
+                        finding_counts[sev] += 1
                     # Auto-save session
                     self._save_current_state()
 
@@ -345,7 +416,18 @@ class NumaSecCLI:
                     renderer.spinner_stop()
                     phase_name = event.data.get("phase_name", "")
                     next_phase = event.data.get("next_phase", "")
-                    renderer.phase_transition(phase_name, next_phase)
+                    # Calculate phase progress
+                    phase_num = 0
+                    total_phases = 0
+                    if self.agent and self.agent.state.plan:
+                        plan = self.agent.state.plan
+                        total_phases = len(plan.phases)
+                        for i, phase in enumerate(plan.phases):
+                            if phase.status.value == "complete":
+                                phase_num = i + 1
+                    renderer.phase_transition(phase_name, next_phase,
+                                              phase_num=phase_num,
+                                              total_phases=total_phases)
 
                 elif event.type == "reflection":
                     # Recovery guidance is injected into the agent context.
@@ -571,7 +653,7 @@ class NumaSecCLI:
     # ──────────────────────────────────────────────────────────
 
     def _print_banner(self):
-        """Print startup banner — matrix rain + ASCII art + status."""
+        """Print startup banner — matrix rain + ASCII art + animated system check."""
         from numasec.theme import CyberpunkAssets
 
         self.console.clear()
@@ -588,11 +670,8 @@ class NumaSecCLI:
         # ASCII art
         self.console.print(CyberpunkAssets.MATRIX_BANNER)
 
-        # System status — clean lines, no panel
-        tools_count = len(self.agent.tools.tools) if self.agent else "?"
-
         # Detect active provider
-        provider_name = "DeepSeek/Claude/OpenAI"
+        provider_name = "DeepSeek"
         if self.agent and hasattr(self.agent, 'router'):
             try:
                 p = self.agent.router.primary.value
@@ -600,14 +679,26 @@ class NumaSecCLI:
             except Exception:
                 pass
 
-        self.console.print(f"  [bold {MATRIX_GREEN}]● Ready[/]")
-        self.console.print(f"  [{GHOST_GRAY}]● AI: {provider_name}[/]")
-        self.console.print(f"  [{GHOST_GRAY}]● Tools: {tools_count} available[/]")
-        if os.environ.get("NUMASEC_SHOW_BROWSER"):
-            self.console.print(f"  [{ELECTRIC_CYAN}]● Browser: visible mode[/]")
-        self.console.print()
-        self.console.print(f"  [{GHOST_GRAY}]Paste a URL or describe what to check. /help for commands.[/]")
-        self.console.print()
+        # Count tools and knowledge
+        tools_count = len(self.agent.tools.tools) if self.agent else 19
+        knowledge_count = 46  # knowledge files
+
+        # Animated startup sequence — dramatic system check
+        try:
+            startup_animation(
+                self.console,
+                provider=provider_name,
+                tools_count=tools_count,
+                knowledge_count=knowledge_count,
+            )
+        except Exception:
+            # Fallback to simple status
+            self.console.print(f"  [bold {MATRIX_GREEN}]● Ready[/]")
+            self.console.print(f"  [{GHOST_GRAY}]● AI: {provider_name}[/]")
+            self.console.print(f"  [{GHOST_GRAY}]● Tools: {tools_count} available[/]")
+            self.console.print()
+            self.console.print(f"  [{GHOST_GRAY}]Paste a URL or describe what to check. /help for commands.[/]")
+            self.console.print()
 
     def _print_help(self):
         """Print help — clean text, no panels."""
