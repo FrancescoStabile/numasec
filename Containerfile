@@ -55,40 +55,39 @@ RUN git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git /opt/sqlmap 
     chmod +x /usr/local/bin/sqlmap
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Stage 2: ProjectDiscovery Tools (nuclei, httpx, subfinder)
+# Stage 2: ProjectDiscovery Tools (nuclei, httpx, subfinder) + ffuf
+# Pinned versions for reproducible builds. Update periodically.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# nuclei
-RUN NUCLEI_VERSION=$(curl -sL https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | grep -Po '"tag_name": "v\K[^"]*') && \
-    curl -sL "https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_${NUCLEI_VERSION}_linux_amd64.zip" -o /tmp/nuclei.zip && \
-    unzip -o /tmp/nuclei.zip -d /tmp && \
-    mv /tmp/nuclei /usr/local/bin/ && \
+ARG NUCLEI_VERSION=3.7.0
+ARG HTTPX_VERSION=1.8.1
+ARG SUBFINDER_VERSION=2.12.0
+ARG FFUF_VERSION=2.1.0
+
+# Install all security tools in a single layer (fewer layers = smaller image)
+RUN set -eux && \
+    # --- nuclei ---
+    curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_amd64.zip" -o /tmp/nuclei.zip && \
+    unzip -o /tmp/nuclei.zip -d /tmp/nuclei_extract && \
+    mv /tmp/nuclei_extract/nuclei /usr/local/bin/ && \
     chmod +x /usr/local/bin/nuclei && \
-    rm -f /tmp/nuclei.zip
-
-# httpx
-RUN HTTPX_VERSION=$(curl -sL https://api.github.com/repos/projectdiscovery/httpx/releases/latest | grep -Po '"tag_name": "v\K[^"]*') && \
-    curl -sL "https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_${HTTPX_VERSION}_linux_amd64.zip" -o /tmp/httpx.zip && \
-    unzip -o /tmp/httpx.zip -d /tmp && \
-    mv /tmp/httpx /usr/local/bin/ && \
+    # --- httpx ---
+    curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_amd64.zip" -o /tmp/httpx.zip && \
+    unzip -o /tmp/httpx.zip -d /tmp/httpx_extract && \
+    mv /tmp/httpx_extract/httpx /usr/local/bin/ && \
     chmod +x /usr/local/bin/httpx && \
-    rm -f /tmp/httpx.zip
-
-# subfinder
-RUN SUBFINDER_VERSION=$(curl -sL https://api.github.com/repos/projectdiscovery/subfinder/releases/latest | grep -Po '"tag_name": "v\K[^"]*') && \
-    curl -sL "https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_${SUBFINDER_VERSION}_linux_amd64.zip" -o /tmp/subfinder.zip && \
-    unzip -o /tmp/subfinder.zip -d /tmp && \
-    mv /tmp/subfinder /usr/local/bin/ && \
+    # --- subfinder ---
+    curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_amd64.zip" -o /tmp/subfinder.zip && \
+    unzip -o /tmp/subfinder.zip -d /tmp/subfinder_extract && \
+    mv /tmp/subfinder_extract/subfinder /usr/local/bin/ && \
     chmod +x /usr/local/bin/subfinder && \
-    rm -f /tmp/subfinder.zip
-
-# ffuf (web fuzzer)
-RUN FFUF_VERSION=$(curl -sL https://api.github.com/repos/ffuf/ffuf/releases/latest | grep -Po '"tag_name": "v\K[^"]*') && \
-    curl -sL "https://github.com/ffuf/ffuf/releases/latest/download/ffuf_${FFUF_VERSION}_linux_amd64.tar.gz" -o /tmp/ffuf.tar.gz && \
+    # --- ffuf ---
+    curl -fsSL "https://github.com/ffuf/ffuf/releases/download/v${FFUF_VERSION}/ffuf_${FFUF_VERSION}_linux_amd64.tar.gz" -o /tmp/ffuf.tar.gz && \
     tar -xzf /tmp/ffuf.tar.gz -C /tmp && \
     mv /tmp/ffuf /usr/local/bin/ && \
     chmod +x /usr/local/bin/ffuf && \
-    rm -f /tmp/ffuf.tar.gz
+    # --- cleanup ---
+    rm -rf /tmp/*.zip /tmp/*.tar.gz /tmp/*_extract /tmp/LICENSE* /tmp/README*
 
 # Update nuclei templates
 RUN nuclei -ut || true
