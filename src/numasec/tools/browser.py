@@ -303,30 +303,52 @@ class BrowserManager:
             self._session_cookies_file.unlink()
     
     async def close(self):
-        """Close browser and cleanup."""
+        """Close browser and cleanup. Suppresses errors during shutdown."""
         # Save session before closing
-        await self.save_session_cookies()
+        try:
+            await self.save_session_cookies()
+        except Exception:
+            pass
         
         # Close session page
-        if self._session_page and not self._session_page.is_closed():
-            await self._session_page.close()
-            self._session_page = None
+        try:
+            if self._session_page and not self._session_page.is_closed():
+                await self._session_page.close()
+        except Exception:
+            pass
+        self._session_page = None
         
         # Cleanup context pool
-        if self._context_pool:
-            await self._context_pool.cleanup()
-            self._context_pool = None
+        try:
+            if self._context_pool:
+                await self._context_pool.cleanup()
+        except Exception:
+            pass
+        self._context_pool = None
         
-        if self._session_context:
-            await self._session_context.close()
-            self._session_context = None
+        # Close session context
+        try:
+            if self._session_context:
+                await self._session_context.close()
+        except Exception:
+            pass
+        self._session_context = None
         
-        if self._browser:
-            await self._browser.close()
-            self._browser = None
-        if self._playwright:
-            await self._playwright.stop()
-            self._playwright = None
+        # Close browser
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception:
+            pass
+        self._browser = None
+
+        # Stop Playwright driver — this is where the Future leak originates
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception:
+            pass
+        self._playwright = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

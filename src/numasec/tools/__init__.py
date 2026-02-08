@@ -76,6 +76,26 @@ class ToolRegistry:
         """Register a tool."""
         self.tools[name] = {"func": func, "schema": schema}
     
+    async def close(self):
+        """Cleanup all async resources (browser, HTTP client)."""
+        # Close global HTTP client
+        global _http_client
+        if _http_client and not _http_client.is_closed:
+            try:
+                await _http_client.aclose()
+            except Exception:
+                pass
+            _http_client = None
+
+        # Close browser singleton
+        try:
+            from numasec.tools.browser import BrowserManager, PLAYWRIGHT_AVAILABLE
+            if PLAYWRIGHT_AVAILABLE:
+                manager = BrowserManager()
+                await manager.close()
+        except Exception:
+            pass
+
     def set_scope(self, targets: list[str]):
         """Set allowed targets for scope checking."""
         self.allowed_targets = targets

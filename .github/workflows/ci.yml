@@ -42,14 +42,15 @@ jobs:
       run: |
         mypy src/numasec --ignore-missing-imports --no-error-summary || true
 
-    - name: Run unit tests
+    - name: Run tests
       run: |
-        PYTHONPATH=src pytest tests/unit/ -v --tb=short
+        PYTHONPATH=src pytest tests/ -v --tb=short
 
     - name: Check imports
       run: |
-        python -c "from numasec.agent.agent import NumaSecAgent; print('✅ Core imports OK')"
-        python -c "from numasec.cli.app import app; print('✅ CLI imports OK')"
+        python -c "from numasec.agent import Agent; print('✅ Agent imports OK')"
+        python -c "from numasec.cli import NumaSecCLI; print('✅ CLI imports OK')"
+        python -c "from numasec.tools import create_tool_registry; print('✅ Tools imports OK')"
 
   security:
     runs-on: ubuntu-latest

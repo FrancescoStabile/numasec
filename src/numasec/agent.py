@@ -709,8 +709,20 @@ class Agent:
         self.error_counter.clear()
     
     async def close(self):
-        """Cleanup resources."""
-        await self.router.close()
+        """Cleanup all resources — router, browser, HTTP client."""
+        errors = []
+        # Close tool resources (browser, HTTP client) first
+        try:
+            await self.tools.close()
+        except Exception as e:
+            errors.append(f"tools: {e}")
+        # Close LLM router (HTTP connections to providers)
+        try:
+            await self.router.close()
+        except Exception as e:
+            errors.append(f"router: {e}")
+        if errors:
+            logger.debug(f"Cleanup warnings: {'; '.join(errors)}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

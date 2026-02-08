@@ -217,13 +217,30 @@ class SessionManager:
         
         return md
     
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Escape HTML special characters to prevent XSS."""
+        return (
+            str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#x27;")
+        )
+
     def _export_html(self, session: Session) -> str:
         """Export session as HTML."""
+        esc = self._escape
+        target = esc(session.target or 'N/A')
+        sid = esc(session.id)
+        ts = esc(str(session.timestamp))
+
         html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>NumaSec Report - {session.target or 'N/A'}</title>
+    <title>NumaSec Report - {target}</title>
     <style>
         body {{ font-family: 'Courier New', monospace; background: #000; color: #00ff41; padding: 20px; }}
         .header {{ border-bottom: 2px solid #00ff41; padding-bottom: 10px; margin-bottom: 20px; }}
@@ -238,24 +255,27 @@ class SessionManager:
 <body>
     <div class="header">
         <h1>NumaSec Session Report</h1>
-        <p><strong>Session ID:</strong> {session.id}</p>
-        <p><strong>Date:</strong> {session.timestamp}</p>
-        <p><strong>Target:</strong> {session.target or 'N/A'}</p>
+        <p><strong>Session ID:</strong> {sid}</p>
+        <p><strong>Date:</strong> {ts}</p>
+        <p><strong>Target:</strong> {target}</p>
         <p><strong>Cost:</strong> ${session.cost:.4f}</p>
     </div>
     <h2>Findings ({len(session.findings)})</h2>
 """
         
         for i, finding in enumerate(session.findings, 1):
-            severity_class = finding['severity'].lower()
+            severity_class = esc(finding['severity'].lower())
+            title = esc(finding['title'])
+            desc = esc(finding['description'])
+            sev_label = esc(finding['severity'].upper())
             html += f"""
     <div class="finding {severity_class}">
-        <div class="severity">[{finding['severity'].upper()}]</div>
-        <h3>{i}. {finding['title']}</h3>
-        <p><strong>Description:</strong> {finding['description']}</p>
+        <div class="severity">[{sev_label}]</div>
+        <h3>{i}. {title}</h3>
+        <p><strong>Description:</strong> {desc}</p>
 """
             if finding.get('evidence'):
-                html += f"<p><strong>Evidence:</strong></p><pre>{finding['evidence']}</pre>"
+                html += f"<p><strong>Evidence:</strong></p><pre>{esc(finding['evidence'])}</pre>"
             html += "    </div>\n"
         
         html += """

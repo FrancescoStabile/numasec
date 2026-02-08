@@ -2,13 +2,11 @@
 
 # NumaSec
 
-**AI security testing for your apps.**
+### Vibe coding changed how we build. NumaSec changes how we secure it.
 
-Paste a URL. Get a security report. Fix what matters.
+One command. Real vulnerabilities. Full report. **$0.12.**
 
 <img src="docs/assets/demo.gif" alt="NumaSec Demo" width="700">
-
-[Get Started](#quick-start) · [How It Works](#how-it-works) · [Architecture](#architecture) · [Docs](docs/)
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)](https://python.org)
@@ -18,14 +16,14 @@ Paste a URL. Get a security report. Fix what matters.
 
 ---
 
-**Vibe coding gave everyone the power to build. NumaSec gives everyone the power to secure what they build.**
+You describe the target. NumaSec runs 19 security tools, finds real vulnerabilities, and writes the report. No security expertise. No config files. No $10K consultant.
 
-NumaSec is an open-source CLI that checks your app for security vulnerabilities — automatically. You tell it what to test, it figures out the rest: finds open ports, checks for SQL injection, tests your forms, and generates a report explaining what's wrong and how to fix it.
-
-No security expertise required. Average cost: **$0.12** with DeepSeek. Average time: **5 minutes**.
+```bash
+pip install numasec && numasec --demo
+```
 
 ```
-You: check http://localhost:3000 for security issues
+λ check http://localhost:3000 for security issues
 
   ◉ SCANNING
   http://localhost:3000
@@ -53,6 +51,18 @@ You: check http://localhost:3000 for security issues
   │ Fix:        Block .env in Express static config
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ▲▲ CRITICAL — SQL Injection in Login
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  │ The login endpoint doesn't sanitize input. A single
+  │ payload bypasses authentication and grants admin access
+  │ to any account.
+  │
+  │ Payload:    ' OR '1'='1
+  │ Evidence:   POST /api/auth/login → 200 OK with admin token
+  │ Fix:        Use parameterized queries (Prisma/Sequelize)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
   ┌──────────────────────────────────────────────────────┐
   │              ASSESSMENT COMPLETE                     │
   │                                                      │
@@ -70,160 +80,124 @@ You: check http://localhost:3000 for security issues
   └──────────────────────────────────────────────────────┘
 ```
 
-### The Report You Get
+---
 
-Every assessment produces a clean, human-readable HTML report — findings ranked by severity, evidence included, fixes explained step by step.
+## What It Finds
 
-<div align="center">
-<img src="docs/assets/report.gif" alt="NumaSec Security Report" width="700">
-<br>
-<sub>Real report from a scan. Generated automatically.</sub>
-</div>
+NumaSec doesn't just scan — it thinks. It plans an attack strategy, picks the right tools, adapts based on what it discovers, and escalates when it finds something real.
+
+| What it tests | How |
+|--------------|-----|
+| **Exposed secrets** — .env files, API keys, credentials in source | HTTP probing, directory fuzzing |
+| **SQL injection** — auth bypass, data extraction, blind injection | Manual payloads → sqlmap escalation |
+| **XSS** — reflected, stored, DOM-based in forms and search fields | Playwright browser automation with screenshots |
+| **Misconfigurations** — missing headers, debug mode, stack traces | Response analysis, technology fingerprinting |
+| **Known CVEs** — outdated frameworks, vulnerable dependencies | Nuclei templates, version detection |
+| **Auth flaws** — default creds, IDOR, broken access controls | Login testing, session analysis |
+
+Every finding comes with evidence and a fix — not just "vulnerability found", but *what's wrong*, *why it matters*, and *exactly how to fix it*.
 
 ---
 
 ## Quick Start
 
-### Install
-
 ```bash
 pip install numasec
 ```
 
-### See it in action (no API key needed)
+**See it work instantly** — no API key, no target, no setup:
 
 ```bash
 numasec --demo
 ```
 
-### Configure
+**Run it for real** — set one API key and go:
 
 ```bash
-# DeepSeek (cheapest — ~$0.12/scan, 1M free tokens for new accounts)
-export DEEPSEEK_API_KEY="sk-..."
-
-# Or Claude / OpenAI (automatic fallback)
-export ANTHROPIC_API_KEY="sk-ant-..."
-export OPENAI_API_KEY="sk-..."
+export DEEPSEEK_API_KEY="sk-..."    # ~$0.12/scan, 1M free tokens for new accounts
+numasec
 ```
 
-### Check your app
+That's it. Paste a URL, describe what to test, and NumaSec handles the rest.
+
+<details>
+<summary><b>More options</b> — Claude, OpenAI, Ollama, browser mode, security tools</summary>
 
 ```bash
-numasec                              # Interactive mode
-numasec check http://localhost:3000  # Quick one-shot check
-```
+# AI providers (set any combination — automatic fallback)
+export DEEPSEEK_API_KEY="sk-..."          # Cheapest (~$0.12/scan)
+export ANTHROPIC_API_KEY="sk-ant-..."     # Best reasoning
+export OPENAI_API_KEY="sk-..."            # General purpose
+# Ollama detected automatically if running locally (free)
 
-That's it. Describe what you want to test and NumaSec handles the rest.
-
-### Optional: Full Power
-
-```bash
-# Browser automation (XSS testing, form filling, screenshots)
+# Browser automation — XSS testing, form filling, visual evidence
 playwright install chromium
 
-# Security tools (advanced scanning)
+# Security scanners — advanced vulnerability detection
 sudo apt install nmap sqlmap
 # nuclei: https://github.com/projectdiscovery/nuclei
+
+# Usage
+numasec                              # Interactive mode
+numasec check http://localhost:3000  # One-shot check
+numasec --show-browser               # Watch the browser in real-time
+numasec --budget 5.0                 # Set cost limit
+numasec --resume <session-id>        # Resume a previous session
 ```
+
+</details>
+
+---
+
+## The Report
+
+Every assessment produces a professional HTML report — dark theme, severity donut chart, evidence blocks, remediation steps. Share it with your team, attach it to a ticket, or hand it to an AI to fix the code.
+
+<div align="center">
+<img src="docs/assets/report.gif" alt="NumaSec Security Report" width="700">
+</div>
 
 ---
 
 ## How It Works
 
-NumaSec is an AI agent that thinks like a security tester. It plans what to check, uses real security tools, analyzes the results, and adapts — just like a human would, but faster and cheaper.
-
 ```
-Your app URL
-  → AI plans the assessment (discovery → testing → results)
-  → For each step:
-      → AI picks the right tool + arguments
-      → Tool runs (http requests, browser tests, scanners)
-      → Results are analyzed automatically
-      → AI decides what to check next
-  → Security issues documented with evidence
-  → Report generated with fixes
+You describe the target
+  → AI plans the attack (discovery → mapping → testing → exploitation → results)
+  → Picks the right tool for each step (19 tools: nmap, sqlmap, Playwright, nuclei...)
+  → Analyzes results, generates hypotheses, adapts the plan
+  → Confirmed findings documented with evidence and fixes
+  → Professional report generated automatically
 ```
 
-The agent adapts in real-time. If it finds a suspicious endpoint, it tests it. If SQL injection is confirmed, it digs deeper. If a tool isn't installed, it falls back to HTTP requests and browser automation.
+It's not a scanner. It's not a ChatGPT wrapper. It's an autonomous agent with structured memory, attack planning, 14 result extractors, 14 escalation chains, and a 46-file knowledge base — all orchestrated by a ReAct loop that thinks before it acts.
 
----
-
-## Tools
-
-19 integrated security tools, all orchestrated by the agent:
-
-| Category | Tools |
-|----------|-------|
-| **Recon** | `nmap` · `httpx` · `subfinder` · `ffuf` |
-| **Web Testing** | `http` · `browser_navigate` · `browser_fill` · `browser_click` · `browser_screenshot` · `browser_login` · `browser_get_cookies` · `browser_set_cookies` · `browser_clear_session` |
-| **Exploitation** | `nuclei` · `sqlmap` · `run_exploit` |
-| **Utility** | `read_file` · `write_file` · `run_command` |
-
-The browser tools use Playwright for full JavaScript rendering — SPAs, form interactions, authenticated sessions, and visual evidence capture.
-
-```bash
-# Watch the browser in real-time during assessments
-numasec --show-browser
-```
-
----
-
-## Architecture
+<details>
+<summary><b>Architecture deep dive</b></summary>
 
 ```
-cli.py          → Interactive REPL with streaming output
-agent.py        → AI loop (max 50 iterations, loop detection, circuit breaker)
-router.py       → Multi-provider AI routing (DeepSeek → Claude → OpenAI → Ollama)
-planner.py      → 5-phase testing plan (discovery → mapping → testing → analysis → results)
-state.py        → Structured memory (what's been found so far)
-extractors.py   → 14 extractors parse tool output into structured data
+cli.py          → Interactive REPL with real-time streaming
+agent.py        → ReAct loop (50 iterations, loop detection, circuit breaker)
+router.py       → Multi-provider LLM routing (DeepSeek → Claude → OpenAI → Ollama)
+planner.py      → 5-phase attack plan (discovery → mapping → testing → analysis → results)
+state.py        → Structured memory (TargetProfile with ports, endpoints, technologies)
+extractors.py   → 14 extractors parse tool output into structured data automatically
 reflection.py   → 7 tool-specific analyzers guide what to check next
-chains.py       → 14 escalation chains (SQLi→RCE, LFI→RCE, SSTI→RCE, etc.)
+chains.py       → 14 escalation chains (SQLi→RCE, LFI→RCE, SSTI→RCE, XSS→session theft...)
 knowledge/      → 46 attack patterns, cheatsheets, and payload references
 report.py       → Reports in Markdown, HTML, and JSON
 plugins.py      → Extend with custom tools, chains, and extractors
-renderer.py     → Terminal UI with real-time streaming
+renderer.py     → Terminal UI with character-by-character streaming
 ```
 
-**11,800+ lines of Python. 184 tests. 5 core dependencies.**
+11,800+ lines of Python. 184 tests. 5 core dependencies.
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical details.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full technical breakdown.
 
----
+</details>
 
-## Usage
-
-### CLI
-
-```bash
-numasec                              # Interactive mode
-numasec check http://localhost:3000  # Quick one-shot check
-numasec --demo                       # See it in action (no API key)
-numasec --show-browser               # Watch the browser testing in real-time
-numasec --verbose                    # Debug logging
-numasec --budget 5.0                 # Set cost limit
-numasec --resume <session-id>        # Resume a previous session
-```
-
-### Commands
-
-```
-/plan          Show testing progress
-/findings      List discovered security issues
-/report html   Generate full HTML report
-/export md     Export Markdown report
-/export json   Export JSON report
-/cost          Show cost breakdown by provider
-/stats         Session statistics
-/history       Recent sessions
-/resume <id>   Resume a session
-/demo          Run demo assessment
-/clear         Reset session
-/quit          Exit
-```
-
-### Python API
+<details>
+<summary><b>Python API</b></summary>
 
 ```python
 from numasec.agent import Agent
@@ -243,78 +217,41 @@ async for event in agent.run("find SQLi in localhost:3000"):
         print(f"Found: {event.finding.title}")
 ```
 
----
-
-## LLM Providers
-
-NumaSec supports multiple LLM providers with automatic fallback:
-
-| Provider | Avg. Cost | Best For |
-|----------|-----------|----------|
-| **DeepSeek** | $0.12/assessment | Default — best cost/performance ratio |
-| **Claude** | $0.50–0.80/assessment | Complex reasoning, report writing |
-| **OpenAI** | $0.40–0.70/assessment | General purpose |
-| **Ollama** | Free (local) | Offline use, privacy-sensitive targets |
-
-Set any combination of API keys. NumaSec routes to the cheapest available provider and falls back automatically on failure.
+</details>
 
 ---
 
-## Cost
+## Legal
 
-| Approach | Cost | Time |
-|----------|------|------|
-| Hiring a security consultant | $2,000–10,000 | 1–2 weeks |
-| Learning security yourself | Free | Months |
-| NumaSec + DeepSeek | **$0.10–0.15** | 5–15 minutes |
-| NumaSec + Claude | $0.30–0.80 | 5–15 minutes |
+**Only test apps you own or have explicit permission to test.** NumaSec is a security tool — use it responsibly.
 
----
+✅ Your own apps, staging/production environments, bug bounty targets, practice labs (DVWA, Juice Shop, HackTheBox)
 
-## Legal & Ethics
-
-**Only test apps you own or have permission to test.**
-
-✅ OK to test:
-- Your own apps (localhost, staging, production)
-- Bug bounty targets (HackerOne, Bugcrowd)
-- Practice environments (DVWA, Juice Shop, HackTheBox)
-- Systems with written authorization
-
-❌ Not OK:
-- Other people's apps without permission
-- Random websites on the internet
+❌ Other people's apps without written authorization
 
 ---
 
 ## Roadmap
 
-See [VISION.md](docs/notes/VISION.md) for the full technical blueprint.
-
-**Next up:**
-- Parallel tool execution (asyncio.gather for independent calls)
-- LLM-powered planning (adaptive plans based on target type)
+- Parallel tool execution (asyncio.gather for independent scans)
+- LLM-powered planning (adaptive strategies based on target type)
 - Benchmark suite (automated scoring against DVWA, Juice Shop, WebGoat)
 - CI/CD integration (security gates in deployment pipelines)
 - MCP integration (Model Context Protocol for tool interoperability)
+
+See [VISION.md](docs/notes/VISION.md) for the full technical blueprint.
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Issues, PRs, and feedback are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Issues, PRs, and feedback welcome.
 
 ---
 
-## Author
-
-**Francesco Stabile** — Making security accessible to every developer.
+**Built by [Francesco Stabile](https://www.linkedin.com/in/francesco-stabile-dev)** — making security accessible to every developer.
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/francesco-stabile-dev)
 [![X](https://img.shields.io/badge/X-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/Francesco_Sta)
 
----
-
-## License
-
-[MIT](LICENSE)
+[MIT License](LICENSE)

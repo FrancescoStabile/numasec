@@ -122,21 +122,26 @@ def get_escalation_chain(vuln_type: str) -> list[ChainStep] | None:
         if key in normalized or normalized in key:
             return chain
 
-    # Keyword match
-    keyword_map = {
-        "sql": "sqli",
-        "injection": "command_injection",
-        "template": "ssti",
-        "upload": "file_upload",
-        "cross_site": "xss",
-        "cross-site": "xss",
-        "local_file": "lfi",
-        "remote_file": "rfi",
-        "server_side_request": "ssrf",
-        "xml": "xxe",
-        "deseriali": "deserialization",
-    }
-    for keyword, chain_key in keyword_map.items():
+    # Keyword match — ordered by specificity (longer/more-specific first)
+    keyword_map = [
+        ("sql_injection", "sqli"),
+        ("sql", "sqli"),
+        ("nosql", "nosql_injection"),
+        ("cross_site", "xss"),
+        ("cross-site", "xss"),
+        ("local_file", "lfi"),
+        ("remote_file", "rfi"),
+        ("server_side_request", "ssrf"),
+        ("command_injection", "command_injection"),
+        ("template", "ssti"),
+        ("upload", "file_upload"),
+        ("xml", "xxe"),
+        ("deseriali", "deserialization"),
+        ("ldap", "ldap_injection"),
+        ("graphql", "graphql"),
+        ("injection", "command_injection"),
+    ]
+    for keyword, chain_key in keyword_map:
         if keyword in normalized:
             return ATTACK_CHAINS.get(chain_key)
 

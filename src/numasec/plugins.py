@@ -406,7 +406,7 @@ class PluginManager:
         loaded_names = {p.meta.name for p in self.loaded}
 
         for meta in self.discovered:
-            status = "loaded" if meta.name in loaded_names else "error" if not meta.enabled else "disabled"
+            status = "loaded" if meta.name in loaded_names else "disabled" if not meta.enabled else "error"
             result.append({
                 **meta.to_dict(),
                 "status": status,

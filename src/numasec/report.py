@@ -800,7 +800,13 @@ def _inline_md(text: str) -> str:
 
 def _escape_html(text: str) -> str:
     """Escape HTML special characters."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

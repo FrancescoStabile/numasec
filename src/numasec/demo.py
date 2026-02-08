@@ -295,12 +295,15 @@ async def run_demo(console: Console | None = None):
     )
 
     # ── Demo outro ──
+    finding_count = len(findings)
+    crit_count = sum(1 for f in findings if f.severity.lower() == "critical")
     console.print()
-    console.print(f"  [{GHOST_GRAY}]This was a demo — no real systems were tested.[/]")
-    console.print(f"  [{MATRIX_GREEN}]Run it on a real target — set an API key and go:[/]")
-    console.print(f"  [{GHOST_GRAY}]  export DEEPSEEK_API_KEY=\"sk-...\"[/]")
-    console.print(f"  [{GHOST_GRAY}]  numasec[/]")
-    console.print(f"  [{GHOST_GRAY}]GitHub: https://github.com/FrancescoStabile/numasec[/]")
+    console.print(f"  [{MATRIX_GREEN}]NumaSec found {finding_count} vulnerabilities ({crit_count} critical) in under 5 minutes.[/]")
+    console.print(f"  [{MATRIX_GREEN}]Imagine what it finds on your app.[/]")
+    console.print()
+    console.print(f"  [{GHOST_GRAY}]Get started:[/]")
+    console.print(f"  [{MATRIX_GREEN}]  export DEEPSEEK_API_KEY=\"sk-...\"[/]")
+    console.print(f"  [{MATRIX_GREEN}]  numasec[/]")
     console.print()
 
 

@@ -16,8 +16,33 @@ import sys
 from numasec import __version__
 
 
+def _suppress_shutdown_noise(loop: asyncio.AbstractEventLoop):
+    """Suppress 'Future exception was never retrieved' from Playwright during shutdown."""
+    original_handler = loop.get_exception_handler()
+
+    def handler(loop, context):
+        msg = context.get("message", "")
+        exc = context.get("exception")
+        # Suppress Playwright driver disconnection noise on shutdown
+        if exc and "Connection closed while reading from the driver" in str(exc):
+            return
+        if "Future exception was never retrieved" in msg:
+            if exc and "driver" in str(exc).lower():
+                return
+        # Everything else: use original handler or default
+        if original_handler:
+            original_handler(loop, context)
+        else:
+            loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+
+
 async def async_main():
     """Async main entry point."""
+    # Suppress Playwright shutdown noise early
+    _suppress_shutdown_noise(asyncio.get_running_loop())
+
     parser = argparse.ArgumentParser(
         description="NumaSec — AI Security Testing for Your Apps",
         epilog="Examples:\n"
