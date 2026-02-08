@@ -8,9 +8,10 @@ One command. Real vulnerabilities. Full report. **$0.12.**
 
 <img src="docs/assets/demo.gif" alt="NumaSec Demo" width="700">
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-184_passed-green?style=flat-square)](#)
+[![$0.12/scan](https://img.shields.io/badge/cost-$0.12%2Fscan-00ff41?style=flat-square&labelColor=0d1117)](#quick-start)
+[![20 Security Tools](https://img.shields.io/badge/tools-20_security_scanners-00ff41?style=flat-square&labelColor=0d1117)](#what-it-finds)
+[![Bring Your Own LLM](https://img.shields.io/badge/LLM-bring_your_own-00ff41?style=flat-square&labelColor=0d1117)](#quick-start)
+[![MIT License](https://img.shields.io/badge/license-MIT-00ff41?style=flat-square&labelColor=0d1117)](LICENSE)
 
 </div>
 
@@ -190,7 +191,7 @@ plugins.py      → Extend with custom tools, chains, and extractors
 renderer.py     → Terminal UI with character-by-character streaming
 ```
 
-11,800+ lines of Python. 184 tests. 5 core dependencies.
+12,000+ lines of Python. 170+ tests. 5 core dependencies.
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full technical breakdown.
 

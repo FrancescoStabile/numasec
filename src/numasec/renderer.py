@@ -181,6 +181,50 @@ def matrix_rain(console: Console, duration: float = 1.2, width: int = 60):
     out.flush()
 
 
+def startup_animation(console: Console, provider: str = "AI",
+                      tools_count: int = 19, knowledge_count: int = 46):
+    """
+    Dramatic startup sequence — animated system initialization.
+    
+    Each check appears with a brief spinner then resolves to ✓.
+    Creates the feeling of a powerful system booting up.
+    """
+    out = console.file or sys.stdout
+    
+    checks = [
+        (f"AI engine ready ({provider})", 0.3),
+        (f"{tools_count} security tools loaded", 0.25),
+        (f"{knowledge_count} knowledge modules active", 0.2),
+        ("Browser automation ready", 0.15),
+    ]
+    
+    spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    
+    console.print()
+    console.print(f"  [{_DIM}]Initializing...[/]")
+    console.print()
+    
+    for label, duration in checks:
+        # Spinner phase
+        frames = int(duration / 0.06)
+        for i in range(frames):
+            frame = spinner_frames[i % len(spinner_frames)]
+            out.write(f"\r  {ANSI.DIM_GRAY}{frame} {label}{ANSI.RESET}\033[K")
+            out.flush()
+            time.sleep(0.06)
+        # Resolve to checkmark
+        out.write(f"\r  {ANSI.GREEN}✓ {label}{ANSI.RESET}\033[K\n")
+        out.flush()
+    
+    console.print()
+    ready = Text()
+    ready.append("  ◉ ", style=f"bold {_GREEN}")
+    ready.append("READY", style=f"bold {_GREEN}")
+    ready.append(" — Paste a URL or describe your target.", style=_DIM)
+    console.print(ready)
+    console.print()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Stream Renderer
 # ═══════════════════════════════════════════════════════════════════════════
@@ -320,53 +364,79 @@ class StreamRenderer:
     # ──────────────────────────────────────────────────────────
 
     def target_acquired(self, target: str):
-        """Print the opening banner when scanning begins."""
+        """Print target lock-on banner — dramatic opening of every assessment."""
         self.end_stream()
+        tw = max((self.console.width or 80) - 6, 50)
+
+        # Animated lock-on effect via ANSI direct writes
+        lock_frames = ["◎", "◉", "●", "◉", "◎", "◉", "●"]
+        for i, frame in enumerate(lock_frames):
+            self._out.write(f"\r  {ANSI.GREEN}{frame} TARGET LOCK{ANSI.RESET}\033[K")
+            self._out.flush()
+            time.sleep(0.06)
+        self._out.write("\r\033[2K")  # clear the animation line
+        self._out.flush()
+
         self.console.print()
 
-        # Top border
+        border = "─" * tw
+        self.console.print(f"  [{_GREEN}]┌{border}┐[/]")
+        
+        title_str = "◉ TARGET ACQUIRED"
+        title_pad = " " * (tw - len(title_str) - 1)
+        self.console.print(f"  [{_GREEN}]│[/] [bold {_GREEN}]{title_str}{title_pad}[/][{_GREEN}]│[/]")
+
+        tgt = target[:tw - 3] if len(target) <= tw - 3 else target[:tw - 6] + "..."
+        url_pad = " " * (tw - len(tgt) - 1)
+        self.console.print(f"  [{_GREEN}]│[/] [bold {_GREEN}]{tgt}{url_pad}[/][{_GREEN}]│[/]")
+
+        self.console.print(f"  [{_GREEN}]└{border}┘[/]")
+        self.console.print()
+
+    def phase_transition(self, completed_phase: str, next_phase: str = "",
+                         phase_num: int = 0, total_phases: int = 0):
+        """Print cinematic phase transition with progress — key moment in demo."""
+        self.end_stream()
+        tw = max((self.console.width or 80) - 4, 50)
+
+        self.console.print()
+
         rule = Text()
-        rule.append("  ─────────────────────────────────────────────────", style=_GREEN)
+        rule.append("  " + "━" * tw, style=f"bold {_GREEN}")
         self.console.print(rule)
 
-        # Title
-        title = Text()
-        title.append("  ◉ ", style=f"bold {_GREEN}")
-        title.append("SCANNING", style=f"bold {_GREEN}")
-        self.console.print(title)
-
-        # Target URL
-        tgt = target[:52] if len(target) <= 52 else target[:49] + "..."
-        tl = Text()
-        tl.append(f"  {tgt}", style=f"bold {_GREEN}")
-        self.console.print(tl)
-
-        # Bottom border
-        rule2 = Text()
-        rule2.append("  ─────────────────────────────────────────────────", style=_GREEN)
-        self.console.print(rule2)
         self.console.print()
 
-    def phase_transition(self, completed_phase: str, next_phase: str = ""):
-        """Print cinematic phase transition — key moment in demo."""
-        self.end_stream()
-        self.console.print()
-
-        rule = Text()
-        rule.append("  ─────────────────────────────────────────────────", style=_BORDER)
-        self.console.print(rule)
-
+        # Completed phase with checkmark
         line = Text()
         line.append("  ✓ ", style=f"bold {_GREEN}")
         line.append(completed_phase.upper(), style=f"bold {_GREEN}")
         line.append(" COMPLETE", style=f"bold {_GREEN}")
-        if next_phase:
-            line.append("  →  ", style=_BORDER)
-            line.append(next_phase.upper(), style=f"bold {_CYAN}")
         self.console.print(line)
 
+        # Progress bar if we have phase counts
+        if total_phases > 0 and phase_num > 0:
+            filled = int((phase_num / total_phases) * 20)
+            empty = 20 - filled
+            pbar = Text()
+            pbar.append("  ", style="")
+            pbar.append("▰" * filled, style=f"bold {_GREEN}")
+            pbar.append("▱" * empty, style=_BORDER)
+            pbar.append(f"  {phase_num}/{total_phases}", style=_DIM)
+            self.console.print(pbar)
+
+        # Next phase arrow
+        if next_phase:
+            self.console.print()
+            nxt = Text()
+            nxt.append("  →  ", style=_BORDER)
+            nxt.append(next_phase.upper(), style=f"bold {_CYAN}")
+            self.console.print(nxt)
+
+        self.console.print()
+
         rule2 = Text()
-        rule2.append("  ─────────────────────────────────────────────────", style=_BORDER)
+        rule2.append("  " + "━" * tw, style=f"bold {_GREEN}")
         self.console.print(rule2)
         self.console.print()
 
@@ -375,10 +445,11 @@ class StreamRenderer:
     # ──────────────────────────────────────────────────────────
 
     def tool_start(self, name: str, args: dict, tool_number: int = 0):
-        """Print tool execution header — clean single line with optional counter."""
+        """Print tool execution header — clean single line with counter and action verb."""
         self.end_stream()
 
         desc = self._describe_tool(name, args)
+        action = self._tool_action_verb(name)
         self._tool_start_time = time.monotonic()
 
         header = Text()
@@ -386,6 +457,8 @@ class StreamRenderer:
         if tool_number > 0:
             header.append(f"[{tool_number}] ", style=_DIM)
         header.append(name, style=f"bold {_CYAN}")
+        if action:
+            header.append(f" {action}", style=_DIM)
         if desc:
             header.append(" → ", style=_BORDER)
             header.append(desc, style=_TEXT)
@@ -451,7 +524,7 @@ class StreamRenderer:
     # ──────────────────────────────────────────────────────────
 
     def finding(self, finding):
-        """Print security finding — cinematic, screenshot-worthy."""
+        """Print security finding — cinematic, screenshot-worthy, unmissable."""
         self.end_stream()
 
         severity_map = {
@@ -466,46 +539,64 @@ class StreamRenderer:
             finding.severity, (_GRAY, "·", "UNKNOWN")
         )
 
-        is_critical_or_high = finding.severity in ("critical", "high")
+        is_critical = finding.severity == "critical"
+        is_high = finding.severity == "high"
+        is_critical_or_high = is_critical or is_high
         is_medium = finding.severity == "medium"
+
+        # Terminal bell for critical/high — audible "something happened"
+        if is_critical_or_high:
+            self._out.write("\a")
+            self._out.flush()
+
+        # Full-width bars for maximum visual impact
+        tw = max((self.console.width or 80) - 4, 50)
 
         self.console.print()
 
-        # Top rule — bold for critical/high, thin for medium
-        if is_critical_or_high:
-            rule = Text()
-            rule.append("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", style=f"bold {color}")
-            self.console.print(rule)
+        # ── TOP BAR ──
+        if is_critical:
+            # Solid block wall — impossible to miss in any video
+            bar = Text()
+            bar.append("  " + "█" * tw, style=f"bold {color}")
+            self.console.print(bar)
+            self.console.print()
+        elif is_high:
+            bar = Text()
+            bar.append("  " + "━" * tw, style=f"bold {color}")
+            self.console.print(bar)
+            self.console.print()
         elif is_medium:
-            rule = Text()
-            rule.append("  ──────────────────────────────────────────────────────", style=color)
-            self.console.print(rule)
+            bar = Text()
+            bar.append("  " + "─" * tw, style=color)
+            self.console.print(bar)
 
-        # Header line — title color matches severity
+        # ── SEVERITY + TITLE ──
         h = Text()
         h.append(f"  {icon} ", style=f"bold {color}")
         h.append(label, style=f"bold {color}")
-        h.append(" — ", style=_DIM)
+        h.append("  ", style="")
         h.append(finding.title, style=f"bold {color}")
         self.console.print(h)
 
+        # Separator after title for critical/high
         if is_critical_or_high:
-            rule2 = Text()
-            rule2.append("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", style=f"bold {color}")
-            self.console.print(rule2)
+            sep = Text()
+            sep.append("  " + "━" * tw, style=color)
+            self.console.print(sep)
 
         self.console.print()
 
-        # Get available width for text wrapping (leave 2-char margin for Rich)
-        tw = max((self.console.width or 80) - 2, 40)
+        # Get available width for text wrapping
+        wrap_w = max(tw - 2, 40)
 
-        # Structured fields — easy to scan, gutter-wrapped
+        # ── DESCRIPTION ──
         if finding.description and finding.description != finding.title:
             desc = " ".join(
                 l.strip() for l in finding.description.split("\n")[:8] if l.strip()
             )
             gutter = "  │ "
-            avail = tw - len(gutter)
+            avail = wrap_w - len(gutter)
             for wl in self._textwrap(desc, avail):
                 d = Text()
                 d.append(gutter, style=color)
@@ -513,37 +604,35 @@ class StreamRenderer:
                 self.console.print(d)
             self.console.print()
 
-        # Evidence block — the proof, gutter-wrapped
+        # ── EVIDENCE ── the proof
         if finding.evidence:
             ev = " ".join(
                 l.strip() for l in finding.evidence.split("\n")[:8] if l.strip()
             )
             gutter      = "  │ "
-            label       = "Evidence:  "
-            pad         = " " * len(label)
-            avail       = tw - len(gutter) - len(label)
+            ev_label    = "Evidence:  "
+            pad         = " " * len(ev_label)
+            avail       = wrap_w - len(gutter) - len(ev_label)
             for i, wl in enumerate(self._textwrap(ev, avail)):
                 e = Text()
                 e.append(gutter, style=color)
                 if i == 0:
-                    e.append(label, style=f"bold {color}")
+                    e.append(ev_label, style=f"bold {color}")
                 else:
                     e.append(pad, style="")
                 e.append(wl, style=_TEXT)
                 self.console.print(e)
 
-        # Payload line — THE money shot for demo videos
+        # ── PAYLOAD ── the money shot for screenshots
         payload = self._extract_payload(finding)
         if payload:
-            gutter = "  │ "
-            plabel = "Payload:   "
             p = Text()
-            p.append(gutter, style=color)
-            p.append(plabel, style=f"bold {color}")
+            p.append("  │ ", style=color)
+            p.append("Payload:   ", style=f"bold {color}")
             p.append(payload, style=f"bold {_TEXT}")
             self.console.print(p)
 
-        # Impact line — make severity consequences clear
+        # ── IMPACT ── why this matters
         if is_critical_or_high and finding.description:
             impact = self._extract_impact(finding)
             if impact:
@@ -553,28 +642,38 @@ class StreamRenderer:
                 il.append(impact, style=_TEXT)
                 self.console.print(il)
 
-        # Metadata line — CVE, CVSS
+        # ── METADATA ── CVE, CVSS
         meta = []
         if hasattr(finding, "cve") and finding.cve:
             meta.append(finding.cve)
         if hasattr(finding, "cvss_score") and finding.cvss_score:
             meta.append(f"CVSS {finding.cvss_score}")
-
         if meta:
             m = Text()
             m.append("  │ ", style=color)
             m.append(" │ ".join(meta), style=f"bold {_DIM}")
             self.console.print(m)
 
-        # Close rule — matches top
-        close = Text()
-        if is_critical_or_high:
-            close.append("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", style=f"bold {color}")
+        # ── BOTTOM BAR ── matches top for visual symmetry
+        if is_critical:
+            self.console.print()
+            bar = Text()
+            bar.append("  " + "█" * tw, style=f"bold {color}")
+            self.console.print(bar)
+        elif is_high:
+            self.console.print()
+            bar = Text()
+            bar.append("  " + "━" * tw, style=f"bold {color}")
+            self.console.print(bar)
         elif is_medium:
-            close.append("  ──────────────────────────────────────────────────────", style=color)
+            bar = Text()
+            bar.append("  " + "─" * tw, style=color)
+            self.console.print(bar)
         else:
+            close = Text()
             close.append("  └─", style=color)
-        self.console.print(close)
+            self.console.print(close)
+
         self.console.print()
 
     # ──────────────────────────────────────────────────────────
@@ -659,6 +758,33 @@ class StreamRenderer:
                 return ""
         except Exception:
             return ""
+
+    @staticmethod
+    def _tool_action_verb(name: str) -> str:
+        """Return contextual action verb for tool — shows intelligence, not just name."""
+        verbs = {
+            "nmap": "scanning ports",
+            "nuclei": "testing vulnerabilities",
+            "sqlmap": "testing SQL injection",
+            "ffuf": "brute-forcing paths",
+            "subfinder": "discovering subdomains",
+            "httpx": "probing endpoints",
+            "http": "requesting",
+            "browser_navigate": "navigating",
+            "browser_fill": "injecting payload",
+            "browser_click": "clicking",
+            "browser_screenshot": "capturing evidence",
+            "browser_login": "testing authentication",
+            "browser_get_cookies": "extracting cookies",
+            "browser_set_cookies": "planting cookies",
+            "browser_clear_session": "resetting session",
+            "run_command": "executing",
+            "run_exploit": "exploiting",
+            "read_file": "reading",
+            "write_file": "writing",
+            "create_finding": "registering finding",
+        }
+        return verbs.get(name, "")
 
     # ──────────────────────────────────────────────────────────
     # Result formatters
@@ -863,6 +989,100 @@ class StreamRenderer:
         else:
             return _PURPLE  # 5xx = interesting, not error
 
+    def status_bar(self, phase_name: str = "", phase_num: int = 0,
+                   total_phases: int = 0, finding_counts: dict | None = None,
+                   tool_count: int = 0, cost: float = 0.0, elapsed_s: float = 0.0):
+        """
+        Compact attack progress line — the ambient heartbeat of the assessment.
+        
+        Printed periodically to show the viewer "this is alive and progressing."
+        The single most important element for demo video pacing.
+        """
+        self.end_stream()
+        fc = finding_counts or {}
+
+        # Phase progress
+        parts = []
+        if phase_name:
+            if total_phases > 0:
+                filled = int((phase_num / total_phases) * 10)
+                empty = 10 - filled
+                bar = "▰" * filled + "▱" * empty
+                parts.append(f"{bar} {phase_name.upper()}")
+            else:
+                parts.append(phase_name.upper())
+
+        # Finding severity pills
+        sev_parts = []
+        crit = fc.get("critical", 0)
+        high = fc.get("high", 0)
+        med = fc.get("medium", 0)
+        low = fc.get("low", 0)
+        if crit:
+            sev_parts.append(f"▲▲{crit}")
+        if high:
+            sev_parts.append(f"▲{high}")
+        if med:
+            sev_parts.append(f"■{med}")
+        if low:
+            sev_parts.append(f"●{low}")
+        if sev_parts:
+            parts.append(" ".join(sev_parts))
+        
+        # Tool count
+        if tool_count:
+            parts.append(f"{tool_count} ops")
+
+        # Cost
+        if cost > 0.001:
+            parts.append(f"${cost:.2f}")
+
+        # Elapsed
+        if elapsed_s > 0:
+            if elapsed_s < 60:
+                parts.append(f"{elapsed_s:.0f}s")
+            else:
+                m, s = divmod(int(elapsed_s), 60)
+                parts.append(f"{m}:{s:02d}")
+
+        if not parts:
+            return
+
+        line = Text()
+        line.append("  ═══ ", style=_GREEN)
+        line.append(" │ ".join(parts), style=_DIM)
+        self.console.print(line)
+
+    def intel_update(self, new_ports: int = 0, new_endpoints: int = 0,
+                     new_techs: int = 0, new_creds: int = 0,
+                     new_hypotheses: int = 0):
+        """
+        Brief intelligence discovery line — shows the AI learning in real-time.
+        
+        Printed after tool execution when new data is extracted.
+        Makes the viewer see: "it's not just running tools, it's UNDERSTANDING."
+        """
+        self.end_stream()
+        parts = []
+        if new_ports > 0:
+            parts.append(f"+{new_ports} port{'s' if new_ports > 1 else ''}")
+        if new_endpoints > 0:
+            parts.append(f"+{new_endpoints} endpoint{'s' if new_endpoints > 1 else ''}")
+        if new_techs > 0:
+            parts.append(f"+{new_techs} tech{'s' if new_techs > 1 else ''}")
+        if new_creds > 0:
+            parts.append(f"+{new_creds} credential{'s' if new_creds > 1 else ''}")
+        if new_hypotheses > 0:
+            parts.append(f"+{new_hypotheses} hypothesis")
+
+        if not parts:
+            return
+
+        line = Text()
+        line.append("  ◆ INTEL  ", style=f"bold {_PURPLE}")
+        line.append("  ".join(parts), style=_TEXT)
+        self.console.print(line)
+
     def divider(self):
         """Subtle iteration divider."""
         self.end_stream()
@@ -882,8 +1102,8 @@ class StreamRenderer:
         """
         Print the assessment complete summary card.
         
-        This is the money shot — the screenshot-worthy finale
-        that ends every demo video and assessment.
+        This is the FINAL FRAME — the screenshot-worthy finale
+        that ends every demo video. Must be perfect.
         """
         self.end_stream()
 
@@ -920,99 +1140,149 @@ class StreamRenderer:
             m, s = divmod(int(duration_s), 60)
             dur = f"{m}m {s:02d}s"
 
-        # The card
-        w = 54  # inner width
+        # Dynamic width — use terminal width for maximum impact
+        tw = min(max((self.console.width or 80) - 4, 50), 72)
+        w = tw  # inner width
         border = _GREEN if total_findings == 0 else risk_color
 
         self.console.print()
-        self.console.print()
 
-        # Top border
+        # ═══ TOP BORDER (double line for emphasis) ═══
         top = Text()
-        top.append(f"  ┌{'─' * w}┐", style=border)
+        top.append(f"  ╔{'═' * w}╗", style=f"bold {border}")
         self.console.print(top)
 
-        # Title
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Title — centered, bold
         title = "ASSESSMENT COMPLETE"
         pad = (w - len(title)) // 2
         t = Text()
-        t.append("  │", style=border)
+        t.append("  ║", style=f"bold {border}")
         t.append(f"{' ' * pad}{title}{' ' * (w - pad - len(title))}", style=f"bold {_GREEN}")
-        t.append("│", style=border)
+        t.append("║", style=f"bold {border}")
         self.console.print(t)
 
         # Empty line
-        emp = Text()
-        emp.append(f"  │{' ' * w}│", style=border)
-        self.console.print(emp)
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Separator
+        sep = Text()
+        sep.append(f"  ╟{'─' * w}╢", style=f"bold {border}")
+        self.console.print(sep)
+
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
 
         # Target
-        tgt_display = target[:40] if len(target) <= 40 else target[:37] + "..."
-        self._card_line(f"  Target:    {tgt_display}", w, border, _TEXT)
+        tgt_display = target[:w - 14] if len(target) <= w - 14 else target[:w - 17] + "..."
+        self._card_line_v2(f"  Target:    {tgt_display}", w, border, _TEXT)
 
-        # Duration + Cost
-        self._card_line(f"  Duration:  {dur}", w, border, _TEXT)
-        self._card_line(f"  Cost:      ${cost:.2f}", w, border, _GREEN)
-
-        # Empty line
-        self.console.print(Text(f"  │{' ' * w}│", style=border))
-
-        # Severity breakdown
-        sev_line = f"  ▲▲ {counts['critical']} CRITICAL   ▲ {counts['high']} HIGH"
-        self._card_line(sev_line, w, border, _RED if (counts["critical"] or counts["high"]) else _DIM)
-
-        sev_line2 = f"  ■  {counts['medium']} MEDIUM     ● {counts['low']} LOW"
-        self._card_line(sev_line2, w, border, _GOLD if counts["medium"] else _DIM)
-
-        # Empty line
-        self.console.print(Text(f"  │{' ' * w}│", style=border))
-
-        # Risk level
-        risk_row = Text()
-        risk_row.append("  │", style=border)
-        risk_row.append("  Risk Level: ", style=_DIM)
-        risk_row.append(risk, style=f"bold {risk_color}")
-        remaining = w - len("  Risk Level: ") - len(risk)
-        risk_row.append(" " * remaining, style="")
-        risk_row.append("│", style=border)
-        self.console.print(risk_row)
-
-        # Empty line
-        self.console.print(Text(f"  │{' ' * w}│", style=border))
-
-        # What This Means — human-readable summary
-        summary = self._human_risk_summary(risk, counts, total_findings)
-        if summary:
-            for sline in self._textwrap(summary, w - 4):
-                self._card_line(f"  {sline}", w, border, _TEXT)
-            self.console.print(Text(f"  │{' ' * w}│", style=border))
+        # Duration + Cost on same line
+        dur_cost = f"  Duration:  {dur}        Cost: ${cost:.2f}"
+        self._card_line_v2(dur_cost, w, border, _TEXT)
 
         # Tools used
         if tools_used > 0:
-            self._card_line(f"  Tools Used:  {tools_used}", w, border, _DIM)
-            self.console.print(Text(f"  │{' ' * w}│", style=border))
+            self._card_line_v2(f"  Tools:     {tools_used} operations", w, border, _DIM)
+
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Separator
+        sep2 = Text()
+        sep2.append(f"  ╟{'─' * w}╢", style=f"bold {border}")
+        self.console.print(sep2)
+
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Visual severity breakdown with bar chart
+        max_count = max(counts.values()) if any(counts.values()) else 1
+        sev_config = [
+            ("critical", "▲▲", _RED),
+            ("high",     "▲ ", _RED),
+            ("medium",   "■ ", _GOLD),
+            ("low",      "● ", _CYAN),
+        ]
+        for sev_name, sev_icon, sev_color in sev_config:
+            count = counts[sev_name]
+            if count > 0 or sev_name in ("critical", "high"):
+                bar_len = int((count / max_count) * 15) if count > 0 else 0
+                bar = "█" * bar_len + "░" * (15 - bar_len)
+                label = f"  {sev_icon} {sev_name.upper():<10} {count}  {bar}"
+                row = Text()
+                row.append("  ║", style=f"bold {border}")
+                padded = label + " " * max(0, w - len(label))
+                # Color the severity part
+                row.append(padded[:w], style=sev_color if count > 0 else _DIM)
+                row.append("║", style=f"bold {border}")
+                self.console.print(row)
+
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Risk level — large and bold
+        risk_row = Text()
+        risk_row.append("  ║", style=f"bold {border}")
+        risk_label = f"  RISK LEVEL: {risk}"
+        remaining = w - len(risk_label)
+        risk_row.append(risk_label, style=f"bold {risk_color}")
+        risk_row.append(" " * remaining, style="")
+        risk_row.append("║", style=f"bold {border}")
+        self.console.print(risk_row)
+
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # What This Means
+        summary = self._human_risk_summary(risk, counts, total_findings)
+        if summary:
+            for sline in self._textwrap(summary, w - 4):
+                self._card_line_v2(f"  {sline}", w, border, _TEXT)
+            self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # Separator
+        sep3 = Text()
+        sep3.append(f"  ╟{'─' * w}╢", style=f"bold {border}")
+        self.console.print(sep3)
+
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
 
         # Hints
-        self._card_line("  /report       →  Full HTML report", w, border, _DIM)
-        self._card_line("  /findings     →  All issues found", w, border, _DIM)
+        self._card_line_v2("  /report       →  Full HTML report", w, border, _DIM)
+        self._card_line_v2("  /findings     →  All issues found", w, border, _DIM)
 
-        # Empty line before footer
-        self.console.print(Text(f"  │{' ' * w}│", style=border))
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
 
-        # Branding footer — every screenshot is marketing
+        # Branding footer
         footer_text = "numasec.com — Vibe Security"
         fpad = (w - len(footer_text)) // 2
         fl = Text()
-        fl.append("  │", style=border)
+        fl.append("  ║", style=f"bold {border}")
         fl.append(f"{' ' * fpad}{footer_text}{' ' * (w - fpad - len(footer_text))}", style=_DIM)
-        fl.append("│", style=border)
+        fl.append("║", style=f"bold {border}")
         self.console.print(fl)
 
-        # Bottom border
+        # Empty line
+        self.console.print(Text(f"  ║{' ' * w}║", style=f"bold {border}"))
+
+        # ═══ BOTTOM BORDER ═══
         bot = Text()
-        bot.append(f"  └{'─' * w}┘", style=border)
+        bot.append(f"  ╚{'═' * w}╝", style=f"bold {border}")
         self.console.print(bot)
         self.console.print()
+
+    def _card_line_v2(self, content: str, width: int, border_color: str, text_color: str):
+        """Helper: render one line inside the assessment card (double-border version)."""
+        row = Text()
+        row.append("  ║", style=f"bold {border_color}")
+        padded = content + " " * max(0, width - len(content))
+        row.append(padded[:width], style=text_color)
+        row.append("║", style=f"bold {border_color}")
+        self.console.print(row)
 
     def _card_line(self, content: str, width: int, border_color: str, text_color: str):
         """Helper: render one line inside the assessment card."""
