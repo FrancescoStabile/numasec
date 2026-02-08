@@ -1,23 +1,25 @@
 <div align="center">
 
-# NumaSec
+# Numasec
 
-### Vibe coding changed how we build. NumaSec changes how we secure it.
+### Vibe coding changed how we build. Numasec changes how we secure it.
 
 One command. Real vulnerabilities. Full report. **$0.12.**
 
-<img src="docs/assets/demo.gif" alt="NumaSec Demo" width="700">
+<img src="docs/assets/demo.gif" alt="Numasec Demo" width="700">
 
-[![$0.12/scan](https://img.shields.io/badge/cost-$0.12%2Fscan-00ff41?style=flat-square&labelColor=0d1117)](#quick-start)
-[![20 Security Tools](https://img.shields.io/badge/tools-20_security_scanners-00ff41?style=flat-square&labelColor=0d1117)](#what-it-finds)
-[![Bring Your Own LLM](https://img.shields.io/badge/LLM-bring_your_own-00ff41?style=flat-square&labelColor=0d1117)](#quick-start)
-[![MIT License](https://img.shields.io/badge/license-MIT-00ff41?style=flat-square&labelColor=0d1117)](LICENSE)
+*Numasec autonomously finding 8 vulnerabilities in [OWASP Juice Shop](https://owasp.org/www-project-juice-shop/) — a deliberately insecure web app used as a security training benchmark.*
+
+[![$0.12/scan](https://img.shields.io/badge/cost-$0.12%2Fscan-58a6ff?style=flat-square&labelColor=0d1117)](#quick-start)
+[![Autonomous Agent](https://img.shields.io/badge/agent-fully_autonomous-8b5cf6?style=flat-square&labelColor=0d1117)](#how-it-works)
+[![Bring Your Own LLM](https://img.shields.io/badge/LLM-bring_your_own-f97316?style=flat-square&labelColor=0d1117)](#quick-start)
+[![MIT License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square&labelColor=0d1117)](LICENSE)
 
 </div>
 
 ---
 
-You describe the target. NumaSec runs 19 security tools, finds real vulnerabilities, and writes the report. No security expertise. No config files. No $10K consultant.
+You describe the target. Numasec figures out how to break in — planning the attack, picking techniques, adapting on the fly, and writing the report. No security expertise. No config files. No $10K consultant.
 
 ```bash
 pip install numasec && numasec --demo
@@ -85,7 +87,7 @@ pip install numasec && numasec --demo
 
 ## What It Finds
 
-NumaSec doesn't just scan — it thinks. It plans an attack strategy, picks the right tools, adapts based on what it discovers, and escalates when it finds something real.
+Numasec doesn't just scan — it thinks. It plans an attack strategy, picks the right tools, adapts based on what it discovers, and escalates when it finds something real.
 
 | What it tests | How |
 |--------------|-----|
@@ -119,7 +121,7 @@ export DEEPSEEK_API_KEY="sk-..."    # ~$0.12/scan, 1M free tokens for new accoun
 numasec
 ```
 
-That's it. Paste a URL, describe what to test, and NumaSec handles the rest.
+That's it. Paste a URL, describe what to test, and Numasec handles the rest.
 
 <details>
 <summary><b>More options</b> — Claude, OpenAI, Ollama, browser mode, security tools</summary>
@@ -155,7 +157,7 @@ numasec --resume <session-id>        # Resume a previous session
 Every assessment produces a professional HTML report — dark theme, severity donut chart, evidence blocks, remediation steps. Share it with your team, attach it to a ticket, or hand it to an AI to fix the code.
 
 <div align="center">
-<img src="docs/assets/report.gif" alt="NumaSec Security Report" width="700">
+<img src="docs/assets/report.gif" alt="Numasec Security Report" width="700">
 </div>
 
 ---
@@ -224,7 +226,7 @@ async for event in agent.run("find SQLi in localhost:3000"):
 
 ## Legal
 
-**Only test apps you own or have explicit permission to test.** NumaSec is a security tool — use it responsibly.
+**Only test apps you own or have explicit permission to test.** Numasec is a security tool — use it responsibly.
 
 ✅ Your own apps, staging/production environments, bug bounty targets, practice labs (DVWA, Juice Shop, HackTheBox)
 
