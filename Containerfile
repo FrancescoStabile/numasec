@@ -120,11 +120,18 @@ COPY <<'EOF' /entrypoint.sh
 #!/bin/bash
 set -e
 
-# Run NumaSec
+# If no args, run NumaSec interactively
 if [ $# -eq 0 ]; then
     exec python -m numasec
 fi
 
+# If the first arg is an executable (python, bash, sh, etc.),
+# run it directly instead of passing to numasec
+if command -v "$1" >/dev/null 2>&1; then
+    exec "$@"
+fi
+
+# Otherwise, pass args to numasec (e.g. "check", "--demo")
 exec python -m numasec "$@"
 EOF
 
