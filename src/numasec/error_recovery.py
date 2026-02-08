@@ -219,37 +219,111 @@ NUCLEI_PATTERNS = {
 # ═══════════════════════════════════════════════════════════════════════════
 
 BROWSER_PATTERNS = {
-    "timeout": {
-        "indicators": ["timeout", "navigation timeout", "page load timeout"],
+    "timeout_networkidle": {
+        "indicators": ["timed out", "timeout", "page load timeout", "30 seconds", "60 seconds"],
         "strategy": RecoveryStrategy(
             guidance=(
-                "Browser navigation timed out. Page may be slow or stuck. "
-                "Try with longer timeout or simpler http tool."
+                "Browser tool timed out. COMMON CAUSES:\n"
+                "1. Using networkidle on a SPA (Angular/React/Vue) — these apps never become 'idle'\n"
+                "2. An overlay/modal is blocking interaction (welcome banner, cookie consent)\n"
+                "3. The selector doesn't match any visible element\n\n"
+                "SOLUTIONS (in order):\n"
+                "1. Take a screenshot first (browser_screenshot) to see current page state\n"
+                "2. If SPA: navigation now auto-uses domcontentloaded (networkidle avoided)\n"
+                "3. If overlay blocking: overlays are now auto-dismissed\n"
+                "4. If selector wrong: use browser_screenshot, then retry with correct selector\n"
+                "5. Try a simpler selector (e.g., 'input[type=search]' instead of complex CSS)"
             ),
-            retry_tool="http",
-            retry_args={"method": "GET"},
+            retry_tool="browser_screenshot",
+            retry_args={"filename": "debug_page_state.png"},
         ),
     },
     "element_not_found": {
-        "indicators": ["element not found", "selector not found", "no such element"],
+        "indicators": ["element not found", "selector not found", "no such element",
+                       "waiting for selector", "locator resolved to", "strict mode violation"],
         "strategy": RecoveryStrategy(
             guidance=(
-                "Element/selector not found on page. Page structure may have changed. "
-                "Verify selector is correct or take screenshot to inspect."
+                "Element/selector not found. Possible causes:\n"
+                "1. Selector is wrong — page structure may differ from expected\n"
+                "2. Element is inside a shadow DOM or iframe\n"
+                "3. Element hasn't loaded yet (SPA hydration delay)\n"
+                "4. An overlay is covering the target element\n\n"
+                "SOLUTIONS:\n"
+                "1. Use browser_screenshot to see actual page state\n"
+                "2. Try simpler selectors: '#id', 'input[name=x]', or '[aria-label=x]'\n"
+                "3. For iframes: navigate directly to iframe src URL\n"
+                "4. Comma-separated selectors are now tried independently as fallback"
             ),
-            retry_tool="browser",
-            retry_args={"action": "screenshot"},
+            retry_tool="browser_screenshot",
+            retry_args={"filename": "debug_selector.png"},
+        ),
+    },
+    "element_not_visible": {
+        "indicators": ["element is not visible", "element is hidden", "outside of the viewport",
+                       "element is not enabled", "element is not editable", "intercepted"],
+        "strategy": RecoveryStrategy(
+            guidance=(
+                "Element exists but is not interactable. Causes:\n"
+                "1. Hidden by CSS (display:none, visibility:hidden)\n"
+                "2. Covered by an overlay/modal\n"
+                "3. Outside viewport (needs scroll)\n"
+                "4. Disabled input field\n\n"
+                "SOLUTIONS:\n"
+                "1. Overlays are now auto-dismissed before interaction\n"
+                "2. Force fill/click is now attempted automatically\n"
+                "3. Try JS injection strategy (sets value via JavaScript directly)\n"
+                "4. Use browser_screenshot to diagnose"
+            ),
+            retry_tool="browser_screenshot",
+            retry_args={"filename": "debug_visibility.png"},
+        ),
+    },
+    "dialog_blocking": {
+        "indicators": ["dialog", "alert", "confirm", "prompt", "beforeunload"],
+        "strategy": RecoveryStrategy(
+            guidance=(
+                "A JavaScript dialog (alert/confirm/prompt) may be blocking page interaction. "
+                "Dialog handler is now installed automatically — dialogs are captured as XSS proof "
+                "and auto-accepted. If this persists, the dialog may be from a previous action. "
+                "Try browser_clear_session and retry."
+            ),
+            retry_tool="browser_clear_session",
         ),
     },
     "connection_error": {
-        "indicators": ["net::ERR_CONNECTION", "failed to navigate", "connection refused"],
+        "indicators": ["net::ERR_CONNECTION", "failed to navigate", "connection refused",
+                       "ERR_NAME_NOT_RESOLVED", "ERR_SSL", "net::ERR_"],
         "strategy": RecoveryStrategy(
             guidance=(
-                "Browser cannot connect to target. Service may be down. "
-                "Verify with http tool first."
+                "Browser cannot connect to target. Service may be down or URL is wrong. "
+                "Verify with http tool first, then retry with browser."
             ),
             retry_tool="http",
             retry_args={"method": "GET"},
+        ),
+    },
+    "page_crashed": {
+        "indicators": ["page crashed", "target closed", "browser disconnected",
+                       "execution context was destroyed", "frame detached"],
+        "strategy": RecoveryStrategy(
+            guidance=(
+                "Browser page crashed or was closed unexpectedly. "
+                "This can happen with heavy JavaScript pages or XSS payloads that break the page. "
+                "Use browser_clear_session to reset, then retry."
+            ),
+            retry_tool="browser_clear_session",
+        ),
+    },
+    "csp_blocked": {
+        "indicators": ["content security policy", "csp", "refused to execute",
+                       "blocked by CSP", "violates the following"],
+        "strategy": RecoveryStrategy(
+            guidance=(
+                "Content Security Policy (CSP) blocked script execution. "
+                "Browser context now has bypass_csp=True enabled. "
+                "If XSS is blocked by CSP, this is actually a FINDING — CSP is protecting the app. "
+                "Register it as a finding (security control detected) and try CSP bypass techniques."
+            ),
         ),
     },
 }
@@ -264,6 +338,13 @@ ERROR_PATTERNS = {
     "sqlmap": SQLMAP_PATTERNS,
     "nuclei": NUCLEI_PATTERNS,
     "browser": BROWSER_PATTERNS,
+    # Map individual browser tool names to the same patterns
+    "browser_navigate": BROWSER_PATTERNS,
+    "browser_fill": BROWSER_PATTERNS,
+    "browser_click": BROWSER_PATTERNS,
+    "browser_screenshot": BROWSER_PATTERNS,
+    "browser_login": BROWSER_PATTERNS,
+    "browser_get_cookies": BROWSER_PATTERNS,
 }
 
 

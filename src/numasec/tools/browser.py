@@ -15,11 +15,74 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Stealth & Anti-Detection Constants
+# ═══════════════════════════════════════════════════════════════════════════
+
+_STEALTH_USER_AGENTS = [
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+]
+
+_STEALTH_INIT_SCRIPT = """
+// Remove webdriver flag (primary bot detection signal)
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// Fix chrome.runtime (missing in headless Chromium)
+if (!window.chrome) {
+    window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){}, app: {} };
+}
+
+// Fix plugins array (headless has 0 plugins — dead giveaway)
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5]
+});
+
+// Fix languages
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['en-US', 'en']
+});
+
+// Fix permissions API
+const _origQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (params) => (
+    params.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : _origQuery(params)
+);
+"""
+
+# Common overlay/modal dismiss selectors (sorted by specificity)
+_OVERLAY_DISMISS_SELECTORS = [
+    # OWASP Juice Shop specifics
+    'button[aria-label="Close Welcome Banner"]',
+    'a[aria-label="dismiss cookie message"]',
+    # Generic patterns
+    'button[aria-label*="close" i]',
+    'button[aria-label*="dismiss" i]',
+    'button[aria-label*="accept" i]',
+    '.cookie-banner button',
+    '.modal .close',
+    '[data-dismiss="modal"]',
+    '.overlay-close',
+]
+
+# SPA framework root selectors
+_SPA_ROOT_SELECTORS = {
+    "angular": "app-root",
+    "react": "#root, [data-reactroot]",
+    "vue": "#app, [data-v-app]",
+    "generic": "#app, #root, [data-app]",
+}
 
 try:
     from playwright.async_api import async_playwright, Browser, Page, BrowserContext, TimeoutError as PlaywrightTimeout
@@ -78,10 +141,16 @@ class BrowserContextPool:
                         pass
                     del self._pool[key]
             
-            # Create new context
+            # Create new context with stealth and security-testing features
+            import random
             context = await browser.new_context(
-                user_agent="NumaSec/2.0 (Security Scanner)"
+                user_agent=random.choice(_STEALTH_USER_AGENTS),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                bypass_csp=True,  # Critical for XSS testing: bypass Content Security Policy
+                service_workers="block",  # Prevent SW interference with request interception
             )
+            await context.add_init_script(_STEALTH_INIT_SCRIPT)
             self._pool[key] = (context, datetime.now())
             
             # Enforce max contexts limit (LRU-style)
@@ -193,7 +262,15 @@ class BrowserManager:
             try:
                 self._browser = await self._playwright.chromium.launch(
                     headless=headless,
-                    args=['--no-sandbox', '--disable-setuid-sandbox']
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-infobars',
+                        '--disable-dev-shm-usage',
+                        '--window-size=1920,1080',
+                    ],
+                    ignore_default_args=['--enable-automation'],
                 )
             except Exception as e:
                 # Chromium not downloaded — most common failure
@@ -249,8 +326,16 @@ class BrowserManager:
                 except:
                     pass
             
-            # Create persistent context
-            self._session_context = await browser.new_context()
+            # Create persistent context with stealth + security-testing features
+            import random
+            self._session_context = await browser.new_context(
+                user_agent=random.choice(_STEALTH_USER_AGENTS),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                bypass_csp=True,  # Critical: bypass CSP for XSS testing
+                service_workers="block",
+            )
+            await self._session_context.add_init_script(_STEALTH_INIT_SCRIPT)
             
             # Apply saved cookies
             if cookies:
@@ -352,6 +437,278 @@ class BrowserManager:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Resilient Helpers (SPA-aware, anti-timeout)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _detect_spa_framework(html: str) -> str | None:
+    """Detect SPA framework from HTML to choose optimal wait strategy."""
+    if not html:
+        return None
+    h = html.lower()
+    if 'ng-version' in h or 'ng-app' in h or 'app-root' in h or 'angular' in h:
+        return 'angular'
+    if 'data-reactroot' in h or '__next' in h or 'react' in h or '_react' in h:
+        return 'react'
+    if 'data-v-' in h or 'v-app' in h or '__vue' in h:
+        return 'vue'
+    if h.count('<script') > 3 and len(html.strip()) < 5000:
+        return 'generic'  # Script-heavy, likely SPA
+    return None
+
+
+async def _resilient_navigate(page: 'Page', url: str, timeout: int = 20000) -> dict:
+    """
+    Navigate with progressive fallback — NEVER relies on networkidle.
+    
+    networkidle is DISCOURAGED by Playwright docs for SPAs because:
+    - WebSocket connections keep network active
+    - Analytics/polling prevent 500ms idle window
+    - Angular/React/Vue hydration sends continuous requests
+    
+    Strategy: domcontentloaded → commit → force-proceed
+    Then wait for SPA framework bootstrap if detected.
+    
+    Returns:
+        dict with navigation result info
+    """
+    response = None
+    nav_strategy = "domcontentloaded"
+    
+    # Layer 1: Try domcontentloaded (fast, reliable for SPAs)
+    try:
+        response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        nav_strategy = "domcontentloaded"
+    except PlaywrightTimeout:
+        logger.warning(f"domcontentloaded timeout for {url}, falling back to commit")
+        # Layer 2: Fallback to commit (headers received, page loading)
+        try:
+            response = await page.goto(url, wait_until="commit", timeout=timeout // 2)
+            nav_strategy = "commit"
+        except PlaywrightTimeout:
+            logger.warning(f"commit timeout for {url}, proceeding anyway")
+            nav_strategy = "force"
+    except Exception as e:
+        # Non-timeout error (connection refused, etc.) — re-raise
+        raise
+    
+    # Layer 3: Wait for SPA framework bootstrap (if detected)
+    try:
+        html = await page.content()
+        framework = _detect_spa_framework(html)
+        
+        if framework == 'angular':
+            await page.wait_for_function(
+                "() => { const r = document.querySelector('app-root'); "
+                "return r && r.children.length > 0; }",
+                timeout=8000
+            )
+        elif framework in ('react', 'vue', 'generic'):
+            root_sel = _SPA_ROOT_SELECTORS.get(framework, '#root, #app')
+            await page.wait_for_function(
+                f"() => {{ const r = document.querySelector('{root_sel.split(',')[0].strip()}'); "
+                f"return r && r.children.length > 0; }}",
+                timeout=8000
+            )
+        else:
+            # Non-SPA: brief wait for any dynamic content
+            await page.wait_for_selector('body *', timeout=3000)
+    except Exception:
+        pass  # SPA detection is best-effort, don't fail navigation
+    
+    status = response.status if response else None
+    return {"status": status, "strategy": nav_strategy}
+
+
+async def _dismiss_overlays(page: 'Page', timeout_per: int = 2000):
+    """
+    Auto-dismiss common overlays (cookie banners, welcome modals).
+    
+    Critical for:
+    - OWASP Juice Shop (Angular MatDialog welcome banner + cookie consent)
+    - Any app with overlay that blocks form interaction
+    
+    Uses short per-selector timeouts to avoid wasting time.
+    """
+    for selector in _OVERLAY_DISMISS_SELECTORS:
+        try:
+            locator = page.locator(selector).first
+            if await locator.is_visible(timeout=timeout_per // 2):
+                await locator.click(timeout=timeout_per)
+                logger.debug(f"Dismissed overlay: {selector}")
+                await page.wait_for_timeout(300)  # Brief pause for animation
+        except Exception:
+            continue
+
+
+async def _setup_dialog_handler(page: 'Page') -> list[dict]:
+    """
+    Install JavaScript dialog handler (alert/confirm/prompt).
+    
+    CRITICAL for XSS testing:
+    - Captures dialog info as proof of XSS execution
+    - MUST accept/dismiss dialogs or page hangs permanently
+    - Returns list that accumulates dialog events in-place
+    
+    Returns:
+        Mutable list that will be populated with dialog events
+    """
+    captured_dialogs: list[dict] = []
+    
+    async def _handle_dialog(dialog):
+        captured_dialogs.append({
+            "type": dialog.type,
+            "message": dialog.message,
+            "default_value": dialog.default_value,
+            "url": page.url,
+        })
+        try:
+            await dialog.accept()
+        except Exception:
+            pass  # Dialog may already be dismissed
+    
+    page.on("dialog", _handle_dialog)
+    return captured_dialogs
+
+
+async def _smart_fill(page: 'Page', selector: str, value: str) -> dict:
+    """
+    Intelligent form fill with selector cascade and multiple strategies.
+    
+    Handles:
+    - Comma-separated selectors (tries each independently)
+    - Visibility check before fill
+    - Force fill if element obscured (overlays)
+    - Keyboard input fallback for reactive frameworks
+    - Direct JS value injection as last resort
+    
+    Returns:
+        dict with fill result (success, strategy_used, selector_matched)
+    """
+    # Parse comma-separated selectors into individual candidates
+    if ',' in selector:
+        candidates = [s.strip() for s in selector.split(',') if s.strip()]
+    else:
+        candidates = [selector]
+    
+    # Strategy 1: Standard Playwright fill with each candidate
+    for sel in candidates:
+        try:
+            locator = page.locator(sel).first
+            # Check visibility with short timeout
+            if await locator.is_visible(timeout=3000):
+                await locator.fill(value, timeout=5000)
+                return {"success": True, "strategy": "fill", "selector": sel}
+        except Exception as e:
+            logger.debug(f"Fill strategy failed for '{sel}': {e}")
+            continue
+    
+    # Strategy 2: Click + type (works better with reactive frameworks)
+    for sel in candidates:
+        try:
+            locator = page.locator(sel).first
+            if await locator.is_visible(timeout=2000):
+                await locator.click(timeout=3000)
+                await locator.press_sequentially(value, delay=30, timeout=8000)
+                return {"success": True, "strategy": "click_type", "selector": sel}
+        except Exception as e:
+            logger.debug(f"Click+type strategy failed for '{sel}': {e}")
+            continue
+    
+    # Strategy 3: Force fill (bypasses actionability checks — useful when overlays block)
+    for sel in candidates:
+        try:
+            locator = page.locator(sel).first
+            count = await locator.count()
+            if count > 0:
+                await locator.fill(value, force=True, timeout=5000)
+                return {"success": True, "strategy": "force_fill", "selector": sel}
+        except Exception as e:
+            logger.debug(f"Force fill strategy failed for '{sel}': {e}")
+            continue
+    
+    # Strategy 4: Direct JavaScript injection (last resort, bypasses all framework layers)
+    for sel in candidates:
+        try:
+            injected = await page.evaluate(f"""
+                (value) => {{
+                    const el = document.querySelector('{sel}');
+                    if (!el) return false;
+                    // Set value via native setter to trigger React/Angular/Vue bindings
+                    const nativeSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype, 'value'
+                    ).set;
+                    nativeSetter.call(el, value);
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    return true;
+                }}
+            """, value)
+            if injected:
+                return {"success": True, "strategy": "js_injection", "selector": sel}
+        except Exception as e:
+            logger.debug(f"JS injection strategy failed for '{sel}': {e}")
+            continue
+    
+    return {
+        "success": False,
+        "strategy": "none",
+        "selector": None,
+        "error": f"All fill strategies failed for selectors: {candidates}"
+    }
+
+
+async def _smart_click(page: 'Page', selector: str) -> dict:
+    """
+    Intelligent click with cascading strategies.
+    
+    Handles:
+    - Comma-separated selectors
+    - Visibility check
+    - Force click (bypasses overlay obstruction)
+    - JS dispatch_event fallback
+    """
+    candidates = [s.strip() for s in selector.split(',')] if ',' in selector else [selector]
+    
+    for sel in candidates:
+        try:
+            locator = page.locator(sel).first
+            if await locator.is_visible(timeout=3000):
+                await locator.click(timeout=5000)
+                return {"success": True, "strategy": "click", "selector": sel}
+        except Exception:
+            pass
+        
+        # Force click
+        try:
+            locator = page.locator(sel).first
+            count = await locator.count()
+            if count > 0:
+                await locator.click(force=True, timeout=3000)
+                return {"success": True, "strategy": "force_click", "selector": sel}
+        except Exception:
+            pass
+        
+        # JS dispatch
+        try:
+            clicked = await page.evaluate(f"""
+                () => {{
+                    const el = document.querySelector('{sel}');
+                    if (!el) return false;
+                    el.click();
+                    return true;
+                }}
+            """)
+            if clicked:
+                return {"success": True, "strategy": "js_dispatch", "selector": sel}
+        except Exception:
+            pass
+    
+    return {"success": False, "strategy": "none", "selector": None,
+            "error": f"All click strategies failed for: {candidates}"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Browser Tools
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -373,18 +730,20 @@ def _browser_not_available_error() -> str:
     })
 
 
-async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int = 30000, use_session: bool = True) -> str:
+async def browser_navigate(url: str, wait_for: str = "domcontentloaded", timeout: int = 30000, use_session: bool = True) -> str:
     """
-    Navigate to URL with Playwright.
+    Navigate to URL with Playwright (SPA-aware, resilient).
     
     Args:
         url: Target URL to navigate to
-        wait_for: Wait condition ('load', 'domcontentloaded', 'networkidle')
+        wait_for: Wait condition ('load', 'domcontentloaded', 'networkidle').
+                  Default is 'domcontentloaded' (safe for SPAs).
+                  AVOID 'networkidle' on Angular/React/Vue apps.
         timeout: Timeout in milliseconds (default 30s)
         use_session: If True, use persistent session (maintains cookies, DEFAULT)
     
     Returns:
-        JSON with page title, URL, status code, and HTML content
+        JSON with page title, URL, status code, HTML content, and SPA framework detected
     
     Performance:
     - First call: ~2.5s (browser launch + context creation)
@@ -403,33 +762,47 @@ async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int
             context = await manager.get_context(use_session=False)
             page = await context.new_page()
         
-        # Navigate
-        response = await page.goto(url, wait_until=wait_for, timeout=timeout)
+        # Install dialog handler (captures XSS alerts)
+        dialog_results = await _setup_dialog_handler(page)
+        
+        # Resilient navigation (domcontentloaded → commit → force)
+        nav_info = await _resilient_navigate(page, url, timeout=timeout)
+        
+        # Auto-dismiss overlays (cookie banners, welcome modals)
+        await _dismiss_overlays(page)
         
         # Get page info
         title = await page.title()
         final_url = page.url
-        status = response.status if response else None
         
-        # Get HTML content (limit to 10KB for LLM context)
+        # Detect SPA framework
         html = await page.content()
+        framework = _detect_spa_framework(html)
         html_preview = html[:10000] + "..." if len(html) > 10000 else html
         
         # Only close if not session page
         if not use_session:
             await page.close()
         
-        return json.dumps({
+        result = {
             "success": True,
             "url": final_url,
             "title": title,
-            "status_code": status,
+            "status_code": nav_info["status"],
             "html": html_preview,
-            "redirected": final_url != url
-        }, indent=2)
+            "redirected": final_url != url,
+            "spa_framework": framework,
+            "nav_strategy": nav_info["strategy"],
+        }
+        
+        if dialog_results:
+            result["dialogs_captured"] = dialog_results
+        
+        return json.dumps(result, indent=2)
         
     except PlaywrightTimeout:
-        return json.dumps({"error": f"Navigation timeout after {timeout}ms"})
+        return json.dumps({"error": f"Navigation timeout after {timeout}ms",
+                           "hint": "Target may be a slow SPA. Try with wait_for='domcontentloaded' or increase timeout."})
     except RuntimeError as e:
         return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
@@ -438,17 +811,24 @@ async def browser_navigate(url: str, wait_for: str = "networkidle", timeout: int
 
 async def browser_fill(url: str, selector: str, value: str, submit: bool = False, use_session: bool = True) -> str:
     """
-    Fill a form field and optionally submit.
+    Fill a form field with intelligent selector resolution and XSS dialog capture.
+    
+    Features:
+    - Smart selector cascade (tries each comma-separated selector independently)
+    - Auto-dismisses overlays/modals before filling
+    - Captures JavaScript dialogs (alert/confirm/prompt) as XSS proof
+    - Multiple fill strategies: standard → click+type → force → JS injection
+    - SPA-aware navigation (never uses networkidle)
     
     Args:
         url: Target URL
-        selector: CSS selector for input field
+        selector: CSS selector(s) for input field. Comma-separated for fallback.
         value: Value to fill
         submit: Whether to submit form after filling
         use_session: If True, use persistent session (maintains cookies, DEFAULT)
     
     Returns:
-        JSON with result and response
+        JSON with result, fill strategy used, and any captured dialogs
     """
     if not PLAYWRIGHT_AVAILABLE:
         return _browser_not_available_error()
@@ -463,12 +843,26 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
             context = await manager.get_context(use_session=False)
             page = await context.new_page()
         
-        # Skip navigation if session page is already on target URL
-        if not (use_session and _urls_match(page.url, url)):
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+        # Install dialog handler BEFORE any interaction (captures XSS alerts)
+        dialog_results = await _setup_dialog_handler(page)
         
-        # Fill field
-        await page.fill(selector, value)
+        # Navigate if needed (SPA-aware, resilient)
+        if not (use_session and _urls_match(page.url, url)):
+            await _resilient_navigate(page, url)
+        
+        # Auto-dismiss overlays BEFORE trying to fill
+        await _dismiss_overlays(page)
+        
+        # Smart fill with cascading strategies
+        fill_result = await _smart_fill(page, selector, value)
+        
+        if not fill_result["success"]:
+            return json.dumps({
+                "error": fill_result["error"],
+                "strategies_tried": ["fill", "click_type", "force_fill", "js_injection"],
+                "hint": "Selector may not match any visible element. Try browser_screenshot to inspect the page, or use a different selector.",
+                "selectors_tried": [s.strip() for s in selector.split(',')] if ',' in selector else [selector],
+            }, indent=2)
         
         if submit:
             # Try to find and click submit button
@@ -477,27 +871,41 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
                 'input[type="submit"]',
                 'button:has-text("Submit")',
                 'button:has-text("Login")',
-                'button:has-text("Search")'
+                'button:has-text("Search")',
+                'button:has-text("Go")',
+                'button:has-text("OK")',
             ]
             
             submitted = False
             for submit_selector in submit_selectors:
                 try:
-                    await page.click(submit_selector, timeout=2000)
-                    submitted = True
-                    break
+                    btn = page.locator(submit_selector).first
+                    if await btn.is_visible(timeout=1500):
+                        await btn.click(timeout=3000)
+                        submitted = True
+                        break
                 except:
                     continue
             
             if not submitted:
-                # Fallback: press Enter in the field
-                await page.press(selector, "Enter")
+                # Fallback: press Enter in the matched field
+                matched_sel = fill_result["selector"]
+                try:
+                    await page.locator(matched_sel).first.press("Enter", timeout=3000)
+                    submitted = True
+                except:
+                    # Last resort: press Enter on the focused element
+                    await page.keyboard.press("Enter")
+                    submitted = True
             
-            # Wait for navigation or response
+            # Wait for response (with short timeout — don't block on SPA transitions)
             try:
-                await page.wait_for_load_state("networkidle", timeout=5000)
+                await page.wait_for_load_state("domcontentloaded", timeout=5000)
             except:
                 pass
+        
+        # Brief wait for any XSS dialog to trigger
+        await page.wait_for_timeout(1000)
         
         # Get result
         final_url = page.url
@@ -508,27 +916,43 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
         if not use_session:
             await page.close()
         
-        return json.dumps({
+        result = {
             "success": True,
             "filled": True,
             "submitted": submit,
+            "fill_strategy": fill_result["strategy"],
+            "selector_matched": fill_result["selector"],
             "final_url": final_url,
-            "html": html_preview
-        }, indent=2)
+            "html": html_preview,
+        }
+        
+        # XSS evidence: any dialogs captured?
+        if dialog_results:
+            result["xss_dialogs_captured"] = dialog_results
+            result["xss_proof"] = True
+        
+        return json.dumps(result, indent=2)
         
     except RuntimeError as e:
         return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
     except Exception as e:
-        return json.dumps({"error": f"Fill failed: {str(e)}"})
+        return json.dumps({"error": f"Fill failed: {str(e)}",
+                           "hint": "Try browser_screenshot to see current page state, then retry with correct selector."})
 
 
 async def browser_click(url: str, selector: str, wait_after: int = 2000, use_session: bool = True) -> str:
     """
-    Click an element on the page.
+    Click an element with intelligent selector resolution.
+    
+    Features:
+    - Smart click cascade (standard → force → JS dispatch)
+    - Auto-dismisses overlays before clicking
+    - Captures JavaScript dialogs
+    - SPA-aware navigation
     
     Args:
         url: Target URL
-        selector: CSS selector for element to click
+        selector: CSS selector(s) for element to click (comma-separated for fallback)
         wait_after: Time to wait after click (ms)
         use_session: If True, use persistent session (maintains cookies, DEFAULT)
     
@@ -541,33 +965,55 @@ async def browser_click(url: str, selector: str, wait_after: int = 2000, use_ses
     manager = BrowserManager()
     
     try:
-        # Get page (persistent session page or new page from pool)
+        # Get page
         if use_session:
             page = await manager.get_session_page()
         else:
             context = await manager.get_context(use_session=False)
             page = await context.new_page()
         
-        # Skip navigation if session page is already on target URL
+        # Install dialog handler
+        dialog_results = await _setup_dialog_handler(page)
+        
+        # Navigate if needed (SPA-aware)
         if not (use_session and _urls_match(page.url, url)):
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-        await page.click(selector)
+            await _resilient_navigate(page, url)
+        
+        # Auto-dismiss overlays
+        await _dismiss_overlays(page)
+        
+        # Smart click with cascade
+        click_result = await _smart_click(page, selector)
+        
+        if not click_result["success"]:
+            return json.dumps({
+                "error": click_result["error"],
+                "hint": "Element may not exist or be visible. Try browser_screenshot to inspect."
+            }, indent=2)
+        
+        # Wait after click
         await page.wait_for_timeout(wait_after)
         
         final_url = page.url
         html = await page.content()
         html_preview = html[:5000] + "..." if len(html) > 5000 else html
         
-        # Only close if not session page
         if not use_session:
             await page.close()
         
-        return json.dumps({
+        result = {
             "success": True,
             "clicked": True,
+            "click_strategy": click_result["strategy"],
+            "selector_matched": click_result["selector"],
             "final_url": final_url,
-            "html": html_preview
-        }, indent=2)
+            "html": html_preview,
+        }
+        
+        if dialog_results:
+            result["dialogs_captured"] = dialog_results
+        
+        return json.dumps(result, indent=2)
         
     except RuntimeError as e:
         return json.dumps({"error": str(e), "fallback": "Use the 'http' tool instead"})
@@ -611,7 +1057,10 @@ async def browser_screenshot(url: str, filename: str, selector: Optional[str] = 
         
         # Skip navigation if session page is already on target URL
         if not (use_session and _urls_match(page.url, url)):
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await _resilient_navigate(page, url)
+        
+        # Auto-dismiss overlays for clean screenshot
+        await _dismiss_overlays(page)
         
         if selector:
             element = await page.query_selector(selector)
@@ -675,19 +1124,32 @@ async def browser_login(
             browser = await manager.get_browser()
             page = await browser.new_page()
         
-        # Navigate to login page
-        await page.goto(url, wait_until="networkidle", timeout=30000)
+        # Navigate to login page (SPA-aware)
+        await _resilient_navigate(page, url)
         
-        # Fill credentials
-        await page.fill(username_selector, username)
-        await page.fill(password_selector, password)
+        # Dismiss overlays that may block login form
+        await _dismiss_overlays(page)
         
-        # Submit
-        await page.click(submit_selector)
+        # Fill credentials with smart fill
+        user_result = await _smart_fill(page, username_selector, username)
+        if not user_result["success"]:
+            return json.dumps({"error": f"Username field not found: {username_selector}",
+                               "hint": "Try browser_screenshot to see the login form structure."})
+        
+        pass_result = await _smart_fill(page, password_selector, password)
+        if not pass_result["success"]:
+            return json.dumps({"error": f"Password field not found: {password_selector}",
+                               "hint": "Try browser_screenshot to see the login form structure."})
+        
+        # Submit with smart click
+        submit_result = await _smart_click(page, submit_selector)
+        if not submit_result["success"]:
+            # Fallback: press Enter
+            await page.keyboard.press("Enter")
         
         # Wait for navigation
         try:
-            await page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_load_state("domcontentloaded", timeout=10000)
         except:
             pass
         
@@ -745,7 +1207,7 @@ async def browser_get_cookies(url: str) -> str:
         context = await manager.get_session_context(browser)
         page = await context.new_page()
         
-        await page.goto(url, wait_until="networkidle", timeout=30000)
+        await _resilient_navigate(page, url)
         
         # Get all cookies
         cookies = await context.cookies()
@@ -834,7 +1296,12 @@ async def browser_clear_session() -> str:
 
 TOOL_SCHEMAS = {
     "browser_navigate": {
-        "description": "Navigate to URL with browser (Playwright). Use for JavaScript-heavy apps, XSS testing, or when you need to see rendered page. SESSION PERSISTENT by default (modals stay dismissed, cookies maintained). FAST: ~100ms after first call.",
+        "description": (
+            "Navigate to URL with browser (Playwright). SPA-AWARE: auto-detects Angular/React/Vue "
+            "and waits for framework bootstrap. Auto-dismisses overlays (cookie banners, welcome modals). "
+            "Captures any JavaScript dialogs (XSS proof). SESSION PERSISTENT by default. "
+            "FAST: ~100ms after first call. Uses stealth mode (anti-bot-detection)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -845,8 +1312,8 @@ TOOL_SCHEMAS = {
                 "wait_for": {
                     "type": "string",
                     "enum": ["load", "domcontentloaded", "networkidle"],
-                    "description": "Wait condition (default: networkidle)",
-                    "default": "networkidle"
+                    "description": "Wait condition (default: domcontentloaded). AVOID networkidle on SPAs (Angular/React/Vue) — it will timeout.",
+                    "default": "domcontentloaded"
                 },
                 "timeout": {
                     "type": "integer",
@@ -864,7 +1331,13 @@ TOOL_SCHEMAS = {
     },
     
     "browser_fill": {
-        "description": "Fill form field and optionally submit. SESSION PERSISTENT by default (stays on same page, maintains state). Use for login forms, search boxes, or testing XSS in input fields.",
+        "description": (
+            "Fill form field with SMART SELECTOR resolution and optional submit. "
+            "Supports comma-separated selectors (tries each independently as fallback). "
+            "Auto-dismisses overlays/modals before filling. Captures XSS alert() dialogs as proof. "
+            "4 fill strategies: standard → click+type → force → JS injection. "
+            "SESSION PERSISTENT by default. SPA-aware navigation (no networkidle timeout)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -896,7 +1369,12 @@ TOOL_SCHEMAS = {
     },
     
     "browser_click": {
-        "description": "Click an element on the page. SESSION PERSISTENT by default (great for dismissing modals, navigating within same session). Use for clicking buttons, links, or testing clickjacking.",
+        "description": (
+            "Click an element with SMART SELECTOR resolution. "
+            "Supports comma-separated selectors. Auto-dismisses overlays first. "
+            "3 strategies: standard → force (bypasses obstruction) → JS dispatch. "
+            "SESSION PERSISTENT by default. Captures XSS dialogs."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

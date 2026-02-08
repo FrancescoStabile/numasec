@@ -58,12 +58,14 @@ TOOL_TIMEOUTS: dict[str, int] = {
     "run_exploit": 120,
     "read_file": 10,
     "write_file": 10,
-    "browser_navigate": 60,
-    "browser_fill": 30,
-    "browser_click": 30,
-    "browser_screenshot": 30,
-    "browser_login": 60,
-    "browser_get_cookies": 10,
+    # Browser tools: generous timeouts to allow smart retry cascade
+    # (resilient_navigate + dismiss_overlays + smart_fill/click + dialog wait)
+    "browser_navigate": 90,
+    "browser_fill": 90,      # Was 30 — caused Juice Shop timeout
+    "browser_click": 60,     # Was 30
+    "browser_screenshot": 60, # Was 30
+    "browser_login": 90,     # Was 60
+    "browser_get_cookies": 30,
     "browser_set_cookies": 10,
     "browser_clear_session": 10,
 }
@@ -550,7 +552,11 @@ class Agent:
         
         # Browser tools — similar to HTTP
         if tool_name.startswith("browser_"):
-            browser_errors = ["page crashed", "navigation failed", "timeout", "target closed"]
+            browser_errors = [
+                "page crashed", "navigation failed", "timeout", "target closed",
+                "all fill strategies failed", "all click strategies failed",
+                "browser disconnected", "execution context was destroyed",
+            ]
             return any(err in result_lower for err in browser_errors)
         
         # Scan tools — only fail on actual errors

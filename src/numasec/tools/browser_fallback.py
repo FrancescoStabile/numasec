@@ -1,49 +1,111 @@
 """
-Browser Fallback Detection - Phase 2
+Browser Fallback Detection - Phase 2 (Enhanced)
 
 Detects when http tool result warrants browser retry.
+Includes SPA framework detection and selector suggestions.
 """
 
 import json
 import re
 
 
-def detect_javascript_spa(html: str) -> bool:
+# ═══════════════════════════════════════════════════════════════════════════
+# SPA Framework Detection (Enhanced)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def detect_javascript_spa(html: str) -> dict:
     """
     Detect if page is JavaScript-heavy SPA that needs browser rendering.
     
-    Indicators:
-    - React/Vue/Angular frameworks detected
-    - Minimal HTML with large script tags
-    - No actual content, just loading scripts
+    Returns:
+        dict with: is_spa (bool), framework (str|None), confidence (float),
+                   wait_strategy (str), indicators (list[str])
     """
+    result = {
+        "is_spa": False,
+        "framework": None,
+        "confidence": 0.0,
+        "wait_strategy": "domcontentloaded",
+        "indicators": [],
+    }
+    
     if not html or len(html) < 100:
-        return False
+        return result
     
     html_lower = html.lower()
+    score = 0.0
     
-    # SPA framework indicators
-    spa_indicators = [
-        # React
-        'react' in html_lower and '<div id="root"' in html_lower,
-        'react' in html_lower and 'data-reactroot' in html_lower,
-        
-        # Vue
-        'vue' in html_lower and '<div id="app"' in html_lower,
-        'vue' in html_lower and 'v-app' in html_lower,
-        
-        # Angular
-        'angular' in html_lower and 'ng-app' in html_lower,
-        'angular' in html_lower and 'ng-version' in html_lower,
-        
-        # Generic: lots of scripts, little content
-        html_lower.count('<script') > 5 and len(html.strip()) < 5000,
-        
-        # Empty body with only root div
-        '<body' in html_lower and html_lower.count('<div') == 1 and 'root' in html_lower,
+    # Angular detection
+    angular_signals = [
+        ('ng-version' in html_lower, 0.9, "ng-version attribute found"),
+        ('ng-app' in html_lower, 0.8, "ng-app attribute found"),
+        ('app-root' in html_lower, 0.7, "app-root element found"),
+        ('angular' in html_lower and '<script' in html_lower, 0.5, "Angular scripts detected"),
+        ('zone.js' in html_lower, 0.8, "Zone.js (Angular runtime) detected"),
+        ('polyfills' in html_lower and 'runtime' in html_lower, 0.6, "Angular build chunks detected"),
     ]
+    for condition, weight, desc in angular_signals:
+        if condition:
+            score = max(score, weight)
+            result["indicators"].append(desc)
+            result["framework"] = "angular"
     
-    return any(spa_indicators)
+    # React detection
+    react_signals = [
+        ('data-reactroot' in html_lower, 0.9, "data-reactroot found"),
+        ('__next' in html_lower, 0.9, "Next.js detected"),
+        ('<div id="root"' in html_lower and 'react' in html_lower, 0.8, "React root + react scripts"),
+        ('_react' in html_lower, 0.7, "React fiber internals detected"),
+        ('react-dom' in html_lower, 0.6, "react-dom script detected"),
+    ]
+    if not result["framework"]:  # Only if Angular not already detected
+        for condition, weight, desc in react_signals:
+            if condition:
+                score = max(score, weight)
+                result["indicators"].append(desc)
+                result["framework"] = "react"
+    
+    # Vue detection
+    vue_signals = [
+        ('data-v-' in html_lower, 0.9, "Vue scoped style attributes found"),
+        ('<div id="app"' in html_lower and 'vue' in html_lower, 0.8, "Vue app root + vue scripts"),
+        ('v-app' in html_lower, 0.8, "Vuetify v-app found"),
+        ('__vue' in html_lower, 0.7, "Vue internals detected"),
+    ]
+    if not result["framework"]:
+        for condition, weight, desc in vue_signals:
+            if condition:
+                score = max(score, weight)
+                result["indicators"].append(desc)
+                result["framework"] = "vue"
+    
+    # Generic SPA signals (no specific framework)
+    generic_signals = [
+        (html_lower.count('<script') > 5 and len(html.strip()) < 5000, 0.6,
+         "Heavy scripts with minimal HTML (likely SPA)"),
+        ('<body' in html_lower and html_lower.count('<div') <= 2 and '<script' in html_lower, 0.5,
+         "Near-empty body with scripts (client-side rendered)"),
+        ('webpack' in html_lower or 'chunk' in html_lower, 0.4,
+         "Webpack/bundled assets detected"),
+        ('manifest.json' in html_lower and 'service-worker' in html_lower, 0.5,
+         "PWA manifest + service worker detected"),
+    ]
+    if not result["framework"]:
+        for condition, weight, desc in generic_signals:
+            if condition:
+                score = max(score, weight)
+                result["indicators"].append(desc)
+                result["framework"] = "generic"
+    
+    result["confidence"] = score
+    result["is_spa"] = score >= 0.4
+    
+    # Wait strategy recommendation
+    if result["is_spa"]:
+        result["wait_strategy"] = "domcontentloaded"  # NEVER networkidle for SPAs
+    
+    return result
 
 
 def should_retry_with_browser(tool_name: str, tool_args: dict, result: str) -> tuple[bool, str]:
@@ -71,10 +133,18 @@ def should_retry_with_browser(tool_name: str, tool_args: dict, result: str) -> t
         url = tool_args.get('url', '')
         
         # Case 1: 200 OK but SPA detected
-        if status == 200 and detect_javascript_spa(body):
-            return True, """
-The http response suggests this is a JavaScript-heavy Single Page Application (SPA).
-The actual content is likely rendered client-side and not visible in the raw HTTP response.
+        spa_info = detect_javascript_spa(body)
+        if status == 200 and spa_info["is_spa"]:
+            framework = spa_info["framework"] or "unknown"
+            indicators = ", ".join(spa_info["indicators"][:3])
+            return True, f"""
+The http response is a **{framework.upper()} SPA** (confidence: {spa_info['confidence']:.0%}).
+Indicators: {indicators}
+
+The actual content is rendered client-side and not visible in the raw HTTP response.
+
+**CRITICAL:** Do NOT use wait_for='networkidle' — it will TIMEOUT on SPAs.
+The browser tools now auto-detect SPAs and use domcontentloaded + framework bootstrap wait.
 
 **Recommended action:**
 Use browser_navigate to render JavaScript and see the actual page content.
