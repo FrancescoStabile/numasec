@@ -41,7 +41,7 @@ def _wait_for_http(url: str, timeout: int = 120, interval: int = 3) -> bool:
             resp = httpx.get(url, timeout=5, follow_redirects=True)
             if resp.status_code < 500:
                 return True
-        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
+        except (httpx.ConnectError, httpx.ReadError, httpx.ReadTimeout, httpx.ConnectTimeout):
             pass
         time.sleep(interval)
     return False

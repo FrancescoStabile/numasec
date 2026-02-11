@@ -44,7 +44,7 @@ jobs:
 
     - name: Run tests
       run: |
-        PYTHONPATH=src pytest tests/ -v --tb=short
+        PYTHONPATH=src pytest tests/ -v --tb=short --ignore=tests/benchmarks
 
     - name: Check imports
       run: |
