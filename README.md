@@ -13,10 +13,8 @@ $0.12 per scan with DeepSeek. MIT license.
 
 [![$0.12/scan](https://img.shields.io/badge/cost-$0.12%2Fscan-58a6ff?style=flat-square&labelColor=0d1117)](#quick-start)
 [![MCP Native](https://img.shields.io/badge/MCP-native-10b981?style=flat-square&labelColor=0d1117)](#mcp-integration)
-[![20 Tools](https://img.shields.io/badge/tools-20_security_tools-f59e0b?style=flat-square&labelColor=0d1117)](#how-it-works)
 [![Autonomous Agent](https://img.shields.io/badge/agent-fully_autonomous-8b5cf6?style=flat-square&labelColor=0d1117)](#how-it-works)
 [![MIT License](https://img.shields.io/badge/license-MIT-6b7280?style=flat-square&labelColor=0d1117)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=main&style=flat-square&labelColor=0d1117&label=CI)](https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/numasec?style=flat-square&labelColor=0d1117&color=3b82f6)](https://pypi.org/project/numasec/)
 
 </div>
@@ -363,7 +361,6 @@ Claude reads these automatically during assessments to suggest accurate fixes.
 ## Roadmap
 
 - [x] MCP integration (Claude Desktop, Cursor, VS Code)
-- [x] 46-file knowledge base as MCP Resources
 - [x] Browser automation (8 Playwright tools)
 - [x] Standards engine (CVSS v3.1, CWE, OWASP Top 10 auto-enrichment)
 - [x] Attack graph (multi-stage exploitation chains)
