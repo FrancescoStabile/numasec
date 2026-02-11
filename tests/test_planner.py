@@ -1,10 +1,19 @@
 """
-Tests for Planner — hierarchical attack plan.
+Tests for Planner — hierarchical attack plan + templates + LLM planner.
 """
 
 import pytest
-from numasec.planner import generate_plan, AttackPlan, AttackPhase, AttackStep, PhaseStatus
-from numasec.target_profile import TargetProfile
+from numasec.planner import (
+    generate_plan,
+    AttackPlan,
+    AttackPhase,
+    AttackStep,
+    PhaseStatus,
+    PLAN_TEMPLATES,
+    detect_target_type,
+    _template_to_plan,
+)
+from numasec.target_profile import TargetProfile, Technology, Port
 
 
 class TestGeneratePlan:
@@ -94,3 +103,65 @@ class TestAttackPlan:
         assert plan.is_complete()
         summary = plan.to_prompt_summary()
         assert isinstance(summary, str)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Plan Templates
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestPlanTemplates:
+    """Template-based plan generation (§4.3)."""
+
+    def test_all_templates_exist(self):
+        expected = {"web_standard", "wordpress", "api_rest", "spa_javascript", "network"}
+        assert expected <= set(PLAN_TEMPLATES.keys())
+
+    def test_each_template_has_5_phases(self):
+        for key, template in PLAN_TEMPLATES.items():
+            assert len(template) >= 4, f"Template '{key}' has too few phases"
+
+    def test_template_to_plan(self):
+        plan = _template_to_plan("web_standard", "Test target.com")
+        assert isinstance(plan, AttackPlan)
+        assert plan.objective == "Test target.com"
+        assert len(plan.phases) >= 4
+
+    def test_template_to_plan_unknown_falls_back(self):
+        plan = _template_to_plan("nonexistent", "Test")
+        assert len(plan.phases) >= 4  # falls back to web_standard
+
+
+class TestDetectTargetType:
+    """detect_target_type() infers the right template."""
+
+    def test_default_is_web_standard(self):
+        profile = TargetProfile()
+        assert detect_target_type(profile) == "web_standard"
+
+    def test_wordpress_detection(self):
+        profile = TargetProfile()
+        profile.add_technology(Technology(name="WordPress", version="6.0", category="cms"))
+        assert detect_target_type(profile) == "wordpress"
+
+    def test_spa_detection_via_flag(self):
+        profile = TargetProfile()
+        profile.spa_detected = True
+        assert detect_target_type(profile) == "spa_javascript"
+
+    def test_spa_detection_via_tech(self):
+        profile = TargetProfile()
+        profile.add_technology(Technology(name="React", version="18", category="framework"))
+        assert detect_target_type(profile) == "spa_javascript"
+
+    def test_api_detection(self):
+        profile = TargetProfile()
+        profile.add_technology(Technology(name="FastAPI", version="0.100", category="framework"))
+        assert detect_target_type(profile) == "api_rest"
+
+    def test_network_detection(self):
+        profile = TargetProfile()
+        profile.add_port(Port(number=22, service="ssh"))
+        profile.add_port(Port(number=445, service="smb"))
+        # No web ports → network
+        assert detect_target_type(profile) == "network"

@@ -1,6 +1,6 @@
 """NumaSec — AI security testing for your apps."""
 
-__version__ = "3.0.0"
+__version__ = "3.2.1"
 __author__ = "Francesco Stabile"
 __description__ = "AI security testing for apps. Paste a URL, get a security report."
 

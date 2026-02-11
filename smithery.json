@@ -1,0 +1,109 @@
+{
+  "$schema": "https://smithery.ai/schema/mcp-server.json",
+  "name": "numasec",
+  "displayName": "NumaSec",
+  "description": "AI-powered security testing through MCP. Find vulnerabilities, understand root causes, and fix code — all from your IDE. 20 security tools (nmap, nuclei, sqlmap, Playwright browser), CVSS/CWE/OWASP standards, orchestrated by an AI agent.",
+  "version": "3.2.1",
+  "license": "MIT",
+  "author": {
+    "name": "Francesco Stabile",
+    "url": "https://github.com/FrancescoStabile"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FrancescoStabile/numasec"
+  },
+  "homepage": "https://github.com/FrancescoStabile/numasec",
+  "keywords": [
+    "security",
+    "pentesting",
+    "vulnerability-scanner",
+    "cybersecurity",
+    "ai-security",
+    "web-security",
+    "penetration-testing",
+    "hacking",
+    "ctf",
+    "owasp"
+  ],
+  "categories": ["security", "developer-tools", "testing"],
+  "installation": {
+    "pip": {
+      "command": "pip install 'numasec[mcp]'",
+      "args": []
+    }
+  },
+  "runtime": {
+    "type": "python",
+    "minVersion": "3.11"
+  },
+  "transport": {
+    "stdio": {
+      "command": "numasec",
+      "args": ["--mcp"]
+    },
+    "http": {
+      "command": "numasec",
+      "args": ["--mcp-http"],
+      "port": 8080
+    }
+  },
+  "tools": [
+    {
+      "name": "numasec_assess",
+      "description": "Full autonomous AI-driven security assessment — plans attack, picks tools, finds vulnerabilities, generates report with CVSS/CWE/OWASP standards"
+    },
+    {
+      "name": "numasec_assess_start",
+      "description": "Start an autonomous assessment in the background — returns immediately with session ID for live progress polling"
+    },
+    {
+      "name": "numasec_assess_status",
+      "description": "Get live progress and findings from a running assessment — shows new findings as they're discovered in real-time"
+    },
+    {
+      "name": "numasec_assess_cancel",
+      "description": "Cancel a running assessment and retrieve partial results collected so far"
+    },
+    {
+      "name": "numasec_quick_check",
+      "description": "30-second security spot check — headers, technology detection, common misconfigurations. No API key required"
+    },
+    {
+      "name": "numasec_recon",
+      "description": "Port scanning + technology fingerprinting (nmap + httpx). No API key required"
+    },
+    {
+      "name": "numasec_http",
+      "description": "Security-focused HTTP requests with response analysis. Test injection payloads, check headers, probe APIs"
+    },
+    {
+      "name": "numasec_browser",
+      "description": "Playwright browser automation — navigate SPAs, fill forms with XSS payloads, take evidence screenshots"
+    },
+    {
+      "name": "numasec_get_knowledge",
+      "description": "Access 46+ security cheatsheets, attack chains, and remediation guides from the knowledge base"
+    },
+    {
+      "name": "create_finding",
+      "description": "Register a confirmed vulnerability finding with title, severity, description, and evidence"
+    }
+  ],
+  "resources": [
+    {
+      "uriPattern": "numasec://kb/{topic}",
+      "description": "Security knowledge base — cheatsheets, attack chains, and decision matrices for 46+ topics"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "security_assessment",
+      "description": "Structured multi-step security assessment workflow — from quick check to full pentest with remediation"
+    },
+    {
+      "name": "quick_security_check",
+      "description": "Rapid 30-second security check with immediate recommendations"
+    }
+  ]
+}

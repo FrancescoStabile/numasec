@@ -4,6 +4,9 @@ NumaSec — Entry Point
 Usage:
     numasec                      # Interactive mode
     numasec check <url>          # Quick security check (non-interactive)
+    numasec --mcp                # MCP server (stdio, for Claude Desktop)
+    numasec --mcp-http           # MCP server (HTTP, for remote clients)
+    numasec setup-claude         # Auto-configure Claude Desktop
     numasec --demo               # Demo mode (no API key needed)
     numasec --resume <session>   # Resume previous session
     numasec --verbose            # Debug logging
@@ -11,6 +14,7 @@ Usage:
 
 import argparse
 import asyncio
+import os
 import sys
 
 from numasec import __version__
@@ -42,6 +46,40 @@ async def async_main():
     """Async main entry point."""
     # Suppress Playwright shutdown noise early
     _suppress_shutdown_noise(asyncio.get_running_loop())
+
+    # ── MCP Mode Detection (before argparse, so --mcp doesn't conflict) ──
+    if "--mcp" in sys.argv or "--mcp-http" in sys.argv or os.environ.get("MCP_TRANSPORT"):
+        transport = "stdio"
+        if "--mcp-http" in sys.argv:
+            transport = "http"
+        if os.environ.get("MCP_TRANSPORT"):
+            transport = os.environ["MCP_TRANSPORT"]
+        try:
+            from numasec.mcp_server import run_mcp_server
+            await run_mcp_server(transport=transport)
+        except ImportError:
+            print(
+                "MCP support requires the 'mcp' package.\n"
+                "Install it with: pip install 'numasec[mcp]'\n"
+                "Or: pip install 'mcp[cli]>=1.26.0'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return
+
+    # ── Claude Desktop Auto-Setup ──
+    if len(sys.argv) > 1 and sys.argv[1] == "setup-claude":
+        try:
+            from numasec.mcp_server import setup_claude_desktop
+            setup_claude_desktop()
+        except ImportError:
+            print(
+                "MCP support requires the 'mcp' package.\n"
+                "Install it with: pip install 'numasec[mcp]'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return
 
     parser = argparse.ArgumentParser(
         description="NumaSec — AI Security Testing for Your Apps",

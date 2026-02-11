@@ -60,9 +60,7 @@ class TestAgent:
         agent = Agent()
         # First call — not a loop
         assert not agent._detect_loop("nmap", {"target": "10.10.10.1"})
-        # Second call — not yet (threshold = 2)
-        assert not agent._detect_loop("nmap", {"target": "10.10.10.1"})
-        # Third call — loop detected
+        # Second call — loop detected (threshold = 1, block on first repeat)
         assert agent._detect_loop("nmap", {"target": "10.10.10.1"})
 
     def test_detect_loop_different_args(self):

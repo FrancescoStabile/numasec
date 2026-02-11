@@ -137,7 +137,7 @@ class BrowserContextPool:
                     # Expired, close and remove
                     try:
                         await context.close()
-                    except:
+                    except Exception:
                         pass
                     del self._pool[key]
             
@@ -170,7 +170,7 @@ class BrowserContextPool:
         
         try:
             await oldest_context.close()
-        except:
+        except Exception:
             pass
         
         del self._pool[oldest_key]
@@ -181,7 +181,7 @@ class BrowserContextPool:
             for context, _ in self._pool.values():
                 try:
                     await context.close()
-                except:
+                except Exception:
                     pass
             self._pool.clear()
     
@@ -198,7 +198,7 @@ class BrowserContextPool:
                 context, _ = self._pool[key]
                 try:
                     await context.close()
-                except:
+                except Exception:
                     pass
                 del self._pool[key]
 
@@ -232,20 +232,30 @@ class BrowserManager:
     _session_page: Optional[Page] = None  # NEW: Persistent page for session continuity
     _context_pool: Optional[BrowserContextPool] = None  # Context pool for performance
     _session_cookies_file = Path("./evidence/browser_sessions/cookies.json")
+    _launch_lock: asyncio.Lock | None = None  # Lazily initialised
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
+    def _get_launch_lock(self) -> asyncio.Lock:
+        """Lazy init for the launch lock (avoids binding to wrong event loop)."""
+        if self._launch_lock is None:
+            self._launch_lock = asyncio.Lock()
+        return self._launch_lock
+    
     async def get_browser(self) -> Browser:
-        """Get or create browser instance."""
+        """Get or create browser instance (async-safe via lock)."""
         if not PLAYWRIGHT_AVAILABLE:
             raise RuntimeError(
                 "Playwright not installed. Run: pip install playwright && playwright install chromium"
             )
         
-        if self._browser is None:
+        async with self._get_launch_lock():
+            if self._browser is not None:
+                return self._browser
+
             try:
                 self._playwright = await async_playwright().start()
             except Exception as e:
@@ -323,7 +333,7 @@ class BrowserManager:
             if self._session_cookies_file.exists():
                 try:
                     cookies = json.loads(self._session_cookies_file.read_text())
-                except:
+                except Exception:
                     pass
             
             # Create persistent context with stealth + security-testing features
@@ -371,7 +381,7 @@ class BrowserManager:
                 cookies = await self._session_context.cookies()
                 self._session_cookies_file.parent.mkdir(parents=True, exist_ok=True)
                 self._session_cookies_file.write_text(json.dumps(cookies, indent=2))
-            except:
+            except Exception:
                 pass
     
     async def clear_session(self):
@@ -884,7 +894,7 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
                         await btn.click(timeout=3000)
                         submitted = True
                         break
-                except:
+                except Exception:
                     continue
             
             if not submitted:
@@ -893,7 +903,7 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
                 try:
                     await page.locator(matched_sel).first.press("Enter", timeout=3000)
                     submitted = True
-                except:
+                except Exception:
                     # Last resort: press Enter on the focused element
                     await page.keyboard.press("Enter")
                     submitted = True
@@ -901,7 +911,7 @@ async def browser_fill(url: str, selector: str, value: str, submit: bool = False
             # Wait for response (with short timeout — don't block on SPA transitions)
             try:
                 await page.wait_for_load_state("domcontentloaded", timeout=5000)
-            except:
+            except Exception:
                 pass
         
         # Brief wait for any XSS dialog to trigger
@@ -1150,7 +1160,7 @@ async def browser_login(
         # Wait for navigation
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
-        except:
+        except Exception:
             pass
         
         final_url = page.url
@@ -1297,157 +1307,219 @@ async def browser_clear_session() -> str:
 TOOL_SCHEMAS = {
     "browser_navigate": {
         "description": (
-            "Navigate to URL with browser (Playwright). SPA-AWARE: auto-detects Angular/React/Vue "
-            "and waits for framework bootstrap. Auto-dismisses overlays (cookie banners, welcome modals). "
-            "Captures any JavaScript dialogs (XSS proof). SESSION PERSISTENT by default. "
-            "FAST: ~100ms after first call. Uses stealth mode (anti-bot-detection)."
+            "Navigate to a URL using a real Chromium browser (Playwright). This is the primary entry point "
+            "for all browser-based testing — XSS detection, DOM inspection, SPA crawling, and authenticated "
+            "page access. SPA-AWARE: auto-detects Angular/React/Vue and waits for framework bootstrap "
+            "completion. Auto-dismisses overlays (cookie banners, welcome modals, GDPR popups). "
+            "Captures JavaScript dialogs (alert/confirm/prompt) as XSS proof. SESSION PERSISTENT by default — "
+            "cookies, localStorage, and auth state survive between calls. Stealth mode defeats basic bot detection. "
+            "**When to use**: Starting browser-based testing on any target. Navigating to pages that require "
+            "JavaScript rendering (SPAs). Checking for reflected XSS by visiting crafted URLs. Accessing "
+            "authenticated pages after browser_login. Inspecting DOM content not visible via http tool. "
+            "**When NOT to use**: For simple HTTP requests that don't need JS rendering (use http tool — "
+            "it's 10x faster). For API endpoint testing (use http). For scanning known CVEs (use nuclei). "
+            "**Output**: Page title, final URL (after redirects), full HTML content, any captured JS dialogs, "
+            "and visible text content. Returns DOM after JS execution (unlike http which gets raw HTML). "
+            "**Performance**: ~2-5s first call (browser launch), ~100ms subsequent calls (browser reused). "
+            "**Common mistake**: Using wait_for='networkidle' on SPAs — Angular/React/Vue apps make "
+            "continuous API calls, causing networkidle to timeout. Use 'domcontentloaded' (default) instead."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL to navigate to"
+                    "description": "Target URL to navigate to (e.g., 'http://localhost:3000', 'http://target/page?xss=<script>alert(1)</script>')"
                 },
                 "wait_for": {
                     "type": "string",
                     "enum": ["load", "domcontentloaded", "networkidle"],
-                    "description": "Wait condition (default: domcontentloaded). AVOID networkidle on SPAs (Angular/React/Vue) — it will timeout.",
+                    "description": "Wait condition: 'domcontentloaded' (default, recommended for SPAs), 'load' (waits for images/CSS), 'networkidle' (AVOID on SPAs — will timeout).",
                     "default": "domcontentloaded"
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Timeout in milliseconds (default: 30000)",
+                    "description": "Timeout in milliseconds. Increase to 60000 for slow pages. Default: 30000.",
                     "default": 30000
                 },
                 "use_session": {
                     "type": "boolean",
-                    "description": "Use persistent session (DEFAULT=True). Set False only for isolated one-off checks.",
+                    "description": "Use persistent session with cookies/auth state (default: true). Set false only for isolated unauthenticated checks.",
                     "default": True
                 }
             },
             "required": ["url"]
         }
     },
-    
+
     "browser_fill": {
         "description": (
-            "Fill form field with SMART SELECTOR resolution and optional submit. "
-            "Supports comma-separated selectors (tries each independently as fallback). "
-            "Auto-dismisses overlays/modals before filling. Captures XSS alert() dialogs as proof. "
-            "4 fill strategies: standard → click+type → force → JS injection. "
-            "SESSION PERSISTENT by default. SPA-aware navigation (no networkidle timeout)."
+            "Fill a form field with a value and optionally submit the form. Uses SMART SELECTOR resolution "
+            "with 4 escalating strategies: standard fill → click+type → force fill → JavaScript injection. "
+            "Supports comma-separated selectors as fallback chain (tries each until one works). "
+            "Auto-dismisses overlays/modals before interacting. Captures XSS alert() dialogs triggered "
+            "by form submission as proof. SESSION PERSISTENT — fills work on authenticated pages. "
+            "**When to use**: Injecting XSS payloads into input fields. Testing SQL injection through "
+            "form inputs. Filling login forms (prefer browser_login for standard username/password flows). "
+            "Testing SSTI payloads in search fields, comment boxes, profile updates. Any scenario where "
+            "you need to type into an input element and optionally trigger form submission. "
+            "**When NOT to use**: For login flows (use browser_login — it handles the full flow). "
+            "For API testing with POST data (use http tool with body parameter). For file uploads "
+            "(not supported — use http with multipart). "
+            "**Output**: Page content after fill (and after submit if submit=true), any captured JS "
+            "dialogs (XSS proof), final URL, and fill success status. "
+            "**Common mistake**: Using complex CSS selectors. Start simple: 'input[name=\"search\"]', "
+            "'#username', '.form-control'. Use comma-separated selectors for fallback: "
+            "'input[name=\"q\"], input[type=\"search\"], #search-input'."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL"
+                    "description": "Target URL containing the form (e.g., 'http://target/search', 'http://target/profile/edit')"
                 },
                 "selector": {
                     "type": "string",
-                    "description": "CSS selector for input field (e.g., 'input[name=\"username\"]', '#search')"
+                    "description": "CSS selector for input field. Supports comma-separated fallback chain (e.g., 'input[name=\"username\"], #username, .login-input')"
                 },
                 "value": {
                     "type": "string",
-                    "description": "Value to fill in the field"
+                    "description": "Value to fill — can be XSS payload, SQLi string, normal text (e.g., '<script>alert(document.cookie)</script>', \"' OR 1=1--\")"
                 },
                 "submit": {
                     "type": "boolean",
-                    "description": "Whether to submit the form after filling",
+                    "description": "Submit the form after filling. Set true to trigger server-side processing of the payload.",
                     "default": False
                 },
                 "use_session": {
                     "type": "boolean",
-                    "description": "Use persistent session (DEFAULT=True). Already logged in? Session is maintained automatically.",
+                    "description": "Use persistent session (default: true). Maintains login state from browser_login.",
                     "default": True
                 }
             },
             "required": ["url", "selector", "value"]
         }
     },
-    
+
     "browser_click": {
         "description": (
-            "Click an element with SMART SELECTOR resolution. "
-            "Supports comma-separated selectors. Auto-dismisses overlays first. "
-            "3 strategies: standard → force (bypasses obstruction) → JS dispatch. "
-            "SESSION PERSISTENT by default. Captures XSS dialogs."
+            "Click an element on the page with SMART SELECTOR resolution. Uses 3 escalating strategies: "
+            "standard click → force click (bypasses element obstruction) → JavaScript dispatchEvent. "
+            "Supports comma-separated selectors as fallback chain. Auto-dismisses overlays before clicking. "
+            "Captures XSS dialogs triggered by click actions. SESSION PERSISTENT. "
+            "**When to use**: Clicking buttons that trigger actions (delete, submit, admin functions). "
+            "Navigating through multi-step flows (wizards, checkout processes). Triggering JavaScript "
+            "event handlers for DOM-based XSS testing. Dismissing specific popups or dialogs. "
+            "Expanding hidden content (accordions, dropdowns, 'show more' buttons). "
+            "**When NOT to use**: For form submission (use browser_fill with submit=true). "
+            "For navigation to a URL (use browser_navigate — it's faster and more reliable). "
+            "**Output**: Page content after click, any captured JS dialogs, final URL (if navigation "
+            "occurred), and click success status. Includes wait_after delay for async content loading. "
+            "**Common mistake**: Not waiting long enough after click. Increase wait_after for actions "
+            "that trigger AJAX requests or page transitions."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL"
+                    "description": "Target URL containing the element to click"
                 },
                 "selector": {
                     "type": "string",
-                    "description": "CSS selector for element to click"
+                    "description": "CSS selector for element to click. Supports comma-separated fallback (e.g., 'button.delete, .btn-danger, [data-action=\"delete\"]')"
                 },
                 "wait_after": {
                     "type": "integer",
-                    "description": "Time to wait after click in milliseconds (default: 2000)",
+                    "description": "Milliseconds to wait after click for async content to load (default: 2000). Increase for AJAX-heavy pages.",
                     "default": 2000
                 },
                 "use_session": {
                     "type": "boolean",
-                    "description": "Use persistent session (DEFAULT=True). Modal dismissed? It stays dismissed!",
+                    "description": "Use persistent session (default: true). Maintains auth + dismissed modals across calls.",
                     "default": True
                 }
             },
             "required": ["url", "selector"]
         }
     },
-    
+
     "browser_screenshot": {
-        "description": "Take screenshot as evidence. Use to document XSS, visual vulnerabilities, or proof of exploitation.",
+        "description": (
+            "Take a screenshot of a page or specific element as visual evidence. Saves PNG files to the "
+            "./evidence/ directory for inclusion in the final report. Essential for documenting XSS pop-ups, "
+            "visual defacements, admin panel access, or any vulnerability that benefits from visual proof. "
+            "**When to use**: After confirming XSS (screenshot the alert dialog or injected content). "
+            "After accessing admin panels or sensitive pages. Documenting visual vulnerabilities "
+            "(UI redress, clickjacking frames). Creating before/after evidence for exploits. "
+            "Any finding where visual proof strengthens the report. "
+            "**When NOT to use**: For every page visit (only screenshot meaningful findings). "
+            "For text-based evidence (use create_finding with the relevant output instead). "
+            "**Output**: Screenshot saved to ./evidence/{filename}, returns file path and page metadata. "
+            "**Tip**: Use the selector parameter to screenshot only the relevant element (e.g., the "
+            "XSS-injected div) instead of the full page — produces cleaner evidence."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL"
+                    "description": "Target URL to screenshot"
                 },
                 "filename": {
                     "type": "string",
-                    "description": "Output filename (saved in ./evidence/)"
+                    "description": "Output filename without path (saved in ./evidence/). Use descriptive names (e.g., 'xss_reflected_search.png', 'admin_panel_access.png')"
                 },
                 "selector": {
                     "type": "string",
-                    "description": "Optional CSS selector to screenshot specific element only"
+                    "description": "Optional CSS selector to screenshot only a specific element (e.g., '.alert-box', '#injected-content')"
                 },
                 "use_session": {
                     "type": "boolean",
-                    "description": "Use persistent session (DEFAULT=True). Screenshots authenticated pages automatically if already logged in.",
+                    "description": "Use persistent session (default: true). Screenshots authenticated pages automatically if logged in via browser_login.",
                     "default": True
                 }
             },
             "required": ["url", "filename"]
         }
     },
-    
+
     "browser_login": {
-        "description": "Login to site and save session cookies for authenticated testing. Use when you need to test features that require login.",
+        "description": (
+            "Perform a complete login flow: navigate to login page, fill username and password fields, "
+            "submit the form, and persist session cookies for all subsequent browser calls. This is the "
+            "recommended way to establish an authenticated session for testing protected endpoints. "
+            "**When to use**: Before testing any authenticated functionality (admin panels, user profiles, "
+            "API endpoints behind auth). When credentials are available (provided by user, found during "
+            "recon, or default credentials). At the start of authenticated testing phases. "
+            "**When NOT to use**: For API token-based auth (use http tool with Authorization header). "
+            "For OAuth/SSO flows (these require browser_navigate + browser_fill + browser_click manually). "
+            "For cookie-based session replay (use browser_set_cookies instead). "
+            "**Output**: Login result (success/failure based on URL change and content), session cookies "
+            "stored for reuse, final page content after login. "
+            "**Common mistake**: Wrong selectors. Inspect the login page first with browser_navigate to "
+            "find the correct input selectors. Most common: 'input[name=\"username\"]', "
+            "'input[name=\"password\"]', 'button[type=\"submit\"]'."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Login page URL"
+                    "description": "Login page URL (e.g., 'http://target/login', 'http://target/#/signin')"
                 },
                 "username_selector": {
                     "type": "string",
-                    "description": "CSS selector for username input (e.g., 'input[name=\"username\"]')"
+                    "description": "CSS selector for username/email input (e.g., 'input[name=\"username\"]', '#email', 'input[type=\"email\"]')"
                 },
                 "username": {
                     "type": "string",
-                    "description": "Username to login with"
+                    "description": "Username or email to login with"
                 },
                 "password_selector": {
                     "type": "string",
-                    "description": "CSS selector for password input"
+                    "description": "CSS selector for password input (e.g., 'input[name=\"password\"]', '#password', 'input[type=\"password\"]')"
                 },
                 "password": {
                     "type": "string",
@@ -1455,54 +1527,89 @@ TOOL_SCHEMAS = {
                 },
                 "submit_selector": {
                     "type": "string",
-                    "description": "CSS selector for submit button (default: 'button[type=\"submit\"]')",
+                    "description": "CSS selector for submit button. Default handles most forms. Override for custom buttons (e.g., '#login-btn', '.submit-button').",
                     "default": "button[type=\"submit\"]"
                 },
                 "use_session": {
                     "type": "boolean",
-                    "description": "Save session cookies for reuse (default: true)",
+                    "description": "Persist session cookies for reuse in all subsequent browser_* calls (default: true).",
                     "default": True
                 }
             },
             "required": ["url", "username_selector", "username", "password_selector", "password"]
         }
     },
-    
+
     "browser_get_cookies": {
-        "description": "Get all cookies from current session. Use for cookie stealing, session analysis.",
+        "description": (
+            "Retrieve all cookies from the current browser session for a given URL. Returns cookie names, "
+            "values, domains, paths, expiry, and security flags (httpOnly, secure, sameSite). "
+            "**When to use**: Analyzing session token security (missing httpOnly/secure flags). "
+            "Extracting session cookies for replay attacks. Checking for sensitive data in cookies. "
+            "Documenting cookie-based findings. Verifying successful login (session cookie present). "
+            "**When NOT to use**: For setting cookies (use browser_set_cookies). "
+            "**Output**: Array of cookie objects with full metadata. Check for: missing httpOnly flag "
+            "(XSS can steal session), missing secure flag (cookie sent over HTTP), weak sameSite "
+            "policy (CSRF risk), sensitive data in cookie values."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "URL to get cookies from"
+                    "description": "URL to get cookies for — returns cookies matching this URL's domain and path"
                 }
             },
             "required": ["url"]
         }
     },
-    
+
     "browser_set_cookies": {
-        "description": "Set cookies in session (for session hijacking tests). Use to test with stolen cookies.",
+        "description": (
+            "Inject cookies into the browser session. Use for session hijacking proof-of-concept: "
+            "set a stolen session token to demonstrate account takeover without knowing the password. "
+            "Also useful for testing with specific cookie values (e.g., role=admin, debug=true). "
+            "**When to use**: Testing session hijacking (inject stolen session cookie, then navigate to "
+            "authenticated page). Testing privilege escalation via cookie manipulation (change role cookie). "
+            "Setting up specific test conditions (debug cookies, feature flags). "
+            "**When NOT to use**: For normal login (use browser_login). For testing cookie security "
+            "flags (use browser_get_cookies to analyze). "
+            "**Output**: Confirmation of cookies set. Follow with browser_navigate to verify access."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "URL to set cookies for"
+                    "description": "URL/domain to set cookies for (e.g., 'http://target.com')"
                 },
                 "cookies": {
                     "type": "array",
-                    "description": "List of cookie objects with name, value, domain, path",
+                    "description": "Array of cookie objects: [{\"name\": \"session\", \"value\": \"stolen_token\", \"domain\": \"target.com\", \"path\": \"/\"}]",
                     "items": {"type": "object"}
                 }
             },
             "required": ["url", "cookies"]
         }
     },
-    
+
     "browser_clear_session": {
-        "description": "Clear browser session and cookies. Use when you need to test as unauthenticated user.",
+        "description": (
+            "Clear all browser cookies, localStorage, sessionStorage, and authentication state. "
+            "Completely resets the browser to a clean, unauthenticated state — equivalent to "
+            "opening a fresh incognito window. This is essential for access control testing where "
+            "you need to verify behavior across different privilege levels. The operation is "
+            "immediate and irreversible for the current session. "
+            "**When to use**: Before testing as a different user (switch from admin to regular user). "
+            "Before testing unauthenticated access controls (verify pages require login). "
+            "After completing authenticated testing to clean up session artifacts. Between "
+            "privilege escalation tests with different roles. When testing IDOR by switching "
+            "between user accounts. After browser_login to verify logout functionality works. "
+            "**When NOT to use**: Mid-flow when you need session persistence — this destroys ALL "
+            "state including auth tokens, CSRF tokens, and shopping carts. If you only need to "
+            "modify specific cookies, use browser_set_cookies instead. "
+            "**Output**: Confirmation that session was cleared with count of removed items."
+        ),
         "parameters": {
             "type": "object",
             "properties": {}

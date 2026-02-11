@@ -15,6 +15,9 @@ prompt-toolkit>=3.0.43
 # AI Providers (httpx used directly for streaming — no SDK needed)
 httpx>=0.27.0
 
+# Validation (Finding model, auto-enrichment)
+pydantic>=2.6.0
+
 # Browser Automation (XSS testing, screenshots)
 playwright>=1.40.0
 
