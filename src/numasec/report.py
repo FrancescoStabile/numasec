@@ -1036,6 +1036,14 @@ def write_report(
     elif format == "json":
         content = generate_json_report(state, target, session_id, cost)
         filename = f"numasec_report_{target_slug}_{timestamp}.json"
+    elif format == "pdf":
+        from numasec.pdf_report import generate_pdf_report
+        pdf_bytes = generate_pdf_report(state, target, session_id, cost)
+        filename = f"numasec_report_{target_slug}_{timestamp}.pdf"
+        filepath = output_dir / filename
+        filepath.write_bytes(pdf_bytes)
+        logger.info(f"Report written: {filepath}")
+        return filepath
     else:
         content = generate_markdown_report(state, target, session_id, cost)
         filename = f"numasec_report_{target_slug}_{timestamp}.md"

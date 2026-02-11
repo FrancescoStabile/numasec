@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "numasec"
-version = "3.0.0"
+version = "3.2.1"
 description = "AI security testing for apps. Paste a URL, get a full security report. Like having a pentester on your team for $0.12."
 readme = "README.md"
 license = { text = "MIT" }
@@ -58,6 +58,9 @@ dependencies = [
     # AI Providers (httpx used directly for streaming)
     "httpx>=0.27.0",
     
+    # Validation
+    "pydantic>=2.6.0",
+    
     # Browser Automation (XSS testing, screenshots)
     "playwright>=1.40.0",
     
@@ -67,12 +70,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp[cli]>=1.26.0",
+]
+pdf = [
+    "reportlab>=4.1.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "mypy>=1.9.0",
     "ruff>=0.3.0",
+]
+all = [
+    "numasec[mcp,pdf]",
 ]
 docs = [
     "mkdocs>=1.5.0",

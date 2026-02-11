@@ -127,6 +127,10 @@ class ToolRegistry:
         
         target_key = target_arg_map.get(name)
         if not target_key:
+            # run_exploit: check the command for target references
+            if name == "run_exploit":
+                cmd = args.get("command", "")
+                return self._check_exploit_scope(cmd)
             return None  # Non-network tool
         
         target_value = args.get(target_key, "")
@@ -138,6 +142,20 @@ class ToolRegistry:
             return None
         
         return f"SCOPE ERROR: {target_value} is not in allowed targets: {self.allowed_targets}. Adjust your target or ask user for permission."
+    
+    def _check_exploit_scope(self, command: str) -> str | None:
+        """Check if run_exploit command targets in-scope hosts."""
+        if not self.allowed_targets or not command:
+            return None
+        # Extract URLs and IPs from the command string
+        import re
+        urls = re.findall(r'https?://[^\s"\']+', command)
+        ips = re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', command)
+        targets = urls + ips
+        for target in targets:
+            if not self._is_in_scope(target):
+                return f"SCOPE ERROR: run_exploit targets {target} which is not in allowed scope: {self.allowed_targets}"
+        return None
     
     def _is_in_scope(self, target_value: str) -> bool:
         """
@@ -208,6 +226,10 @@ class ToolRegistry:
         try:
             func = tool["func"]
             self._logger.debug(f"Tool call: {name} with args: {args}")
+            
+            # Inject scope into run_exploit for defence-in-depth validation
+            if name == "run_exploit" and self.allowed_targets:
+                args = {**args, "scope_targets": self.allowed_targets}
             
             if asyncio.iscoroutinefunction(func):
                 result = await func(**args)
@@ -381,9 +403,30 @@ def write_file(path: str, content: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+# Allowlist for run_command — broader than EXPLOIT_ALLOWLIST but still gated
+_COMMAND_ALLOWLIST: set[str] = {
+    # Standard unix utilities (read-only / diagnostic)
+    "cat", "grep", "head", "tail", "wc", "sort", "uniq", "awk", "sed",
+    "base64", "xxd", "hexdump", "file", "ls", "find", "stat", "sha256sum",
+    "md5sum", "strings", "tr", "cut", "diff", "jq",
+    # Network diagnostics
+    "curl", "wget", "dig", "host", "whois", "ping", "traceroute",
+    "openssl", "nslookup",
+    # Security tools already in exploit allowlist
+    "nmap", "nuclei", "sqlmap", "nikto", "gobuster", "feroxbuster",
+    "ffuf", "wfuzz", "hydra", "medusa", "john", "hashcat",
+    "whatweb", "wpscan", "joomscan", "droopescan",
+    "enum4linux", "smbclient", "rpcclient", "ldapsearch",
+    "dnsrecon",
+    # Python/scripting
+    "python3", "python", "python3.11", "python3.12", "python3.13",
+    "node", "ruby", "perl",
+}
+
+
 async def run_command(command: str, timeout: int = 30) -> dict[str, Any]:
     """
-    Execute shell command.
+    Execute shell command with allowlist validation.
     
     Args:
         command: Shell command to run
@@ -392,15 +435,44 @@ async def run_command(command: str, timeout: int = 30) -> dict[str, Any]:
     Returns:
         dict with stdout, stderr, returncode
         
-    Security Warning: This uses shell execution which can be dangerous.
-    Only use in controlled environments. All commands are logged.
+    Security: Commands are validated against an allowlist of known
+    safe binaries. Shell metacharacters are blocked to prevent injection.
     """
+    import shlex
+    import re
+
     # Log command for audit trail
     logger.warning(f"Executing shell command: {command}")
-    
+
+    # Parse command safely
     try:
-        proc = await asyncio.create_subprocess_shell(
-            command,
+        parts = shlex.split(command)
+    except ValueError as e:
+        return {"error": f"Invalid command syntax: {e}"}
+
+    if not parts:
+        return {"error": "Empty command"}
+
+    # Extract binary name (handle /usr/bin/curl → curl)
+    binary = parts[0].split("/")[-1]
+
+    if binary not in _COMMAND_ALLOWLIST:
+        return {
+            "error": f"BLOCKED: '{binary}' is not in the command allowlist. "
+                     f"Allowed: {', '.join(sorted(list(_COMMAND_ALLOWLIST)[:20]))}..."
+        }
+
+    # Block shell metacharacters that indicate chaining/injection
+    _SHELL_METACHAR = re.compile(r"[;&|`$(){}]|>>|<<")
+    if _SHELL_METACHAR.search(command):
+        return {
+            "error": "BLOCKED: Shell metacharacters detected. "
+                     "Run one command at a time, no pipes or chaining."
+        }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *parts,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -430,71 +502,135 @@ async def run_command(command: str, timeout: int = 30) -> dict[str, Any]:
 
 TOOL_SCHEMAS = {
     "http": {
-        "description": "Make HTTP request to a URL. Use for testing web endpoints.",
+        "description": (
+            "Make an HTTP request to any URL and return the full response (status, headers, body). "
+            "Use this to probe endpoints, test for injection vulnerabilities, check security headers, "
+            "or interact with APIs. Supports GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD. "
+            "**When to use**: Testing specific endpoints for SQLi/XSS/SSRF payloads, checking "
+            "response headers (CORS, CSP, X-Frame-Options), sending authenticated requests with "
+            "custom cookies/tokens, probing API endpoints with crafted JSON bodies. "
+            "**When NOT to use**: For checking if a host is alive (use httpx instead), for "
+            "browser-rendered pages with JavaScript (use browser_navigate). "
+            "**Output**: JSON with status_code, headers dict, and body string. "
+            "**Common mistake**: Forgetting to include protocol (http:// or https://) in the URL."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "Target URL"},
-                "method": {"type": "string", "description": "HTTP method (GET, POST, etc)", "default": "GET"},
-                "headers": {"type": "object", "description": "HTTP headers"},
-                "data": {"description": "Request body"},
-                "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 10},
+                "url": {"type": "string", "description": "Target URL with protocol (e.g., 'http://localhost:3000/api/users?id=1')"},
+                "method": {"type": "string", "description": "HTTP method: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD", "default": "GET"},
+                "headers": {"type": "object", "description": "HTTP headers dict (e.g., {'Authorization': 'Bearer tok123', 'Content-Type': 'application/json'})"},
+                "data": {"description": "Request body — dict for JSON, string for form data (e.g., 'user=admin&pass=test')"},
+                "timeout": {"type": "integer", "description": "Request timeout in seconds (increase for slow targets)", "default": 10},
             },
             "required": ["url"],
         },
     },
     "read_file": {
-        "description": "Read file contents from disk.",
+        "description": (
+            "Read file contents from disk. Use to examine configuration files, source code, "
+            "credentials, or downloaded artifacts during a security assessment. "
+            "Security-scoped: only reads from the current working directory and ~/.numasec — "
+            "attempts to read outside these paths (e.g., /etc/shadow, /proc/) will be blocked. "
+            "Supports text files of any size; binary files return a hex preview. "
+            "**When to use**: Reading downloaded exploit scripts, examining config files found "
+            "during recon (e.g., .env, wp-config.php), viewing evidence files, checking tool "
+            "output logs, inspecting payloads before execution, reviewing wordlists. "
+            "**When NOT to use**: For reading remote files on the target (use http tool with "
+            "file:// protocol or LFI payloads). For reading large binary files (use run_command "
+            "with xxd/hexdump instead). "
+            "**Output**: JSON with 'content' string or 'error' message."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path to read"},
+                "path": {"type": "string", "description": "File path to read (relative or absolute within allowed directories)"},
             },
             "required": ["path"],
         },
     },
     "write_file": {
-        "description": "Write content to a file.",
+        "description": (
+            "Write content to a file on disk. Use to save exploit scripts, payloads, "
+            "evidence, or notes during a security assessment. Security-scoped to the "
+            "current working directory — writes outside this path are blocked. Creates "
+            "parent directories automatically if they don't exist. Overwrites existing "
+            "files without warning, so check first with read_file if preservation matters. "
+            "**When to use**: Saving a PoC exploit script before running it with run_exploit, "
+            "writing payloads to a file for delivery via http, saving evidence and screenshots "
+            "for the final report, creating custom wordlists for ffuf fuzzing, writing "
+            "configuration files for tool setup. "
+            "**When NOT to use**: For uploading files to the target server (use http with "
+            "multipart/form-data). For writing to target filesystem via RCE (use run_exploit). "
+            "**Output**: JSON with 'written' boolean and 'path' confirmation."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path to write"},
-                "content": {"type": "string", "description": "Content to write"},
+                "path": {"type": "string", "description": "File path to write (e.g., 'exploit.py', 'evidence/payload.txt')"},
+                "content": {"type": "string", "description": "Content to write to the file"},
             },
             "required": ["path", "content"],
         },
     },
     "run_command": {
-        "description": "Execute shell command. Use carefully.",
+        "description": (
+            "Execute a shell command on the local system. Use for running system utilities, "
+            "custom scripts, or tools not available as dedicated NumaSec tools. Commands run "
+            "in a sandboxed subprocess with configurable timeout (default 30s). The working "
+            "directory is the assessment workspace. Supports pipes, redirects, and shell features. "
+            "**When to use**: Running custom enumeration commands (e.g., 'curl', 'dig', 'whois', "
+            "'host', 'openssl s_client'), executing downloaded scripts, checking local system "
+            "info, running one-off tools, chaining commands with pipes for complex extraction, "
+            "decoding base64 or hex payloads, running hashcat/john for credential testing. "
+            "**When NOT to use**: For running nmap (use the nmap tool — it has better output "
+            "parsing and structured results). For running nuclei, sqlmap, or ffuf (use their "
+            "dedicated tools for proper result handling). For exploitation attempts (use "
+            "run_exploit — it has audit logging, allowlist enforcement, and scope checking). "
+            "**Security**: Commands are sandboxed with timeout. Avoid destructive operations. "
+            "**Output**: JSON with stdout, stderr, and exit_code."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Shell command to execute"},
-                "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 30},
+                "command": {"type": "string", "description": "Shell command to execute (e.g., 'curl -s http://target/robots.txt', 'dig example.com')"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds — increase for slow commands", "default": 30},
             },
             "required": ["command"],
         },
     },
     "create_finding": {
         "description": (
-            "Register a security finding. MUST be called every time you discover "
-            "a vulnerability, misconfiguration, or information disclosure. "
-            "If in doubt, register it — it is far better to over-report than to miss something. "
-            "Severity guide: critical = RCE/auth bypass/data breach, high = SQLi/XSS/SSRF, "
-            "medium = info disclosure/misconfig, low = missing headers/minor issues, "
-            "info = version disclosure/technology detected."
+            "Register a confirmed security finding. MUST be called EVERY TIME you discover "
+            "a vulnerability, misconfiguration, or information disclosure — no exceptions. "
+            "If in doubt, register it. It is far better to over-report than to miss something. "
+            "Each finding becomes part of the final assessment report with evidence. "
+            "**Severity guide**: "
+            "critical = RCE, authentication bypass, full data breach, admin takeover; "
+            "high = SQL injection, stored XSS, SSRF, arbitrary file read, privilege escalation; "
+            "medium = information disclosure, security misconfiguration, reflected XSS, CSRF; "
+            "low = missing security headers, verbose errors, minor info leaks; "
+            "info = version disclosure, technology fingerprinting, DNS records. "
+            "**When to use**: After confirming a vulnerability with evidence (HTTP response, "
+            "payload that worked, command output showing access). Also use for misconfigs like "
+            "exposed .env files, debug mode enabled, default credentials working. "
+            "**When NOT to use**: For suspected but unconfirmed vulnerabilities (investigate "
+            "further first). For duplicate findings already registered (check existing findings). "
+            "For informational notes that are not security-relevant (e.g., 'server responded slowly'). "
+            "**Common mistake**: Not calling create_finding after confirming a vulnerability. "
+            "Every confirmed issue MUST be registered or it will be lost from the report."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short finding title, e.g. 'SQL Injection in /login'"},
+                "title": {"type": "string", "description": "Short, specific title (e.g., 'SQL Injection in /api/users?id= parameter', 'Exposed .env with database credentials')"},
                 "severity": {
                     "type": "string",
                     "enum": ["critical", "high", "medium", "low", "info"],
-                    "description": "Finding severity level",
+                    "description": "Finding severity — see description for guide. When unsure, err on the higher side.",
                 },
-                "description": {"type": "string", "description": "Detailed description of the vulnerability"},
-                "evidence": {"type": "string", "description": "Proof: HTTP response, command output, screenshot path, etc."},
+                "description": {"type": "string", "description": "Detailed description: what the vulnerability is, how it was found, what the impact is, and how to fix it"},
+                "evidence": {"type": "string", "description": "Proof: the exact HTTP request/response, payload used, command output, or screenshot path that confirms this finding"},
             },
             "required": ["title", "severity", "description"],
         },

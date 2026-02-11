@@ -34,10 +34,11 @@ from numasec.error_recovery import inject_recovery_guidance
 from numasec.tools.browser_fallback import should_retry_with_browser, format_browser_suggestion
 from numasec.context import smart_trim_context, should_trim_context, estimate_tokens
 from numasec.extractors import run_extractor
-from numasec.planner import generate_plan
+from numasec.planner import generate_plan, generate_plan_with_llm
 from numasec.reflection import reflect_on_result
 from numasec.chains import format_chain_for_prompt
 from numasec.knowledge_loader import get_relevant_knowledge
+from numasec.attack_graph import AttackGraph
 
 logger = logging.getLogger("numasec.agent")
 
@@ -140,13 +141,16 @@ class Agent:
         self.state = State()
         self.is_running = False
         
+        # Attack graph for multi-stage reasoning
+        self.attack_graph = AttackGraph()
+        
         # Circuit breaker: Track repeated errors
         self.error_counter: dict[str, int] = {}
         self.max_repeated_errors = 3
         
         # Loop detection: Track recent tool calls
         self._recent_tool_hashes: deque[str] = deque(maxlen=10)
-        self._loop_threshold = 2  # Block after 2 identical calls
+        self._loop_threshold = 1  # Block on first repeat (identical call seen once = loop)
         
         # Tool availability: detect which external tools are installed
         self._tool_availability = check_tool_availability()
@@ -168,8 +172,9 @@ class Agent:
         1. Base system prompt
         2. TargetProfile summary (structured memory)
         3. AttackPlan status (what to do next)
-        4. Escalation chains (for confirmed vulns)
-        5. Relevant knowledge (context-aware)
+        4. Attack graph — multi-stage exploitation paths
+        5. Escalation chains (for confirmed vulns)
+        6. Relevant knowledge (context-aware)
         """
         parts = [self._base_system_prompt]
         
@@ -186,6 +191,11 @@ class Agent:
         if self.state.plan and self.state.plan.objective:
             plan_summary = self.state.plan.to_prompt_summary()
             parts.append("\n\n---\n\n" + plan_summary)
+        
+        # Attack graph — multi-stage exploitation guidance
+        graph_ctx = self.attack_graph.to_prompt_context()
+        if graph_ctx:
+            parts.append("\n\n---\n\n" + graph_ctx)
         
         # Escalation chains for confirmed vulns
         confirmed = self.state.profile.get_confirmed_vulns()
@@ -238,7 +248,12 @@ class Agent:
         
         # Generate attack plan if this is a new objective
         if not self.state.plan.objective or self.state.plan.is_complete():
-            self.state.plan = generate_plan(user_input, self.state.profile)
+            try:
+                self.state.plan = await generate_plan_with_llm(
+                    user_input, self.state.profile, self.router
+                )
+            except Exception:
+                self.state.plan = generate_plan(user_input, self.state.profile)
             yield AgentEvent("plan_generated", plan=self.state.plan.to_prompt_summary())
         
         try:
@@ -323,6 +338,7 @@ class Agent:
                     finding = self._extract_finding(text_buffer)
                     if finding:
                         self.state.add_finding(finding)
+                        self.attack_graph.mark_discovered(finding.title)
                         yield AgentEvent("finding", finding=finding)
                 
                 # Process tool calls
@@ -380,6 +396,8 @@ class Agent:
                                 hyp.tested = True
                                 hyp.confirmed = True
                                 self.state.profile.hypotheses.append(hyp)
+                            # ── ATTACK GRAPH: mark capability discovered ──
+                            self.attack_graph.mark_discovered(finding.title)
                             result = json.dumps({"registered": True, "title": finding.title, "severity": finding.severity})
                             yield AgentEvent("finding", finding=finding)
                             yield AgentEvent("tool_end", tool_name=tc["name"], tool_result=result)

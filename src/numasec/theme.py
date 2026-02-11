@@ -56,7 +56,7 @@ class CyberpunkAssets:
     """VISUAL ARSENAL — Vibe Security Edition"""
     
     # Header
-    BANNER_SMALL = f"[{MATRIX_GREEN}]NumaSec[/] [{GHOST_GRAY}]v3.0[/]"
+    BANNER_SMALL = f"[{MATRIX_GREEN}]NumaSec[/] [{GHOST_GRAY}]v3.2.1[/]"
     
     # Matrix Banner (ASCII Art)
     MATRIX_BANNER = f"""[bold {MATRIX_GREEN}]
@@ -67,7 +67,7 @@ class CyberpunkAssets:
 ██║ ╚████║╚██████╔╝██║ ╚═╝ ██║██║  ██║███████║███████╗╚██████╗
 ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝
 [/][{CYBER_PURPLE}]              Vibe Security — AI for Everyone[/]
-[{GHOST_GRAY}]                    v3.0.0 | 2026[/]
+[{GHOST_GRAY}]                    v3.2.1 | 2026[/]
 """
     
     # Matrix rain characters

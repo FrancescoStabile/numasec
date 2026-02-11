@@ -102,8 +102,10 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
-# Install NumaSec and dependencies
-RUN pip install --no-cache-dir .
+# Install NumaSec with all optional dependencies
+# - [mcp]: MCP server support (Claude Desktop, Cursor, VS Code)
+# - [pdf]: Professional PDF report generation
+RUN pip install --no-cache-dir '.[mcp,pdf]'
 
 # Install Playwright browser
 RUN playwright install chromium

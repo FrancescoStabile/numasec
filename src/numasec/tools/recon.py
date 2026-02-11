@@ -518,23 +518,37 @@ async def ffuf(
 TOOL_SCHEMAS = {
     "nmap": {
         "name": "nmap",
-        "description": "Port scanner - finds open ports and services on target. IMPORTANT: Use 'top100' (fast, 3-10s) or a small list like '80,443,3000,8080'. Avoid wide ranges (e.g. 1-10000) which take minutes. Use scan_type='full' only when you need all 65535 ports.",
+        "description": (
+            "Network port scanner — discovers open ports, running services, and their versions on a target. "
+            "The foundation of every assessment: tells you what's exposed before you test it. "
+            "**When to use**: First step in any assessment to map the attack surface. Use 'quick' scan "
+            "for initial discovery (top 100 ports, ~5s), 'service' for version detection (top 1000 ports, "
+            "~15s), 'vuln' to run NSE vulnerability scripts (~30s). Use 'full' only when you suspect "
+            "services on non-standard ports (scans all 65535, ~2min). "
+            "**When NOT to use**: To check if a web URL is alive (use httpx — it's faster). For web-layer "
+            "vulnerabilities (use nuclei or http tool). "
+            "**Performance tip**: ALWAYS start with scan_type='quick'. Only escalate to 'service' or 'vuln' "
+            "if you need version info or NSE scripts. Wide port ranges are automatically capped to prevent "
+            "excessive scan times. "
+            "**Output**: JSON with open ports, services, versions, and any NSE script results. "
+            "**Common mistake**: Using scan_type='full' as the first scan — it's slow and usually unnecessary."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "target": {
                     "type": "string",
-                    "description": "IP address, hostname, or CIDR to scan (e.g., '192.168.1.1', 'example.com')"
+                    "description": "IP address, hostname, or CIDR to scan (e.g., '192.168.1.1', 'example.com', '10.0.0.0/24')"
                 },
                 "ports": {
                     "type": "string",
-                    "description": "Ports to scan: 'top100' (default, RECOMMENDED), a short list '80,443,3000', or 'all'. Ranges wider than 1024 ports are automatically capped.",
+                    "description": "Ports to scan: 'top100' (default, RECOMMENDED, fastest), a short list '80,443,3000,8080', or 'all' (slow). Ranges wider than 1024 ports are automatically capped.",
                     "default": "top100"
                 },
                 "scan_type": {
                     "type": "string",
                     "enum": ["quick", "full", "service", "vuln"],
-                    "description": "quick (default, fast ~5s), service (version detection ~15s), vuln (NSE scripts ~30s), full (all ports, slow ~2min)",
+                    "description": "Scan depth: 'quick' (top 100, ~5s), 'service' (version detection, ~15s), 'vuln' (NSE scripts, ~30s), 'full' (all 65535 ports, ~2min). Start with 'quick', escalate if needed.",
                     "default": "quick"
                 }
             },
@@ -543,13 +557,24 @@ TOOL_SCHEMAS = {
     },
     "httpx": {
         "name": "httpx",
-        "description": "HTTP probe (ProjectDiscovery) - quickly checks if URLs are alive and gets status code, page title, and tech stack. For making actual HTTP requests with custom headers/body, use the 'http' tool instead.",
+        "description": (
+            "HTTP probe (ProjectDiscovery) — fast technology fingerprinting and liveness check. "
+            "Detects web server, framework, status code, page title, TLS info, and technology stack "
+            "in a single request. Much faster than a full nmap service scan for web targets. "
+            "**When to use**: As the first probe on any web target to detect what's running "
+            "(Express, Django, WordPress, etc.), get the HTTP status code, check TLS certificate info, "
+            "and identify the tech stack for targeted vulnerability testing. "
+            "**When NOT to use**: For making custom HTTP requests with specific headers, POST bodies, "
+            "or payloads (use the 'http' tool). For non-HTTP services (use nmap). "
+            "**Output**: JSON with status_code, title, tech stack array, webserver, TLS info, content_length. "
+            "**Workflow**: httpx first (what's running?) → nmap (what ports?) → nuclei (any known CVEs?)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "URL or host to probe (e.g., 'https://example.com', 'example.com')"
+                    "description": "URL or host to probe (e.g., 'https://example.com', 'http://localhost:3000')"
                 }
             },
             "required": ["url"]
@@ -557,13 +582,23 @@ TOOL_SCHEMAS = {
     },
     "subfinder": {
         "name": "subfinder",
-        "description": "Subdomain enumeration - finds subdomains of a domain",
+        "description": (
+            "Subdomain enumeration — discovers subdomains of a domain using passive sources "
+            "(certificate transparency logs, search engines, DNS datasets). "
+            "**When to use**: When assessing a domain (not an IP) and you want to discover "
+            "additional attack surface — staging servers, admin panels, API endpoints, forgotten "
+            "subdomains that may be less secured than the main site. "
+            "**When NOT to use**: When testing a single IP or localhost. When the scope is limited "
+            "to a specific URL (subdomains would be out of scope). "
+            "**Output**: JSON array of discovered subdomains. "
+            "**Workflow**: subfinder → httpx (check which are alive) → nmap + nuclei on live hosts."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "domain": {
                     "type": "string",
-                    "description": "Domain to enumerate (e.g., 'example.com')"
+                    "description": "Root domain to enumerate (e.g., 'example.com' — NOT a URL, just the domain)"
                 }
             },
             "required": ["domain"]
@@ -571,42 +606,55 @@ TOOL_SCHEMAS = {
     },
     "ffuf": {
         "name": "ffuf",
-        "description": "Web fuzzer for directory/file discovery. Use FUZZ in URL as placeholder (e.g., 'http://target/FUZZ'). Fast and efficient with customizable wordlists.",
+        "description": (
+            "Web fuzzer for directory and file discovery — bruteforces paths on a web server to find "
+            "hidden endpoints, admin panels, backup files, configuration files, and API routes. "
+            "Uses the FUZZ keyword as a placeholder in the URL that gets replaced with each wordlist entry. "
+            "**When to use**: After initial recon to discover hidden content — admin panels (/admin, "
+            "/dashboard), backup files (.bak, .old, .zip), config files (.env, .git/config, web.config), "
+            "API endpoints (/api/v1, /graphql), sensitive directories (/debug, /status, /metrics). "
+            "**When NOT to use**: When you already know the URL structure. For testing parameters "
+            "(use http tool with payloads). For known CVE detection (use nuclei). "
+            "**Performance**: Uses 100 threads by default. Filters 404s automatically. Add extensions "
+            "like '.php,.bak,.old' to find backup files. "
+            "**Output**: JSON array of discovered paths with status codes and response sizes. "
+            "**Common mistake**: Forgetting to include FUZZ in the URL. If omitted, /FUZZ is appended automatically."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL with FUZZ keyword (e.g., 'http://target.com/FUZZ'). If FUZZ missing, appended automatically."
+                    "description": "Target URL with FUZZ keyword (e.g., 'http://target.com/FUZZ'). If FUZZ is missing, /FUZZ is appended automatically."
                 },
                 "wordlist": {
                     "type": "string",
-                    "description": "Path to wordlist file (default: /usr/share/wordlists/dirb/common.txt)",
+                    "description": "Path to wordlist file. Default: /usr/share/wordlists/dirb/common.txt (~4600 entries, good general purpose).",
                     "default": "/usr/share/wordlists/dirb/common.txt"
                 },
                 "method": {
                     "type": "string",
-                    "description": "HTTP method (GET, POST)",
+                    "description": "HTTP method: GET (default) or POST (for fuzzing API endpoints)",
                     "default": "GET"
                 },
                 "extensions": {
                     "type": "string",
-                    "description": "Comma-separated extensions to test (e.g., '.php,.html,.txt,.bak')",
+                    "description": "Comma-separated file extensions to append to each word (e.g., '.php,.html,.bak,.old,.txt,.env'). Empty = directories only.",
                     "default": ""
                 },
                 "headers": {
                     "type": "string",
-                    "description": "Additional headers, separated by ;; (e.g., 'Cookie: session=abc;; X-Custom: val')",
+                    "description": "Additional headers, separated by ;; (e.g., 'Cookie: session=abc;; Authorization: Bearer token123')",
                     "default": ""
                 },
                 "filter_codes": {
                     "type": "string",
-                    "description": "Status codes to filter/exclude (e.g., '404,403')",
+                    "description": "HTTP status codes to EXCLUDE from results (e.g., '404,403' to hide not-found and forbidden)",
                     "default": "404"
                 },
                 "match_codes": {
                     "type": "string",
-                    "description": "Status codes to match/include (overrides filter). E.g., '200,301,302'",
+                    "description": "HTTP status codes to INCLUDE exclusively (overrides filter). E.g., '200,301,302' to only show successful hits.",
                     "default": ""
                 }
             },

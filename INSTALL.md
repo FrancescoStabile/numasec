@@ -51,15 +51,59 @@ playwright install chromium
 numasec --version
 ```
 
-### Method 2: From Source (Development)
+### Method 2: With MCP Support (Claude Desktop, Cursor, VS Code)
+
+```bash
+# Install with MCP extras
+pip install 'numasec[mcp]'
+
+# Auto-configure Claude Desktop
+numasec setup-claude
+
+# Restart Claude Desktop — done!
+```
+
+### Method 2b: With PDF Report Support
+
+```bash
+# Install with PDF generation
+pip install 'numasec[pdf]'
+
+# Or install everything (MCP + PDF)
+pip install 'numasec[mcp,pdf]'
+```
+
+**Or with `uv` (faster, isolated):**
+
+```bash
+uv tool install 'numasec[mcp]'
+```
+
+**Manual Cursor/VS Code config** — add to your MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "numasec": {
+      "command": "numasec",
+      "args": ["--mcp"],
+      "env": {
+        "DEEPSEEK_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
+```
+
+### Method 3: From Source (Development)
 
 ```bash
 # Clone
 git clone https://github.com/FrancescoStabile/numasec.git
 cd numasec
 
-# Install in editable mode
-pip install -e ".[dev]"
+# Install in editable mode with all extras
+pip install -e ".[dev,mcp,pdf]"
 
 # Install browser
 playwright install chromium
@@ -68,7 +112,7 @@ playwright install chromium
 pytest
 ```
 
-### Method 3: Container
+### Method 4: Container
 
 ```bash
 # Build
@@ -231,8 +275,20 @@ rm -rf ~/.numasec  # Remove session data (optional)
 
 ---
 
+## Optional Extras
+
+| Extra | Install | Features |
+|-------|---------|----------|
+| `[mcp]` | `pip install 'numasec[mcp]'` | MCP server for Claude Desktop, Cursor, VS Code |
+| `[pdf]` | `pip install 'numasec[pdf]'` | Professional PDF pentest reports (reportlab) |
+| `[dev]` | `pip install 'numasec[dev]'` | pytest, mypy, ruff for development |
+| `[all]` | `pip install 'numasec[all]'` | MCP + PDF (everything except dev tools) |
+
+---
+
 ## Next Steps
 
 1. **Quick Start**: `numasec` → `hack localhost:8080`
 2. **Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-3. **Report Issues**: [GitHub Issues](https://github.com/FrancescoStabile/numasec/issues)
+3. **MCP Setup**: [docs/MCP_INTEGRATION.md](docs/MCP_INTEGRATION.md)
+4. **Report Issues**: [GitHub Issues](https://github.com/FrancescoStabile/numasec/issues)
