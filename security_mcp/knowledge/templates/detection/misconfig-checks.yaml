@@ -1,0 +1,98 @@
+id: security-misconfig
+category: detection
+title: Security Misconfiguration Detection
+info:
+  name: Security Misconfiguration Checks
+  severity: medium
+  cwe: CWE-16
+  owasp: "A05:2021"
+  description: >
+    Security misconfiguration is the most common vulnerability class.
+    Includes missing security headers, default credentials, directory listing,
+    verbose error messages, and unnecessary services exposed.
+
+patterns:
+  - type: missing_headers
+    description: Security headers that should be present in HTTP responses
+    required_headers:
+      - name: Strict-Transport-Security
+        severity: high
+        note: Prevents SSL stripping attacks
+      - name: Content-Security-Policy
+        severity: high
+        note: Mitigates XSS and data injection
+      - name: X-Frame-Options
+        severity: medium
+        note: Prevents clickjacking (or use CSP frame-ancestors)
+      - name: X-Content-Type-Options
+        severity: low
+        note: Prevents MIME sniffing
+      - name: Referrer-Policy
+        severity: low
+        note: Controls referrer information leakage
+      - name: Permissions-Policy
+        severity: low
+        note: Controls browser feature access
+
+  - type: dangerous_headers
+    description: Headers that should NOT be present or reveal sensitive info
+    check_headers:
+      - name: Server
+        severity: info
+        note: Reveals web server software and version
+      - name: X-Powered-By
+        severity: info
+        note: Reveals backend technology
+      - name: X-AspNet-Version
+        severity: medium
+        note: Reveals .NET version for targeted attacks
+
+  - type: cors_misconfig
+    description: CORS misconfiguration allowing credential theft
+    checks:
+      - origin_reflection: "Access-Control-Allow-Origin reflects arbitrary Origin"
+      - null_origin: "Access-Control-Allow-Origin: null accepted"
+      - wildcard_with_creds: "Allow-Origin: * with Allow-Credentials: true"
+
+  - type: directory_listing
+    description: Directory listing enabled exposing file structure
+    test_paths:
+      - "/"
+      - "/images/"
+      - "/uploads/"
+      - "/static/"
+      - "/backup/"
+    match_patterns:
+      - "Index of /"
+      - "Directory listing for"
+      - "<title>Directory listing"
+      - "Parent Directory"
+
+  - type: debug_endpoints
+    description: Debug/admin endpoints exposed in production
+    test_paths:
+      - "/.env"
+      - "/debug"
+      - "/phpinfo.php"
+      - "/server-status"
+      - "/elmah.axd"
+      - "/.git/config"
+      - "/wp-admin/"
+      - "/actuator/health"
+      - "/api/swagger"
+      - "/.well-known/openid-configuration"
+
+  - type: default_credentials
+    description: Common default credential pairs
+    credential_pairs:
+      - username: admin
+        passwords: ["admin", "password", "123456", "admin123"]
+      - username: root
+        passwords: ["root", "toor", "password"]
+      - username: test
+        passwords: ["test", "test123"]
+
+tags:
+  - configuration
+  - headers
+  - owasp-top10

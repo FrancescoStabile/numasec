@@ -1,0 +1,75 @@
+id: ssrf-detection
+category: detection
+title: Server-Side Request Forgery (SSRF) Detection
+info:
+  name: Server-Side Request Forgery
+  severity: high
+  cwe: CWE-918
+  owasp: "A10:2021"
+  description: >
+    SSRF occurs when a web application fetches a remote resource without validating
+    the user-supplied URL. Attackers can force the server to make requests to internal
+    services, cloud metadata endpoints, or external systems.
+
+patterns:
+  - type: parameter_detection
+    description: Parameters likely vulnerable to SSRF
+    suspicious_param_names:
+      - url
+      - uri
+      - path
+      - src
+      - dest
+      - redirect
+      - callback
+      - next
+      - target
+      - fetch
+      - proxy
+      - request
+      - img
+      - load
+
+  - type: internal_access
+    description: Test payloads probing internal network
+    test_payloads:
+      - "http://127.0.0.1"
+      - "http://localhost"
+      - "http://[::1]"
+      - "http://169.254.169.254/latest/meta-data/"
+      - "http://metadata.google.internal/"
+      - "http://100.100.100.200/latest/meta-data/"
+      - "http://192.168.1.1"
+      - "http://10.0.0.1"
+
+  - type: bypass_techniques
+    description: Filter bypass for SSRF protections
+    bypass_payloads:
+      - "http://0x7f000001"
+      - "http://2130706433"
+      - "http://0177.0.0.1"
+      - "http://127.1"
+      - "http://127.0.0.1.nip.io"
+      - "http://[0:0:0:0:0:ffff:127.0.0.1]"
+      - "http://localtest.me"
+
+  - type: cloud_metadata
+    description: Cloud provider metadata endpoints
+    endpoints:
+      - provider: AWS
+        url: "http://169.254.169.254/latest/meta-data/"
+        critical_paths:
+          - "/iam/security-credentials/"
+          - "/identity-credentials/ec2/security-credentials/"
+      - provider: GCP
+        url: "http://metadata.google.internal/computeMetadata/v1/"
+        headers: {"Metadata-Flavor": "Google"}
+      - provider: Azure
+        url: "http://169.254.169.254/metadata/instance"
+        headers: {"Metadata": "true"}
+
+tags:
+  - injection
+  - network
+  - cloud
+  - owasp-top10

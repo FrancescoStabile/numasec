@@ -1,0 +1,92 @@
+id: api-security-patterns
+title: "API Security Detection Patterns"
+category: detection
+description: "Detection patterns for REST API, GraphQL, and WebSocket vulnerabilities"
+version: "1.0"
+
+patterns:
+  bola_detection:
+    description: "Broken Object-Level Authorization (BOLA/IDOR via API)"
+    technique: "Substitute resource IDs in API paths and compare responses"
+    indicators:
+      - "200 response with different user's data when ID changed"
+      - "Response contains fields not belonging to authenticated user"
+    test_paths:
+      - "/api/users/{id}"
+      - "/api/orders/{id}"
+      - "/api/accounts/{id}"
+      - "/api/profiles/{id}"
+    cwe: CWE-639
+    severity: high
+
+  mass_assignment:
+    description: "Mass assignment / over-posting"
+    technique: "Send extra fields in POST/PUT, check if persisted"
+    payloads:
+      - '{"role": "admin"}'
+      - '{"isAdmin": true}'
+      - '{"verified": true}'
+      - '{"balance": 99999}'
+      - '{"discount": 100}'
+    verification: "GET the resource after update, check if extra fields appear"
+    cwe: CWE-915
+    severity: high
+
+  excessive_data:
+    description: "Excessive Data Exposure"
+    sensitive_fields:
+      - "password"
+      - "password_hash"
+      - "ssn"
+      - "credit_card"
+      - "secret"
+      - "token"
+      - "private_key"
+      - "api_key"
+    technique: "Check API responses for fields that should not be exposed"
+    cwe: CWE-200
+    severity: high
+
+  rate_limiting:
+    description: "Broken rate limiting"
+    technique: "Send 100+ rapid requests to auth endpoints"
+    test_endpoints:
+      - "/api/login"
+      - "/api/auth"
+      - "/api/forgot-password"
+      - "/api/register"
+    expected_response: "429 Too Many Requests after threshold"
+    cwe: CWE-770
+    severity: medium
+
+  broken_function_auth:
+    description: "Broken Function-Level Authorization"
+    technique: "Access admin API endpoints with regular user token"
+    admin_patterns:
+      - "/api/admin/*"
+      - "/api/users (DELETE, PUT)"
+      - "/api/settings"
+      - "/api/config"
+    cwe: CWE-285
+    severity: critical
+
+  graphql_specific:
+    introspection:
+      query: '{"query": "{ __schema { types { name } } }"}'
+      severity: medium
+    alias_dos:
+      description: "Send 100+ aliases of expensive query"
+      severity: high
+    batch_abuse:
+      description: "Send array of N identical mutations"
+      severity: medium
+    depth_limit:
+      description: "Nested query with 10+ levels"
+      severity: medium
+
+  remediation_summary: >
+    Implement object-level authorization checks on every API endpoint.
+    Use DTOs/serializers to control which fields are accepted and returned.
+    Implement rate limiting per user/IP on authentication endpoints.
+    Disable GraphQL introspection in production. Enforce query depth and
+    cost limits.

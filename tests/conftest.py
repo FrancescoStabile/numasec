@@ -1,14 +1,12 @@
 """
-NumaSec v3 - Test Configuration
+security-mcp — Test Configuration
 
 Shared fixtures for all tests.
 """
 
-import asyncio
 import json
+
 import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -18,14 +16,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.fixture
 def target_profile():
     """Fresh TargetProfile."""
-    from numasec.target_profile import TargetProfile
+    from security_mcp.models.target import TargetProfile
     return TargetProfile()
 
 
 @pytest.fixture
 def populated_profile():
     """TargetProfile with realistic data."""
-    from numasec.target_profile import TargetProfile, Port, Endpoint, Technology, VulnHypothesis, Credential
+    from security_mcp.models.target import (
+        Credential,
+        Endpoint,
+        Port,
+        TargetProfile,
+        Technology,
+        VulnHypothesis,
+    )
 
     profile = TargetProfile()
     profile.target = "http://10.10.10.1:8080"
@@ -44,54 +49,69 @@ def populated_profile():
     profile.add_technology(Technology(name="PHP", version="7.4", category="language"))
     profile.add_technology(Technology(name="WordPress", version="5.9", category="cms"))
 
-    hyp = VulnHypothesis(vuln_type="sqli", location="/api/users?id=1", confidence=0.95, evidence="Error-based SQLi in id parameter")
+    hyp = VulnHypothesis(
+        vuln_type="sqli", location="/api/users?id=1",
+        confidence=0.95, evidence="Error-based SQLi in id parameter",
+    )
     hyp.tested = True
     hyp.confirmed = True
     profile.hypotheses.append(hyp)
 
     profile.hypotheses.append(
-        VulnHypothesis(vuln_type="xss", location="/search?q=", confidence=0.6, evidence="Reflected XSS in search param")
+        VulnHypothesis(
+            vuln_type="xss", location="/search?q=",
+            confidence=0.6, evidence="Reflected XSS in search param",
+        )
     )
 
-    profile.credentials.append(Credential(username="admin", password="admin123", source="default_creds"))
+    profile.credentials.append(
+        Credential(username="admin", password="admin123", source="default_creds")
+    )
 
     return profile
 
 
 @pytest.fixture
-def state():
-    """Fresh State."""
-    from numasec.state import State
-    return State()
+def session_state():
+    """Fresh SessionState."""
+    from security_mcp.core.state import SessionState
+    return SessionState()
 
 
 @pytest.fixture
 def populated_state(populated_profile):
-    """State with findings and profile data."""
-    from numasec.state import State, Finding
-    from numasec.planner import generate_plan
+    """SessionState with findings and profile data."""
+    from security_mcp.core.state import SessionState
+    from security_mcp.models.finding import Finding
 
-    s = State()
+    s = SessionState()
     s.profile = populated_profile
-    s.plan = generate_plan("Pentest http://10.10.10.1:8080", populated_profile)
+    s.target = populated_profile.target
 
     s.add_finding(Finding(
         title="SQL Injection in /api/users",
         severity="critical",
         description="Error-based SQL injection in the id parameter of /api/users endpoint.",
         evidence="GET /api/users?id=1' AND 1=1-- → 200 OK with different response",
+        url="/api/users",
+        method="GET",
+        parameter="id",
     ))
     s.add_finding(Finding(
         title="Default credentials on admin panel",
         severity="high",
         description="The admin panel at /admin accepts default credentials admin:admin123.",
         evidence="POST /login with admin:admin123 → 302 redirect to /admin/dashboard",
+        url="/login",
+        method="POST",
     ))
     s.add_finding(Finding(
         title="Server version disclosure",
         severity="low",
         description="Apache version is disclosed in HTTP headers.",
         evidence="Server: Apache/2.4.41 (Ubuntu)",
+        url="/",
+        method="GET",
     ))
 
     return s
@@ -100,25 +120,24 @@ def populated_state(populated_profile):
 @pytest.fixture
 def attack_plan(populated_profile):
     """Generated attack plan."""
-    from numasec.planner import generate_plan
-    return generate_plan("Pentest http://10.10.10.1:8080", populated_profile)
+    from security_mcp.core.planner import DeterministicPlanner
+    planner = DeterministicPlanner()
+    return planner.create_plan(populated_profile, scope="standard")
 
 
 @pytest.fixture
 def nmap_output():
-    """Realistic nmap output in JSON format matching extract_nmap."""
+    """Realistic nmap JSON output."""
     return json.dumps({
-        "hosts": [
-            {
-                "ip": "10.10.10.1",
-                "ports": [
-                    {"port": 22, "protocol": "tcp", "service": "ssh", "product": "OpenSSH", "version": "8.2p1"},
-                    {"port": 80, "protocol": "tcp", "service": "http", "product": "Apache httpd", "version": "2.4.41"},
-                    {"port": 3306, "protocol": "tcp", "service": "mysql", "product": "MySQL", "version": "5.7.38"},
-                ],
-                "os": "Ubuntu"
-            }
-        ]
+        "hosts": [{
+            "ip": "10.10.10.1",
+            "ports": [
+                {"port": 22, "protocol": "tcp", "service": "ssh", "product": "OpenSSH", "version": "8.2p1"},
+                {"port": 80, "protocol": "tcp", "service": "http", "product": "Apache httpd", "version": "2.4.41"},
+                {"port": 3306, "protocol": "tcp", "service": "mysql", "product": "MySQL", "version": "5.7.38"},
+            ],
+            "os": "Ubuntu",
+        }]
     })
 
 
@@ -140,13 +159,15 @@ def http_output():
 
 @pytest.fixture
 def nuclei_output():
-    """Realistic nuclei output in JSON format matching extract_nuclei."""
+    """Realistic nuclei JSON output."""
     return json.dumps({
         "findings": [
-            {"template": "CVE-2021-44228", "name": "Log4Shell RCE", "severity": "critical", "matched_at": "http://10.10.10.1:8080/api/logs"},
-            {"template": "wordpress-login", "name": "WordPress Login Page", "severity": "info", "matched_at": "http://10.10.10.1:8080/wp-login.php"},
-            {"template": "apache-detect", "name": "Apache Detection", "severity": "info", "matched_at": "http://10.10.10.1:8080/"},
-            {"template": "php-errors", "name": "PHP Errors Detected", "severity": "low", "matched_at": "http://10.10.10.1:8080/debug.php"},
+            {"template": "CVE-2021-44228", "name": "Log4Shell RCE", "severity": "critical",
+             "matched_at": "http://10.10.10.1:8080/api/logs"},
+            {"template": "wordpress-login", "name": "WordPress Login Page", "severity": "info",
+             "matched_at": "http://10.10.10.1:8080/wp-login.php"},
+            {"template": "apache-detect", "name": "Apache Detection", "severity": "info",
+             "matched_at": "http://10.10.10.1:8080/"},
         ]
     })
 
@@ -156,9 +177,26 @@ def ffuf_output():
     """Realistic ffuf JSON output."""
     return json.dumps({
         "results": [
-            {"input": {"FUZZ": "admin"}, "status": 200, "length": 4523, "url": "http://10.10.10.1:8080/admin"},
-            {"input": {"FUZZ": "api"}, "status": 301, "length": 0, "url": "http://10.10.10.1:8080/api"},
-            {"input": {"FUZZ": "backup"}, "status": 403, "length": 277, "url": "http://10.10.10.1:8080/backup"},
-            {"input": {"FUZZ": "robots.txt"}, "status": 200, "length": 45, "url": "http://10.10.10.1:8080/robots.txt"},
+            {"input": {"FUZZ": "admin"}, "status": 200, "length": 4523,
+             "url": "http://10.10.10.1:8080/admin"},
+            {"input": {"FUZZ": "api"}, "status": 301, "length": 0,
+             "url": "http://10.10.10.1:8080/api"},
+            {"input": {"FUZZ": "backup"}, "status": 403, "length": 277,
+             "url": "http://10.10.10.1:8080/backup"},
         ]
     })
+
+
+@pytest.fixture
+def sample_finding():
+    """Single sample Finding for testing."""
+    from security_mcp.models.finding import Finding
+    return Finding(
+        title="Test SQL Injection",
+        severity="high",
+        description="SQL injection vulnerability found",
+        url="http://target/api",
+        method="GET",
+        parameter="id",
+        cwe_id="CWE-89",
+    )

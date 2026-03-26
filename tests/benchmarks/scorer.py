@@ -1,265 +1,181 @@
-"""
-NumaSec Benchmark — F1 / Precision / Recall Scorer
-
-Compares agent findings against ground truth to produce benchmark metrics.
-"""
+"""Benchmark scoring against ground truth."""
 
 from __future__ import annotations
 
-import json
-import logging
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-from tests.benchmarks.ground_truth import GroundTruthVuln
-
-logger = logging.getLogger("numasec.benchmark.scorer")
-
-
-@dataclass
-class MatchResult:
-    """Result of matching a single ground truth vuln against findings."""
-    vuln: GroundTruthVuln
-    matched: bool = False
-    matched_finding_title: str = ""
-    confidence: float = 0.0
+# Severity weights for weighted recall — critical/high findings matter more
+_SEVERITY_WEIGHTS: dict[str, float] = {
+    "critical": 3.0,
+    "high": 2.0,
+    "medium": 1.0,
+    "low": 0.5,
+    "info": 0.25,
+}
 
 
-@dataclass
-class BenchmarkResult:
-    """Complete benchmark scoring result."""
-    target_name: str
-    ground_truth: list[GroundTruthVuln]
-    findings: list[dict[str, Any]]
-    matches: list[MatchResult] = field(default_factory=list)
-    false_positives: list[dict[str, Any]] = field(default_factory=list)
+def _types_match(finding_type: str, gt_type: str, aliases: dict[str, list[str]] | None = None) -> bool:
+    """Check if a finding type matches a ground-truth type.
 
-    # Computed metrics
-    true_positives: int = 0
-    false_negatives: int = 0
-    false_positive_count: int = 0
-    precision: float = 0.0
-    recall: float = 0.0
-    f1: float = 0.0
+    Matching strategy (ordered):
+    1. Exact match (case-insensitive)
+    2. Substring match (either direction)
+    3. Alias match: finding type appears in the alias list for gt_type
+    """
+    ft = finding_type.lower().strip()
+    gt = gt_type.lower().strip()
 
-    # Metadata
-    duration_seconds: float = 0.0
-    cost_usd: float = 0.0
-    provider: str = ""
-    numasec_version: str = ""
-    timestamp: str = ""
+    # Exact
+    if ft == gt:
+        return True
 
-    def compute(self) -> None:
-        """Compute precision, recall, F1 from matches."""
-        self.true_positives = sum(1 for m in self.matches if m.matched)
-        self.false_negatives = sum(1 for m in self.matches if not m.matched)
+    # Substring
+    if ft in gt or gt in ft:
+        return True
 
-        # Find false positives: findings that didn't match any ground truth
-        matched_titles = {m.matched_finding_title for m in self.matches if m.matched}
-        self.false_positives = [
-            f for f in self.findings
-            if f.get("title", "") not in matched_titles
-        ]
-        self.false_positive_count = len(self.false_positives)
+    # Alias
+    if aliases:
+        gt_aliases = aliases.get(gt, [])
+        if ft in gt_aliases:
+            return True
+        # Reverse: if the finding uses a canonical name that aliases to the GT
+        for canonical, alias_list in aliases.items():
+            if ft == canonical and gt in alias_list:
+                return True
 
-        # Precision = TP / (TP + FP)
-        total_positive = self.true_positives + self.false_positive_count
-        self.precision = self.true_positives / total_positive if total_positive > 0 else 0.0
+    return False
 
-        # Recall = TP / (TP + FN)
-        total_actual = self.true_positives + self.false_negatives
-        self.recall = self.true_positives / total_actual if total_actual > 0 else 0.0
 
-        # F1 = 2 * (P * R) / (P + R)
-        pr_sum = self.precision + self.recall
-        self.f1 = 2 * (self.precision * self.recall) / pr_sum if pr_sum > 0 else 0.0
+def _location_match(finding: dict[str, Any], gt: dict[str, Any]) -> bool:
+    """Optional location matching — boosts confidence when both type and location match.
 
-        self.timestamp = datetime.now().isoformat()
+    Returns True if no location info is available (permissive) or if locations overlap.
+    """
+    f_loc = finding.get("location", "").lower().strip()
+    gt_loc = gt.get("location", "").lower().strip()
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict for JSON export."""
+    if not f_loc or not gt_loc:
+        return True  # Can't compare, allow type-only match
+
+    return f_loc in gt_loc or gt_loc in f_loc
+
+
+def calculate_scores(
+    findings: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]],
+    aliases: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """
+    Calculate precision, recall, weighted recall, and F1 against ground truth.
+
+    Matching is done by vulnerability type (case-insensitive substring + alias lookup).
+    ``weighted_recall`` weights each ground-truth vuln by severity so missing
+    a critical finding penalises more than missing an info finding.
+
+    Args:
+        findings: List of detected findings with at least ``type`` key.
+        ground_truth: List of expected vulns with ``type`` and ``severity``.
+        aliases: Optional type alias map (e.g. from ground_truth._TYPE_ALIASES).
+
+    Returns:
+        Dict with precision, recall, weighted_recall, f1, true_positives,
+        and a detailed ``matches`` list showing which findings matched which GT entries.
+    """
+    if not findings and not ground_truth:
         return {
-            "target": self.target_name,
-            "metrics": {
-                "precision": round(self.precision, 4),
-                "recall": round(self.recall, 4),
-                "f1": round(self.f1, 4),
-                "true_positives": self.true_positives,
-                "false_negatives": self.false_negatives,
-                "false_positives": self.false_positive_count,
-            },
-            "ground_truth_count": len(self.ground_truth),
-            "findings_count": len(self.findings),
-            "matches": [
-                {
-                    "vuln_id": m.vuln.id,
-                    "vuln_name": m.vuln.name,
-                    "matched": m.matched,
-                    "matched_finding": m.matched_finding_title,
-                    "confidence": m.confidence,
-                }
-                for m in self.matches
-            ],
-            "false_positive_findings": [
-                {"title": f.get("title", ""), "severity": f.get("severity", "")}
-                for f in self.false_positives
-            ],
-            "metadata": {
-                "duration_seconds": round(self.duration_seconds, 1),
-                "cost_usd": round(self.cost_usd, 4),
-                "provider": self.provider,
-                "numasec_version": self.numasec_version,
-                "timestamp": self.timestamp,
-            },
+            "precision": 1.0, "recall": 1.0, "weighted_recall": 1.0,
+            "f1": 1.0, "true_positives": 0, "matches": [], "unmatched_gt": [], "unmatched_findings": [],
         }
 
-    def to_markdown(self) -> str:
-        """Generate a human-readable Markdown summary."""
-        lines = [
-            f"# Benchmark: {self.target_name}",
-            "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
-            f"| **F1 Score** | **{self.f1:.1%}** |",
-            f"| Precision | {self.precision:.1%} |",
-            f"| Recall | {self.recall:.1%} |",
-            f"| True Positives | {self.true_positives} |",
-            f"| False Negatives | {self.false_negatives} |",
-            f"| False Positives | {self.false_positive_count} |",
-            f"| Duration | {self.duration_seconds:.0f}s |",
-            f"| Cost | ${self.cost_usd:.2f} |",
-            f"| Provider | {self.provider} |",
-            "",
-            "## Detection Results",
-            "",
-        ]
+    if not findings:
+        return {
+            "precision": 0.0, "recall": 0.0, "weighted_recall": 0.0,
+            "f1": 0.0, "true_positives": 0, "matches": [],
+            "unmatched_gt": [gt.get("type", "") for gt in ground_truth],
+            "unmatched_findings": [],
+        }
 
-        for m in self.matches:
-            icon = "✅" if m.matched else "❌"
-            matched_str = f" → `{m.matched_finding_title}`" if m.matched else ""
-            lines.append(f"- {icon} **{m.vuln.name}** ({m.vuln.severity}){matched_str}")
+    if not ground_truth:
+        return {
+            "precision": 0.0, "recall": 0.0, "weighted_recall": 0.0,
+            "f1": 0.0, "true_positives": 0, "matches": [],
+            "unmatched_gt": [],
+            "unmatched_findings": [f.get("type", "") for f in findings],
+        }
 
-        if self.false_positives:
-            lines.append("")
-            lines.append("## False Positives")
-            lines.append("")
-            for f in self.false_positives:
-                lines.append(f"- ⚠️ {f.get('title', 'Unknown')} ({f.get('severity', '?')})")
+    # Match findings to ground truth by type (+ optional location)
+    matched_gt: set[int] = set()
+    matched_findings: set[int] = set()
+    matches: list[dict[str, str]] = []
 
-        return "\n".join(lines)
-
-
-def match_findings(
-    ground_truth: list[GroundTruthVuln],
-    findings: list[dict[str, Any]],
-) -> list[MatchResult]:
-    """Match agent findings against ground truth vulnerabilities.
-
-    Uses keyword matching: a finding is considered a true positive if
-    its title or description contains ANY of the ground truth vuln's
-    match_keywords.
-
-    Args:
-        ground_truth: Known vulnerabilities to check for
-        findings: Agent findings (list of dicts with 'title', 'description', 'severity')
-
-    Returns:
-        List of MatchResult for each ground truth vulnerability
-    """
-    results = []
-    used_findings: set[int] = set()  # Prevent double-matching
-
-    for vuln in ground_truth:
-        match = MatchResult(vuln=vuln)
-
-        for i, finding in enumerate(findings):
-            if i in used_findings:
+    # Pass 1: Prefer type + location matches
+    for fi, finding in enumerate(findings):
+        finding_type = finding.get("type", "").lower()
+        for gi, gt in enumerate(ground_truth):
+            if gi in matched_gt:
                 continue
-
-            title = finding.get("title", "").lower()
-            desc = finding.get("description", "").lower()
-            combined = f"{title} {desc}"
-
-            # Check if any keyword matches
-            for keyword in vuln.match_keywords:
-                if keyword.lower() in combined:
-                    match.matched = True
-                    match.matched_finding_title = finding.get("title", "")
-                    match.confidence = 1.0
-                    used_findings.add(i)
-                    break
-
-            if match.matched:
+            gt_type = gt.get("type", "").lower()
+            if _types_match(finding_type, gt_type, aliases) and _location_match(finding, gt):
+                matched_gt.add(gi)
+                matched_findings.add(fi)
+                matches.append({
+                    "finding_type": finding_type,
+                    "gt_type": gt_type,
+                    "gt_location": gt.get("location", ""),
+                    "finding_location": finding.get("location", ""),
+                })
                 break
 
-        results.append(match)
+    # Pass 2: Type-only matches for unmatched findings
+    for fi, finding in enumerate(findings):
+        if fi in matched_findings:
+            continue
+        finding_type = finding.get("type", "").lower()
+        for gi, gt in enumerate(ground_truth):
+            if gi in matched_gt:
+                continue
+            gt_type = gt.get("type", "").lower()
+            if _types_match(finding_type, gt_type, aliases):
+                matched_gt.add(gi)
+                matched_findings.add(fi)
+                matches.append({
+                    "finding_type": finding_type,
+                    "gt_type": gt_type,
+                    "gt_location": gt.get("location", ""),
+                    "finding_location": finding.get("location", ""),
+                })
+                break
 
-    return results
+    true_positives = len(matched_gt)
+    precision = true_positives / len(findings) if findings else 0.0
+    recall = true_positives / len(ground_truth) if ground_truth else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
 
-
-def score_benchmark(
-    target_name: str,
-    ground_truth: list[GroundTruthVuln],
-    findings: list[dict[str, Any]],
-    duration: float = 0.0,
-    cost: float = 0.0,
-    provider: str = "",
-) -> BenchmarkResult:
-    """Score a benchmark run against ground truth.
-
-    Args:
-        target_name: Name of the benchmark target (e.g. "DVWA", "Juice Shop")
-        ground_truth: Known vulnerabilities
-        findings: Agent findings as list of dicts
-        duration: Assessment duration in seconds
-        cost: Total cost in USD
-        provider: LLM provider used
-
-    Returns:
-        BenchmarkResult with computed metrics
-    """
-    from numasec import __version__
-
-    matches = match_findings(ground_truth, findings)
-
-    result = BenchmarkResult(
-        target_name=target_name,
-        ground_truth=ground_truth,
-        findings=findings,
-        matches=matches,
-        duration_seconds=duration,
-        cost_usd=cost,
-        provider=provider,
-        numasec_version=__version__,
+    # Weighted recall: sum(matched_weight) / sum(total_weight)
+    total_weight = sum(_SEVERITY_WEIGHTS.get(gt.get("severity", "medium"), 1.0) for gt in ground_truth)
+    matched_weight = sum(
+        _SEVERITY_WEIGHTS.get(ground_truth[i].get("severity", "medium"), 1.0) for i in matched_gt
     )
-    result.compute()
+    weighted_recall = matched_weight / total_weight if total_weight > 0 else 0.0
 
-    return result
+    unmatched_gt = [
+        {"type": ground_truth[i].get("type", ""), "location": ground_truth[i].get("location", "")}
+        for i in range(len(ground_truth))
+        if i not in matched_gt
+    ]
+    unmatched_findings = [
+        {"type": findings[i].get("type", ""), "location": findings[i].get("location", "")}
+        for i in range(len(findings))
+        if i not in matched_findings
+    ]
 
-
-def save_benchmark_result(
-    result: BenchmarkResult,
-    output_dir: Path | str = "tests/benchmarks/results",
-) -> Path:
-    """Save benchmark result to JSON file.
-
-    Args:
-        result: Computed benchmark result
-        output_dir: Directory to save results
-
-    Returns:
-        Path to saved JSON file
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{result.target_name.lower().replace(' ', '_')}_{timestamp}.json"
-    filepath = output_dir / filename
-
-    filepath.write_text(json.dumps(result.to_dict(), indent=2))
-    logger.info(f"Benchmark result saved to {filepath}")
-
-    return filepath
+    return {
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "weighted_recall": round(weighted_recall, 4),
+        "f1": round(f1, 4),
+        "true_positives": true_positives,
+        "matches": matches,
+        "unmatched_gt": unmatched_gt,
+        "unmatched_findings": unmatched_findings,
+    }

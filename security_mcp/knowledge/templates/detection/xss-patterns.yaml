@@ -1,0 +1,76 @@
+id: xss-detection
+category: detection
+title: Cross-Site Scripting (XSS) Detection
+info:
+  name: Cross-Site Scripting - Reflected, Stored, DOM
+  severity: high
+  cwe: CWE-79
+  owasp: "A03:2021"
+  description: >
+    XSS attacks inject malicious scripts into web pages viewed by other users.
+    Reflected XSS bounces the payload from the request. Stored XSS persists it server-side.
+    DOM XSS manipulates the client-side DOM without server involvement.
+
+patterns:
+  - type: reflected_check
+    description: Injected canary string appears unescaped in response
+    test_payloads:
+      - "<script>alert(1)</script>"
+      - "<img src=x onerror=alert(1)>"
+      - "'\"><svg/onload=alert(1)>"
+      - "javascript:alert(1)"
+      - "<body onload=alert(1)>"
+    match_condition: payload_reflected_unescaped
+
+  - type: context_detection
+    description: Determine injection context for payload crafting
+    contexts:
+      - html_body
+      - html_attribute_value
+      - javascript_string
+      - javascript_template_literal
+      - url_parameter
+      - css_value
+
+  - type: dom_sources
+    description: JavaScript DOM sources that may enable DOM XSS
+    source_patterns:
+      - "document.location"
+      - "document.URL"
+      - "document.referrer"
+      - "window.location"
+      - "location.hash"
+      - "location.search"
+      - "document.cookie"
+
+  - type: dom_sinks
+    description: JavaScript DOM sinks where untrusted data becomes dangerous
+    sink_patterns:
+      - "innerHTML"
+      - "outerHTML"
+      - "document.write"
+      - "eval("
+      - "setTimeout("
+      - "setInterval("
+      - "Function("
+      - ".src ="
+
+  - type: filter_bypass
+    description: Common WAF/filter bypass techniques
+    bypass_payloads:
+      - "<img src=x onerror=alert`1`>"
+      - "<svg><animate onbegin=alert(1)>"
+      - "<details open ontoggle=alert(1)>"
+      - "&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;"
+
+test_locations:
+  - url_parameters
+  - post_body_parameters
+  - http_headers_referer
+  - json_body_values
+  - fragment_identifier
+
+tags:
+  - injection
+  - client-side
+  - owasp-top10

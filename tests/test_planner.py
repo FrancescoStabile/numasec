@@ -1,167 +1,110 @@
-"""
-Tests for Planner — hierarchical attack plan + templates + LLM planner.
-"""
+"""Tests for security_mcp.core.planner."""
 
-import pytest
-from numasec.planner import (
-    generate_plan,
-    AttackPlan,
-    AttackPhase,
-    AttackStep,
-    PhaseStatus,
-    PLAN_TEMPLATES,
-    detect_target_type,
-    _template_to_plan,
-)
-from numasec.target_profile import TargetProfile, Technology, Port
+from __future__ import annotations
+
+from security_mcp.core.planner import ReplanSignal
+from security_mcp.core.planner import DeterministicPlanner
+from security_mcp.models.enums import PTESPhase
+from security_mcp.models.target import Port, TargetProfile, Technology
 
 
-class TestGeneratePlan:
-    def test_creates_plan(self, populated_profile):
-        plan = generate_plan("Pentest http://10.10.10.1:8080", populated_profile)
-        assert isinstance(plan, AttackPlan)
-        assert plan.objective == "Pentest http://10.10.10.1:8080"
-        assert len(plan.phases) >= 3
+class TestCreatePlan:
+    def test_quick_scope(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="quick")
 
-    def test_creates_plan_without_profile(self):
-        plan = generate_plan("Scan target.com", TargetProfile())
-        assert plan.objective == "Scan target.com"
-        assert len(plan.phases) >= 3
+        assert plan.target == "example.com"
+        assert plan.scope == "quick"
+        # Quick: recon + mapping + vuln + reporting (no exploitation)
+        phase_names = [p.phase for p in plan.phases]
+        assert PTESPhase.RECON in phase_names
+        assert PTESPhase.MAPPING in phase_names
+        assert PTESPhase.VULNERABILITY in phase_names
+        assert PTESPhase.REPORTING in phase_names
+        assert PTESPhase.EXPLOITATION not in phase_names
 
-    def test_phase_names(self, attack_plan):
-        phase_names = [p.name.lower() for p in attack_plan.phases]
-        # Should have discovery phase
-        assert any("discovery" in n for n in phase_names)
+    def test_standard_scope_has_exploitation(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="standard")
 
-    def test_each_phase_has_steps(self, attack_plan):
-        for phase in attack_plan.phases:
-            assert len(phase.steps) >= 1
+        phase_names = [p.phase for p in plan.phases]
+        assert PTESPhase.EXPLOITATION in phase_names
 
+    def test_deep_scope_has_dir_fuzz(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="deep")
 
-class TestAttackPlan:
-    def test_current_phase(self, attack_plan):
-        current = attack_plan.current_phase()
-        assert current is not None
-        # First phase should be active
-        assert current.status == PhaseStatus.ACTIVE
+        recon = next(p for p in plan.phases if p.phase == PTESPhase.RECON)
+        step_ids = [s.id for s in recon.steps]
+        assert "recon_dir_fuzz" in step_ids
 
-    def test_advance_phase(self, attack_plan):
-        first_phase = attack_plan.current_phase()
-        attack_plan.advance_phase()
+    def test_recon_always_has_port_scan(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="quick")
 
-        second_phase = attack_plan.current_phase()
-        assert second_phase is not None
-        assert second_phase != first_phase
-        assert first_phase.status == PhaseStatus.COMPLETE
+        recon = next(p for p in plan.phases if p.phase == PTESPhase.RECON)
+        assert any(s.id == "recon_port_scan" for s in recon.steps)
 
-    def test_skip_phase(self, attack_plan):
-        first_phase_name = attack_plan.phases[0].name
-        attack_plan.skip_phase(first_phase_name, "Not applicable")
-        # The first phase should be skipped
-        assert attack_plan.phases[0].status == PhaseStatus.SKIPPED
-
-    def test_mark_step_complete(self, attack_plan):
-        current = attack_plan.current_phase()
-        if current and current.steps:
-            # Find the first pending step
-            pending = [s for s in current.steps if s.status == PhaseStatus.PENDING]
-            if pending:
-                step = pending[0]
-                attack_plan.mark_step_complete(step.tool_hint or "test", "Success")
-                assert step.status == PhaseStatus.COMPLETE
-                assert step.result_summary == "Success"
-
-    def test_is_complete(self, attack_plan):
-        assert not attack_plan.is_complete()
-
-        # Complete all phases by activating then advancing each
-        for _ in range(len(attack_plan.phases)):
-            attack_plan.current_phase()  # Ensure one is active
-            attack_plan.advance_phase()
-
-        assert attack_plan.is_complete()
-
-    def test_to_prompt_summary(self, attack_plan):
-        summary = attack_plan.to_prompt_summary()
-        assert isinstance(summary, str)
-        assert len(summary) > 0
-        assert attack_plan.objective in summary
-
-    def test_to_dict_from_dict_roundtrip(self, attack_plan):
-        data = attack_plan.to_dict()
-        assert isinstance(data, dict)
-        assert "objective" in data
-        assert "phases" in data
-
-        restored = AttackPlan.from_dict(data)
-        assert restored.objective == attack_plan.objective
-        assert len(restored.phases) == len(attack_plan.phases)
-
-    def test_empty_plan(self):
-        plan = AttackPlan(objective="")
-        assert plan.current_phase() is None
-        assert plan.is_complete()
-        summary = plan.to_prompt_summary()
-        assert isinstance(summary, str)
+    def test_reporting_always_present(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        for scope in ("quick", "standard", "deep"):
+            plan = planner.create_plan(target, scope=scope)
+            assert any(p.phase == PTESPhase.REPORTING for p in plan.phases)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Plan Templates
-# ═══════════════════════════════════════════════════════════════════════════
+class TestSelectVulnTests:
+    def test_web_target_gets_sqli_xss(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        target.ports = [Port(number=80, service="http")]
+        steps = planner._select_vuln_tests(target)
+        step_ids = [s.id for s in steps]
+        assert "vuln_sqli" in step_ids
+        assert "vuln_xss" in step_ids
+
+    def test_php_target_gets_lfi(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        target.ports = [Port(number=80, service="http")]
+        target.technologies = [Technology(name="PHP", version="7.4")]
+        steps = planner._select_vuln_tests(target)
+        step_ids = [s.id for s in steps]
+        assert "vuln_lfi" in step_ids
+
+    def test_always_has_header_check(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        steps = planner._select_vuln_tests(target)
+        assert any(s.id == "vuln_headers" for s in steps)
 
 
-class TestPlanTemplates:
-    """Template-based plan generation (§4.3)."""
+class TestReplan:
+    def test_waf_detected_adds_evasion(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="standard")
 
-    def test_all_templates_exist(self):
-        expected = {"web_standard", "wordpress", "api_rest", "spa_javascript", "network"}
-        assert expected <= set(PLAN_TEMPLATES.keys())
+        signal = ReplanSignal(type="waf_detected")
+        new_plan = planner.replan(plan, signal)
 
-    def test_each_template_has_5_phases(self):
-        for key, template in PLAN_TEMPLATES.items():
-            assert len(template) >= 4, f"Template '{key}' has too few phases"
+        vuln_phase = next(p for p in new_plan.phases if p.phase == PTESPhase.VULNERABILITY)
+        assert any("waf" in s.id.lower() for s in vuln_phase.steps)
 
-    def test_template_to_plan(self):
-        plan = _template_to_plan("web_standard", "Test target.com")
-        assert isinstance(plan, AttackPlan)
-        assert plan.objective == "Test target.com"
-        assert len(plan.phases) >= 4
+    def test_escalation_adds_exploit_step(self):
+        planner = DeterministicPlanner()
+        target = TargetProfile(target="example.com")
+        plan = planner.create_plan(target, scope="standard")
 
-    def test_template_to_plan_unknown_falls_back(self):
-        plan = _template_to_plan("nonexistent", "Test")
-        assert len(plan.phases) >= 4  # falls back to web_standard
+        signal = ReplanSignal(
+            type="escalation_found",
+            data={"chain": "sqli_to_rce"},
+        )
+        new_plan = planner.replan(plan, signal)
 
-
-class TestDetectTargetType:
-    """detect_target_type() infers the right template."""
-
-    def test_default_is_web_standard(self):
-        profile = TargetProfile()
-        assert detect_target_type(profile) == "web_standard"
-
-    def test_wordpress_detection(self):
-        profile = TargetProfile()
-        profile.add_technology(Technology(name="WordPress", version="6.0", category="cms"))
-        assert detect_target_type(profile) == "wordpress"
-
-    def test_spa_detection_via_flag(self):
-        profile = TargetProfile()
-        profile.spa_detected = True
-        assert detect_target_type(profile) == "spa_javascript"
-
-    def test_spa_detection_via_tech(self):
-        profile = TargetProfile()
-        profile.add_technology(Technology(name="React", version="18", category="framework"))
-        assert detect_target_type(profile) == "spa_javascript"
-
-    def test_api_detection(self):
-        profile = TargetProfile()
-        profile.add_technology(Technology(name="FastAPI", version="0.100", category="framework"))
-        assert detect_target_type(profile) == "api_rest"
-
-    def test_network_detection(self):
-        profile = TargetProfile()
-        profile.add_port(Port(number=22, service="ssh"))
-        profile.add_port(Port(number=445, service="smb"))
-        # No web ports → network
-        assert detect_target_type(profile) == "network"
+        exploit_phase = next(p for p in new_plan.phases if p.phase == PTESPhase.EXPLOITATION)
+        assert any("sqli_to_rce" in s.id for s in exploit_phase.steps)

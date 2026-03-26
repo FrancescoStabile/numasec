@@ -1,0 +1,140 @@
+id: injection-remediation
+category: remediation
+title: Advanced Injection Remediation (SSTI, Command, LFI, XXE)
+info:
+  name: Advanced Injection Fix Patterns
+  severity: critical
+  cwe: CWE-94
+  owasp: "A03:2021"
+  description: >
+    Remediation guides for SSTI, OS command injection, LFI, and XXE.
+    These vulnerabilities frequently lead to Remote Code Execution (RCE).
+
+ssti_fixes:
+  cwe: CWE-1336
+  summary: Never pass user input into template rendering. Use sandboxed templates.
+  examples:
+    python_jinja2:
+      vulnerable: |
+        # VULNERABLE: User input in template string
+        template = Template(user_input)
+        template.render()
+      fixed: |
+        # FIXED: User input as variable, not template
+        template = Template("Hello, {{ name }}!")
+        template.render(name=user_input)
+        # Enable Jinja2 sandboxed environment:
+        from jinja2.sandbox import SandboxedEnvironment
+        env = SandboxedEnvironment()
+    python_flask:
+      vulnerable: |
+        # VULNERABLE: render_template_string with user input
+        return render_template_string(request.args.get("template"))
+      fixed: |
+        # FIXED: Never use user input as template source
+        return render_template("page.html", content=request.args.get("content"))
+
+command_injection_fixes:
+  cwe: CWE-78
+  summary: Never pass user input to shell commands. Use parameterized APIs.
+  examples:
+    python:
+      vulnerable: |
+        # VULNERABLE: Shell=True with user input
+        os.system(f"ping {host}")
+        subprocess.call(f"nslookup {domain}", shell=True)
+      fixed: |
+        # FIXED: Use list form (no shell), validate input
+        import shlex
+        subprocess.run(["ping", "-c", "4", host], shell=False, timeout=10)
+        # Or use native libraries instead of shell commands:
+        import socket
+        socket.gethostbyname(domain)
+    javascript_node:
+      vulnerable: |
+        // VULNERABLE: User input in exec
+        const { exec } = require("child_process");
+        exec(`ping ${userInput}`);
+      fixed: |
+        // FIXED: Use execFile with arguments array
+        const { execFile } = require("child_process");
+        execFile("ping", ["-c", "4", userInput], (err, stdout) => {});
+    java:
+      vulnerable: |
+        // VULNERABLE: Runtime.exec with concatenation
+        Runtime.getRuntime().exec("ping " + host);
+      fixed: |
+        // FIXED: ProcessBuilder with argument array
+        new ProcessBuilder("ping", "-c", "4", host).start();
+
+lfi_fixes:
+  cwe: CWE-98
+  summary: Never use user input in file paths. Use allowlists and path canonicalization.
+  examples:
+    python:
+      vulnerable: |
+        # VULNERABLE: Direct path from user input
+        with open(f"/templates/{request.args['file']}") as f:
+            return f.read()
+      fixed: |
+        # FIXED: Allowlist + path resolution
+        ALLOWED_FILES = {"about.html", "contact.html", "faq.html"}
+        filename = request.args.get("file", "")
+        if filename not in ALLOWED_FILES:
+            abort(404)
+        path = (Path("/templates") / filename).resolve()
+        if not str(path).startswith("/templates/"):
+            abort(403)  # Path traversal attempt
+        return path.read_text()
+    php:
+      vulnerable: |
+        // VULNERABLE: Direct include from user input
+        include($_GET['page'] . '.php');
+      fixed: |
+        // FIXED: Allowlist approach
+        $allowed = ['home', 'about', 'contact'];
+        $page = $_GET['page'] ?? 'home';
+        if (in_array($page, $allowed, true)) {
+            include($page . '.php');
+        }
+
+xxe_fixes:
+  cwe: CWE-611
+  summary: Disable external entity processing in XML parsers.
+  examples:
+    python:
+      vulnerable: |
+        # VULNERABLE: Default parser allows external entities
+        from xml.etree.ElementTree import parse
+        tree = parse(user_uploaded_xml)
+      fixed: |
+        # FIXED: Use defusedxml
+        import defusedxml.ElementTree as ET
+        tree = ET.parse(user_uploaded_xml)
+        # Or disable entities in lxml:
+        from lxml import etree
+        parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    java:
+      fixed: |
+        // FIXED: Disable DTDs and external entities
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+    csharp:
+      fixed: |
+        // FIXED: XmlReaderSettings with DtdProcessing.Prohibit
+        var settings = new XmlReaderSettings();
+        settings.DtdProcessing = DtdProcessing.Prohibit;
+        settings.XmlResolver = null;
+        var reader = XmlReader.Create(stream, settings);
+
+references:
+  - https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html
+  - https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
+  - https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html
+
+tags:
+  - injection
+  - rce
+  - fix

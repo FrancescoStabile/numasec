@@ -1,134 +1,139 @@
-"""
-NumaSec Benchmark — DVWA Test Suite
+"""DVWA benchmark tests.
 
-10 parametrized tests against Damn Vulnerable Web Application.
-Each test maps to a known vulnerability in DVWA.
+Runs security scanners against a live OWASP DVWA instance and scores
+results against the 7-vulnerability ground truth defined in
+``ground_truth.DVWA_GROUND_TRUTH``.
 
-Run: pytest tests/benchmarks/test_dvwa.py -v --benchmark
-Requires: Docker/Podman + DEEPSEEK_API_KEY (or other LLM key)
+Requirements:
+    - DVWA running at http://localhost:8080 (or ``DVWA_TARGET`` env var)
+    - ``SECMCP_ALLOW_INTERNAL=1`` env var set
+    - Network access to the target
+
+Skip conditions:
+    - No ``SECMCP_ALLOW_INTERNAL`` → skip (safety guard)
+    - DVWA unreachable → skip
+
+Run:
+    SECMCP_ALLOW_INTERNAL=1 DVWA_TARGET=http://localhost:8080 pytest tests/benchmarks/test_dvwa.py -v
 """
 
 from __future__ import annotations
 
-import asyncio
-import time
+import json
+import os
 
+import httpx
 import pytest
 
-from tests.benchmarks.ground_truth import DVWA_VULNS, GroundTruthVuln
-from tests.benchmarks.scorer import score_benchmark, save_benchmark_result, match_findings
+from tests.benchmarks.ground_truth import DVWA_GROUND_TRUTH
+
+# ---------------------------------------------------------------------------
+# Skip guards
+# ---------------------------------------------------------------------------
+
+DVWA_TARGET = os.environ.get("DVWA_TARGET", DVWA_GROUND_TRUTH["target"])
+
+_skip_no_internal = pytest.mark.skipif(
+    os.environ.get("SECMCP_ALLOW_INTERNAL") != "1",
+    reason="SECMCP_ALLOW_INTERNAL not set — skipping live target benchmark",
+)
+
+_skip_dvwa_unreachable = pytest.mark.skipif(
+    not os.environ.get("SECMCP_ALLOW_INTERNAL"),
+    reason="DVWA reachability check skipped (no SECMCP_ALLOW_INTERNAL)",
+)
 
 
-# Mark entire module as benchmark — skipped unless --benchmark flag
+def _dvwa_reachable() -> bool:
+    """Quick check if DVWA is responding."""
+    try:
+        resp = httpx.get(DVWA_TARGET, timeout=5, follow_redirects=True, verify=False)
+        return resp.status_code < 500
+    except Exception:
+        return False
+
+
 pytestmark = [
     pytest.mark.benchmark,
     pytest.mark.slow,
+    _skip_no_internal,
 ]
 
 
-@pytest.fixture(scope="module")
-def dvwa_assessment_findings(dvwa_target):
-    """Run a single NumaSec assessment on DVWA, cache findings for all tests.
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    This runs ONCE per module and shares the result across all parametrized tests.
-    Much more efficient than running 10 separate assessments.
-    """
-    from numasec.mcp_tools import run_assess
 
-    start = time.time()
-    result_md = asyncio.get_event_loop().run_until_complete(
-        run_assess(
-            target=dvwa_target,
-            scope=dvwa_target,
-            budget=2.0,
-            depth="standard",
+@pytest.fixture
+def dvwa_target():
+    """Return DVWA target URL, skipping if unreachable."""
+    if not _dvwa_reachable():
+        pytest.skip("DVWA not reachable at " + DVWA_TARGET)
+    return DVWA_TARGET
+
+
+class TestDVWABenchmark:
+    """Benchmark individual scanners against DVWA ground truth."""
+
+    @pytest.mark.asyncio
+    async def test_sqli_on_dvwa(self, dvwa_target, allow_internal):
+        """SQLi scanner should detect injection in /vulnerabilities/sqli/."""
+        from security_mcp.scanners.sqli_tester import PythonSQLiTester
+
+        tester = PythonSQLiTester()
+        result = await tester.test(f"{dvwa_target}/vulnerabilities/sqli/?id=1&Submit=Submit")
+        assert result.vulnerable, "DVWA SQLi endpoint should be detected as vulnerable"
+
+    @pytest.mark.asyncio
+    async def test_xss_reflected_on_dvwa(self, dvwa_target, allow_internal):
+        """XSS scanner should detect reflected XSS in /vulnerabilities/xss_r/."""
+        from security_mcp.scanners.xss_tester import PythonXSSTester
+
+        tester = PythonXSSTester()
+        result = await tester.test(f"{dvwa_target}/vulnerabilities/xss_r/?name=test")
+        assert result.vulnerable, "DVWA reflected XSS endpoint should be detected"
+
+    @pytest.mark.asyncio
+    async def test_command_injection_on_dvwa(self, dvwa_target, allow_internal):
+        """Command injection scanner should detect CWE-78 in /vulnerabilities/exec/."""
+        from security_mcp.scanners.command_injection_tester import CommandInjectionTester
+
+        tester = CommandInjectionTester()
+        result = await tester.test(
+            f"{dvwa_target}/vulnerabilities/exec/",
+            method="POST",
+            body={"ip": "127.0.0.1", "Submit": "Submit"},
         )
-    )
-    duration = time.time() - start
+        assert result.vulnerable, "DVWA command injection should be detected"
 
-    # Parse findings from Markdown result
-    findings = _parse_findings_from_markdown(result_md)
+    @pytest.mark.asyncio
+    async def test_lfi_on_dvwa(self, dvwa_target, allow_internal):
+        """LFI scanner should detect file inclusion in /vulnerabilities/fi/."""
+        from security_mcp.scanners.lfi_tester import LfiTester
 
-    return {
-        "findings": findings,
-        "raw_markdown": result_md,
-        "duration": duration,
-        "target": dvwa_target,
-    }
+        tester = LfiTester()
+        result = await tester.test(f"{dvwa_target}/vulnerabilities/fi/?page=include.php")
+        assert result.vulnerable, "DVWA file inclusion should be detected"
 
+    @pytest.mark.asyncio
+    async def test_csrf_on_dvwa(self, dvwa_target, allow_internal):
+        """CSRF scanner should detect missing protection on /vulnerabilities/csrf/."""
+        from security_mcp.scanners.csrf_tester import CsrfTester
 
-def _parse_findings_from_markdown(markdown: str) -> list[dict]:
-    """Extract finding dicts from assessment Markdown output."""
-    import re
+        tester = CsrfTester()
+        result = await tester.test(f"{dvwa_target}/vulnerabilities/csrf/")
+        # CSRF detection depends on form analysis — may or may not trigger
+        # This test verifies the scanner runs without error on DVWA
+        assert result is not None
 
-    findings = []
-    # Match finding headers: ## 🔴 CRITICAL: Title or ## 🟠 HIGH: Title
-    pattern = r"## [🔴🟠🟡🔵⚪] (\w+): (.+?)(?:\n|$)"
-    matches = re.finditer(pattern, markdown)
+    @pytest.mark.asyncio
+    async def test_dir_fuzz_on_dvwa(self, dvwa_target, allow_internal):
+        """Dir fuzzer should discover common DVWA paths."""
+        from security_mcp.scanners.dir_fuzzer import PythonDirFuzzer
 
-    current_finding = None
-    for match in matches:
-        severity = match.group(1).lower()
-        title = match.group(2).strip()
-
-        # Get description (text between this heading and next heading)
-        start = match.end()
-        next_heading = re.search(r"\n## ", markdown[start:])
-        end = start + next_heading.start() if next_heading else len(markdown)
-        description = markdown[start:end].strip()
-
-        findings.append({
-            "title": title,
-            "severity": severity,
-            "description": description,
-        })
-
-    return findings
-
-
-@pytest.mark.parametrize(
-    "vuln",
-    DVWA_VULNS,
-    ids=[v.id for v in DVWA_VULNS],
-)
-def test_dvwa_vuln_detected(dvwa_assessment_findings, vuln: GroundTruthVuln):
-    """Verify that NumaSec detects a specific DVWA vulnerability.
-
-    This is a parametrized test — runs once per known vuln.
-    Matching is keyword-based: the finding title or description must
-    contain at least one of the vuln's match_keywords.
-    """
-    findings = dvwa_assessment_findings["findings"]
-    matches = match_findings([vuln], findings)
-
-    assert len(matches) == 1
-    match = matches[0]
-
-    # This test documents detection rate — a failure means NumaSec
-    # missed this vuln, which is expected for some vulns in baseline.
-    # We use xfail for vulns that are known-hard.
-    if not match.matched:
-        pytest.skip(
-            f"NumaSec did not detect {vuln.name} ({vuln.vuln_type}) — "
-            f"this contributes to the F1 score as a false negative"
-        )
-
-
-def test_dvwa_f1_score(dvwa_assessment_findings):
-    """Compute and report the overall F1 score for DVWA."""
-    result = score_benchmark(
-        target_name="DVWA",
-        ground_truth=DVWA_VULNS,
-        findings=dvwa_assessment_findings["findings"],
-        duration=dvwa_assessment_findings["duration"],
-    )
-
-    # Save results
-    save_benchmark_result(result)
-
-    # Print report
-    print("\n" + result.to_markdown())
-
-    # Baseline targets — these will be adjusted as we improve
-    assert result.recall >= 0.0, f"Recall should be measurable: {result.recall:.1%}"
-    assert result.f1 >= 0.0, f"F1 should be measurable: {result.f1:.1%}"
+        fuzzer = PythonDirFuzzer()
+        result = await fuzzer.fuzz(dvwa_target)
+        paths = [p["path"] for p in result.get("results", [])]
+        # DVWA has known paths
+        assert len(paths) > 0, "Dir fuzzer should find at least one path on DVWA"

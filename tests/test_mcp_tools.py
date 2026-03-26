@@ -1,493 +1,201 @@
-"""
-Tests for MCP Tools — formatting, quick check, mid-level wrappers.
+"""Tests for security_mcp.mcp module (legacy tools + server utilities)."""
 
-Tests the tool implementation layer that sits between MCP server
-and the NumaSec engine. These tests mock the engine to be fast.
-"""
+from __future__ import annotations
 
-import asyncio
-import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from numasec.mcp_tools import (
-    format_assessment_markdown,
-    format_quick_check_markdown,
-    SEVERITY_ICONS,
-    SEVERITY_ORDER,
-    _extract_tech_summary,
-    _extract_port_summary,
-    _extract_vuln_summary,
+from security_mcp.mcp.server import (
+    InvalidTarget,
+    RateLimiter,
+    SessionRateLimiter,
+    _is_internal_ip,
+    validate_target,
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Markdown Formatting
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestFormatAssessmentMarkdown:
-    def test_with_findings(self):
-        findings = [
-            {"title": "SQL Injection in /api", "severity": "critical",
-             "description": "Error-based SQLi", "evidence": "id=1' AND 1=1--"},
-            {"title": "Missing CSP header", "severity": "low",
-             "description": "No Content-Security-Policy", "evidence": ""},
-        ]
-        md = format_assessment_markdown(
-            target="http://localhost:3000",
-            findings=findings,
-            cost=0.12,
-            duration=120.0,
-            provider="deepseek",
-            tools_used=15,
-        )
-        # Check structure
-        assert "NumaSec Assessment" in md
-        assert "localhost:3000" in md
-        assert "2 vulnerabilities" in md
-        assert "$0.12" in md
-        assert "120s" in md
-        # Check severity icons
-        assert "🔴" in md  # critical
-        assert "🔵" in md  # low
-        # Check ordering: critical before low
-        crit_pos = md.index("CRITICAL")
-        low_pos = md.index("LOW")
-        assert crit_pos < low_pos
-        # Check evidence included
-        assert "1=1--" in md
-
-    def test_no_findings(self):
-        md = format_assessment_markdown(
-            target="http://secure.app",
-            findings=[],
-            cost=0.08,
-            duration=60.0,
-            provider="deepseek",
-            tools_used=10,
-        )
-        assert "No vulnerabilities found" in md
-        assert "secure" in md.lower() or "appears secure" in md.lower() or "No vulnerabilities" in md
-
-    def test_footer_has_powered_by(self):
-        md = format_assessment_markdown(
-            target="http://test",
-            findings=[],
-            cost=0.05,
-            duration=30.0,
-            provider="deepseek",
-            tools_used=5,
-        )
-        assert "NumaSec" in md
-        assert "$0.05" in md
-
-
-class TestFormatQuickCheckMarkdown:
-    def test_basic_format(self):
-        md = format_quick_check_markdown(
-            target="http://localhost:3000",
-            tech_info='{"status_code": 200, "title": "Test App", "tech": ["React", "Express"]}',
-            port_info='{"ports": [{"port": 22, "state": "open", "service": "ssh"}]}',
-            vuln_info='{"findings": [{"severity": "critical", "name": "Log4Shell"}]}',
-            cost=0.01,
-            duration=25.0,
-        )
-        assert "Quick Check" in md
-        assert "localhost:3000" in md
-        assert "$0.01" in md
-
-    def test_suggests_full_assessment(self):
-        md = format_quick_check_markdown(
-            target="http://test",
-            tech_info="",
-            port_info="",
-            vuln_info="",
-            cost=0.01,
-            duration=10.0,
-        )
-        assert "numasec_assess" in md
-
-    def test_with_error_info(self):
-        """Should handle error responses gracefully."""
-        md = format_quick_check_markdown(
-            target="http://unreachable",
-            tech_info='{"error": "connection refused"}',
-            port_info='{"error": "host down"}',
-            vuln_info='{"error": "scan failed"}',
-            cost=0.01,
-            duration=5.0,
-        )
-        # Should not crash, should still produce valid Markdown
-        assert "Quick Check" in md
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Extract Helpers
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestExtractHelpers:
-    def test_extract_tech_summary_json(self):
-        raw = json.dumps({"status_code": 200, "title": "My App", "tech": ["React", "Node.js"], "webserver": "nginx"})
-        result = _extract_tech_summary(raw)
-        assert "200" in result
-        assert "My App" in result
-        assert "React" in result
-        assert "nginx" in result
-
-    def test_extract_tech_summary_invalid_json(self):
-        result = _extract_tech_summary("This is not JSON at all")
-        assert "This is not JSON" in result  # Falls back to raw[:500]
-
-    def test_extract_port_summary_json(self):
-        raw = json.dumps({"ports": [
-            {"port": 22, "state": "open", "service": "ssh", "version": "OpenSSH 8.2"},
-            {"port": 80, "state": "open", "service": "http"},
-        ]})
-        result = _extract_port_summary(raw)
-        assert "22" in result
-        assert "ssh" in result
-        assert "OpenSSH 8.2" in result
-        assert "80" in result
-        assert "http" in result
-
-    def test_extract_port_summary_raw(self):
-        result = _extract_port_summary("22/tcp open ssh\n80/tcp open http")
-        assert "22/tcp" in result
-
-    def test_extract_vuln_summary_json(self):
-        raw = json.dumps({"findings": [
-            {"severity": "critical", "name": "Log4Shell"},
-            {"severity": "high", "name": "XSS"},
-        ]})
-        result = _extract_vuln_summary(raw)
-        assert "🔴" in result
-        assert "CRITICAL" in result
-        assert "Log4Shell" in result
-        assert "🟠" in result
-
-    def test_extract_vuln_summary_empty(self):
-        raw = json.dumps({"findings": []})
-        result = _extract_vuln_summary(raw)
-        assert result == ""
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Severity Icons
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSeverityIcons:
-    def test_all_severities_have_icons(self):
-        for sev in SEVERITY_ORDER:
-            assert sev in SEVERITY_ICONS
-
-    def test_icon_values(self):
-        assert SEVERITY_ICONS["critical"] == "🔴"
-        assert SEVERITY_ICONS["high"] == "🟠"
-        assert SEVERITY_ICONS["medium"] == "🟡"
-        assert SEVERITY_ICONS["low"] == "🔵"
-        assert SEVERITY_ICONS["info"] == "⚪"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# run_create_finding (standalone, no mocks needed)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRunCreateFinding:
-    @pytest.mark.asyncio
-    async def test_create_finding_markdown(self):
-        from numasec.mcp_tools import run_create_finding
-        result = await run_create_finding(
-            title="SQL Injection in /api/users",
-            severity="critical",
-            description="Error-based SQL injection in the id parameter.",
-            evidence="GET /api/users?id=1' AND 1=1-- → 200 OK",
-        )
-        assert "🔴" in result
-        assert "CRITICAL" in result
-        assert "SQL Injection" in result
-        assert "Error-based" in result
-        assert "1=1--" in result
-        assert "Finding registered" in result
-
-    @pytest.mark.asyncio
-    async def test_create_finding_no_evidence(self):
-        from numasec.mcp_tools import run_create_finding
-        result = await run_create_finding(
-            title="Missing X-Frame-Options",
-            severity="low",
-            description="Missing clickjacking protection header.",
-        )
-        assert "🔵" in result
-        assert "LOW" in result
-        assert "Missing X-Frame-Options" in result
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# run_quick_check (mock external tools)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRunQuickCheck:
-    @pytest.mark.asyncio
-    async def test_quick_check_python_native(self):
-        """Quick check should work using only Python httpx library (no external tools)."""
-        from numasec.mcp_tools import run_quick_check
-
-        # Mock httpx.AsyncClient to avoid real network calls
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = "<html><title>Test App</title></html>"
-        mock_response.headers = MagicMock()
-        mock_response.headers.get = MagicMock(side_effect=lambda k, d="": {
-            "server": "nginx", "content-type": "text/html",
-            "x-content-type-options": "nosniff",
-        }.get(k.lower(), d) if isinstance(d, str) else d)
-        mock_response.headers.multi_items = MagicMock(return_value=[
-            ("server", "nginx"), ("content-type", "text/html"),
-            ("x-content-type-options", "nosniff"),
-        ])
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("numasec.mcp_tools.httpx_lib.AsyncClient", return_value=mock_client):
-            result = await run_quick_check(
-                target="http://localhost:3000",
-                progress_callback=None,
-            )
-
-        assert "Quick Check" in result
-        assert "localhost:3000" in result
-
-    @pytest.mark.asyncio
-    async def test_quick_check_with_progress(self):
-        """Progress callback should be called for each check phase."""
-        from numasec.mcp_tools import run_quick_check
-
-        progress_calls = []
-
-        async def progress(step, total, msg):
-            progress_calls.append((step, total, msg))
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = "<html><title>Test</title></html>"
-        mock_response.headers = MagicMock()
-        mock_response.headers.get = MagicMock(side_effect=lambda k, d="": {
-            "server": "test", "content-type": "text/html",
-        }.get(k.lower(), d) if isinstance(d, str) else d)
-        mock_response.headers.multi_items = MagicMock(return_value=[("server", "test")])
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("numasec.mcp_tools.httpx_lib.AsyncClient", return_value=mock_client):
-            await run_quick_check(target="http://test", progress_callback=progress)
-
-        assert len(progress_calls) == 3
-
-    @pytest.mark.asyncio
-    async def test_quick_check_handles_connection_error(self):
-        """Should not crash if connection fails."""
-        from numasec.mcp_tools import run_quick_check
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("numasec.mcp_tools.httpx_lib.AsyncClient", return_value=mock_client):
-            result = await run_quick_check(target="http://test")
-
-        # Should still produce output, not crash
-        assert "Quick Check" in result
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# run_recon (mock external tools)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRunRecon:
-    @pytest.mark.asyncio
-    async def test_recon_with_external_tools(self):
-        """When external tools are available, recon uses registry."""
-        from numasec.mcp_tools import run_recon
-
-        mock_registry = MagicMock()
-        mock_registry.call = AsyncMock(return_value='{"status_code": 200}')
-        mock_registry.close = AsyncMock()
-        mock_registry.set_scope = MagicMock()
-
-        with patch("numasec.mcp_tools.shutil.which", return_value="/usr/bin/nmap"):
-            with patch("numasec.tools.create_tool_registry", return_value=mock_registry):
-                result = await run_recon(target="http://10.0.0.1")
-
-        assert mock_registry.call.call_count >= 1
-        assert "Recon" in result
-
-    @pytest.mark.asyncio
-    async def test_recon_fallback_python_native(self):
-        """When no external tools, recon falls back to Python httpx."""
-        from numasec.mcp_tools import run_recon
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = "<html><title>Test</title></html>"
-        mock_response.headers = MagicMock()
-        mock_response.headers.get = MagicMock(side_effect=lambda k, d="": {
-            "server": "nginx", "content-type": "text/html",
-        }.get(k.lower(), d) if isinstance(d, str) else d)
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("numasec.mcp_tools.shutil.which", return_value=None):
-            with patch("numasec.mcp_tools.httpx_lib.AsyncClient", return_value=mock_client):
-                with patch("numasec.mcp_tools.socket.socket") as mock_sock:
-                    mock_sock_inst = MagicMock()
-                    mock_sock_inst.__enter__ = MagicMock(return_value=mock_sock_inst)
-                    mock_sock_inst.__exit__ = MagicMock(return_value=False)
-                    mock_sock_inst.connect_ex = MagicMock(return_value=1)  # Port closed
-                    mock_sock.return_value = mock_sock_inst
-                    result = await run_recon(target="http://test")
-
-        assert "Recon" in result
-        assert "Python-native" in result
-
-    @pytest.mark.asyncio
-    async def test_recon_full_vs_quick_with_nmap(self):
-        """Full scan should use top 1000 ports, quick top 100."""
-        from numasec.mcp_tools import run_recon
-
-        calls_full = []
-        calls_quick = []
-
-        async def mock_call_full(name, args):
-            calls_full.append((name, args))
-            return "{}"
-
-        async def mock_call_quick(name, args):
-            calls_quick.append((name, args))
-            return "{}"
-
-        for scan_type, calls, mock_fn in [("full", calls_full, mock_call_full), ("quick", calls_quick, mock_call_quick)]:
-            mr = MagicMock()
-            mr.call = mock_fn
-            mr.close = AsyncMock()
-            mr.set_scope = MagicMock()
-
-            with patch("numasec.mcp_tools.shutil.which", return_value="/usr/bin/nmap"):
-                with patch("numasec.tools.create_tool_registry", return_value=mr):
-                    await run_recon(target="http://test", scan_type=scan_type)
-
-        # Full should have --top-ports 1000
-        nmap_full = [c for c in calls_full if c[0] == "nmap"][0]
-        assert "1000" in nmap_full[1].get("options", "")
-
-        # Quick should have --top-ports 100
-        nmap_quick = [c for c in calls_quick if c[0] == "nmap"][0]
-        assert "100" in nmap_quick[1].get("options", "")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# run_http_request (mock external tools)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRunHttpRequest:
-    @pytest.mark.asyncio
-    async def test_http_get_formats_markdown(self):
-        from numasec.mcp_tools import run_http_request
-
-        mock_registry = MagicMock()
-        mock_registry.call = AsyncMock(return_value=json.dumps({
-            "status_code": 200,
-            "headers": {"Server": "nginx/1.18", "Content-Type": "text/html"},
-            "body": "<html><body>Hello</body></html>",
-        }))
-        mock_registry.close = AsyncMock()
-        mock_registry.set_scope = MagicMock()
-
-        with patch("numasec.tools.create_tool_registry", return_value=mock_registry):
-            result = await run_http_request(url="http://test/api")
-
-        assert "HTTP GET" in result
-        assert "200" in result
-        assert "nginx" in result
-
-    @pytest.mark.asyncio
-    async def test_http_with_custom_headers(self):
-        from numasec.mcp_tools import run_http_request
-
-        mock_registry = MagicMock()
-        mock_registry.call = AsyncMock(return_value='{"status_code": 401}')
-        mock_registry.close = AsyncMock()
-        mock_registry.set_scope = MagicMock()
-
-        with patch("numasec.tools.create_tool_registry", return_value=mock_registry):
-            result = await run_http_request(
-                url="http://test/api",
-                method="POST",
-                headers={"Authorization": "Bearer token123"},
-                data='{"user": "test"}',
-            )
-
-        # Verify the call was made with headers
-        call_args = mock_registry.call.call_args
-        assert call_args[0][1].get("headers") == {"Authorization": "Bearer token123"}
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# run_browser_action (mock external tools)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRunBrowserAction:
-    @pytest.mark.asyncio
-    async def test_navigate_action(self):
-        from numasec.mcp_tools import run_browser_action
-
-        mock_registry = MagicMock()
-        mock_registry.call = AsyncMock(return_value='{"title": "Test Page"}')
-        mock_registry.close = AsyncMock()
-        mock_registry.set_scope = MagicMock()
-
-        with patch("numasec.tools.create_tool_registry", return_value=mock_registry):
-            result = await run_browser_action(url="http://test", action="navigate")
-
-        mock_registry.call.assert_called_once_with("browser_navigate", {"url": "http://test"})
-        assert "Browser" in result
-        assert "navigate" in result
-
-    @pytest.mark.asyncio
-    async def test_fill_action(self):
-        from numasec.mcp_tools import run_browser_action
-
-        mock_registry = MagicMock()
-        mock_registry.call = AsyncMock(return_value="OK")
-        mock_registry.close = AsyncMock()
-        mock_registry.set_scope = MagicMock()
-
-        with patch("numasec.tools.create_tool_registry", return_value=mock_registry):
-            result = await run_browser_action(
-                url="http://test",
-                action="fill",
-                selector="#username",
-                value="admin",
-            )
-
-        mock_registry.call.assert_called_once_with(
-            "browser_fill",
-            {"url": "http://test", "selector": "#username", "value": "admin"},
-        )
+class TestValidateTarget:
+    def test_valid_external_url(self):
+        result = validate_target("https://example.com")
+        assert result == "https://example.com"
+
+    def test_valid_ip(self):
+        result = validate_target("93.184.216.34")
+        assert result == "93.184.216.34"
+
+    def test_valid_bare_hostname(self):
+        result = validate_target("example.com")
+        assert result == "example.com"
+
+    def test_rejects_internal_127(self):
+        with pytest.raises(InvalidTarget, match="Internal"):
+            validate_target("http://127.0.0.1")
+
+    def test_rejects_localhost(self):
+        with pytest.raises(InvalidTarget, match="Internal"):
+            validate_target("http://localhost")
+
+    def test_rejects_10_network(self):
+        with pytest.raises(InvalidTarget, match="Internal"):
+            validate_target("http://10.0.0.1")
+
+    def test_rejects_172_16(self):
+        with pytest.raises(InvalidTarget, match="Internal"):
+            validate_target("http://172.16.0.1")
+
+    def test_rejects_192_168(self):
+        with pytest.raises(InvalidTarget, match="Internal"):
+            validate_target("http://192.168.1.1")
+
+    def test_rejects_long_target(self):
+        with pytest.raises(InvalidTarget, match="too long"):
+            validate_target("a" * 254)
+
+    def test_rejects_ftp_scheme(self):
+        with pytest.raises(InvalidTarget, match="Scheme not allowed"):
+            validate_target("ftp://example.com")
+
+    def test_allows_https(self):
+        assert validate_target("https://test.example.com") == "https://test.example.com"
+
+
+class TestIsInternalIp:
+    def test_localhost(self):
+        assert _is_internal_ip("localhost") is True
+
+    def test_loopback(self):
+        assert _is_internal_ip("127.0.0.1") is True
+
+    def test_private_10(self):
+        assert _is_internal_ip("10.0.0.1") is True
+
+    def test_private_172(self):
+        assert _is_internal_ip("172.16.5.1") is True
+
+    def test_private_192(self):
+        assert _is_internal_ip("192.168.0.1") is True
+
+    def test_ipv6_loopback(self):
+        assert _is_internal_ip("::1") is True
+
+    def test_external_ip(self):
+        assert _is_internal_ip("93.184.216.34") is False
+
+    def test_hostname(self):
+        # Non-IP hostnames that aren't in blocklist
+        assert _is_internal_ip("example.com") is False
+
+
+class TestRateLimiter:
+    def test_allows_under_limit(self):
+        rl = RateLimiter(max_per_minute=10, max_concurrent=3)
+        assert rl.check() is True
+
+    def test_blocks_over_per_minute(self):
+        rl = RateLimiter(max_per_minute=2, max_concurrent=10)
+        rl.acquire()
+        rl.release()
+        rl.acquire()
+        rl.release()
+        assert rl.check() is False
+
+    def test_blocks_over_concurrent(self):
+        rl = RateLimiter(max_per_minute=100, max_concurrent=2)
+        rl.acquire()
+        rl.acquire()
+        assert rl.check() is False
+
+    def test_release_decrements(self):
+        rl = RateLimiter(max_per_minute=100, max_concurrent=1)
+        rl.acquire()
+        assert rl.check() is False
+        rl.release()
+        assert rl.check() is True
+
+    def test_release_never_negative(self):
+        rl = RateLimiter()
+        rl.release()
+        rl.release()
+        assert rl._active == 0
+
+
+class TestSessionRateLimiter:
+    """Tests for per-session rate limiting (multi-agent support)."""
+
+    def test_separate_buckets_per_session(self):
+        srl = SessionRateLimiter(per_minute=2, concurrent=1, global_per_minute=100, global_concurrent=10)
+        # Session A fills its bucket
+        srl.acquire(session_id="sess-a")
+        assert srl.check(session_id="sess-a") is False  # concurrent=1, already active
+        # Session B is independent
+        assert srl.check(session_id="sess-b") is True
+        srl.acquire(session_id="sess-b")
+        assert srl.check(session_id="sess-b") is False
+
+    def test_global_bucket_for_none_session(self):
+        srl = SessionRateLimiter(per_minute=100, concurrent=100, global_per_minute=2, global_concurrent=1)
+        srl.acquire(session_id=None)
+        assert srl.check(session_id=None) is False  # global concurrent=1
+
+    def test_session_does_not_affect_global(self):
+        srl = SessionRateLimiter(per_minute=1, concurrent=1, global_per_minute=100, global_concurrent=10)
+        srl.acquire(session_id="sess-a")
+        assert srl.check(session_id="sess-a") is False
+        # Global bucket is unaffected
+        assert srl.check(session_id=None) is True
+
+    def test_release_restores_capacity(self):
+        srl = SessionRateLimiter(per_minute=100, concurrent=1, global_per_minute=100, global_concurrent=10)
+        srl.acquire(session_id="sess-a")
+        assert srl.check(session_id="sess-a") is False
+        srl.release(session_id="sess-a")
+        assert srl.check(session_id="sess-a") is True
+
+    def test_remove_session_cleans_bucket(self):
+        srl = SessionRateLimiter(per_minute=100, concurrent=5, global_per_minute=100, global_concurrent=10)
+        srl.acquire(session_id="sess-a")
+        assert srl.active_sessions == 1
+        srl.remove_session("sess-a")
+        assert srl.active_sessions == 0
+
+    def test_per_minute_limit_per_session(self):
+        srl = SessionRateLimiter(per_minute=2, concurrent=10, global_per_minute=100, global_concurrent=10)
+        srl.acquire(session_id="sess-a")
+        srl.release(session_id="sess-a")
+        srl.acquire(session_id="sess-a")
+        srl.release(session_id="sess-a")
+        # 2 calls/min exhausted for sess-a
+        assert srl.check(session_id="sess-a") is False
+        # sess-b still has budget
+        assert srl.check(session_id="sess-b") is True
+
+    def test_env_var_defaults(self, monkeypatch):
+        monkeypatch.setenv("SECMCP_RATE_PER_MINUTE", "42")
+        monkeypatch.setenv("SECMCP_RATE_CONCURRENT", "7")
+        monkeypatch.setenv("SECMCP_RATE_GLOBAL_PER_MINUTE", "200")
+        monkeypatch.setenv("SECMCP_RATE_GLOBAL_CONCURRENT", "15")
+        srl = SessionRateLimiter()
+        assert srl.per_minute == 42
+        assert srl.concurrent == 7
+        assert srl._global.max_per_minute == 200
+        assert srl._global.max_concurrent == 15
+
+    def test_many_sessions_independent(self):
+        """Simulate 5 concurrent agents, each with their own session."""
+        srl = SessionRateLimiter(per_minute=10, concurrent=2, global_per_minute=200, global_concurrent=50)
+        sessions = [f"mcp-{i:08x}" for i in range(5)]
+        # Each session acquires 2 (hitting concurrent limit)
+        for sid in sessions:
+            srl.acquire(session_id=sid)
+            srl.acquire(session_id=sid)
+        # All sessions are at concurrent limit
+        for sid in sessions:
+            assert srl.check(session_id=sid) is False
+        # Release one slot each
+        for sid in sessions:
+            srl.release(session_id=sid)
+        # Now each has capacity again
+        for sid in sessions:
+            assert srl.check(session_id=sid) is True
+        assert srl.active_sessions == 5
+
+

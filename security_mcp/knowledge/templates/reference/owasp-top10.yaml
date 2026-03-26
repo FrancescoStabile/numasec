@@ -1,0 +1,231 @@
+id: owasp-top10-2021
+category: reference
+title: OWASP Top 10 2021 Reference
+info:
+  name: OWASP Top 10 Web Application Security Risks (2021)
+  severity: informational
+  description: >
+    The OWASP Top 10 is a standard awareness document for web application security.
+    It represents a broad consensus about the most critical security risks.
+    Version 2021 includes 3 new categories and significant reorganization.
+
+categories:
+  A01:
+    id: "A01:2021"
+    name: Broken Access Control
+    description: >
+      Moved up from #5. 94% of applications tested had some form of broken access control.
+      Failures lead to unauthorized information disclosure, modification, or destruction of data.
+    prevalence: 3.81%
+    incidence_rate: 94%
+    notable_cwes:
+      - CWE-200  # Exposure of Sensitive Info
+      - CWE-201  # Insertion of Sensitive Info into Sent Data
+      - CWE-352  # CSRF
+      - CWE-639  # IDOR
+      - CWE-862  # Missing Authorization
+      - CWE-863  # Incorrect Authorization
+    testing_focus:
+      - Verify access controls on every endpoint
+      - Test IDOR by modifying object references
+      - Check CORS configuration
+      - Verify JWT token validation
+      - Test privilege escalation (horizontal and vertical)
+
+  A02:
+    id: "A02:2021"
+    name: Cryptographic Failures
+    description: >
+      Previously known as Sensitive Data Exposure. Shifted focus to crypto-related failures
+      that lead to exposure of sensitive data or system compromise.
+    prevalence: 4.49%
+    incidence_rate: 46%
+    notable_cwes:
+      - CWE-259  # Hard-coded Password
+      - CWE-327  # Broken Crypto Algorithm
+      - CWE-328  # Weak Hash
+      - CWE-311  # Missing Encryption
+    testing_focus:
+      - Check TLS configuration and certificate validity
+      - Verify no sensitive data in URLs
+      - Check password storage (bcrypt/argon2 vs MD5/SHA1)
+      - Inspect for hardcoded secrets and API keys
+
+  A03:
+    id: "A03:2021"
+    name: Injection
+    description: >
+      Dropped to #3 from #1. 94% of applications tested for some form of injection.
+      Includes SQL, NoSQL, OS command, LDAP, XSS, SSTI, and more.
+    prevalence: 3.37%
+    incidence_rate: 94%
+    notable_cwes:
+      - CWE-79   # XSS
+      - CWE-89   # SQL Injection
+      - CWE-78   # OS Command Injection
+      - CWE-94   # Code Injection
+      - CWE-611  # XXE
+      - CWE-917  # Expression Language Injection
+      - CWE-1336 # SSTI
+    testing_focus:
+      - Test all input vectors with injection payloads
+      - Verify parameterized queries in database calls
+      - Check for reflected and stored XSS
+      - Test SSTI with template expression probes
+      - Verify XML parser configuration (XXE)
+
+  A04:
+    id: "A04:2021"
+    name: Insecure Design
+    description: >
+      New category for 2021. Focuses on risks related to design and architectural flaws.
+      Calls for more threat modeling, secure design patterns, and reference architectures.
+    prevalence: 3.00%
+    incidence_rate: 24%
+    notable_cwes:
+      - CWE-209  # Error Message Info Exposure
+      - CWE-256  # Plaintext Password Storage
+      - CWE-501  # Trust Boundary Violation
+    testing_focus:
+      - Review business logic for abuse cases
+      - Check rate limiting on sensitive operations
+      - Verify multi-step processes can't be bypassed
+      - Test for insecure direct object references
+
+  A05:
+    id: "A05:2021"
+    name: Security Misconfiguration
+    description: >
+      Moved up from #6. 90% of applications tested had some misconfiguration.
+      Includes missing security headers, open cloud storage, verbose error messages.
+    prevalence: 4.51%
+    incidence_rate: 90%
+    notable_cwes:
+      - CWE-16   # Configuration
+      - CWE-200  # Information Exposure
+      - CWE-532  # Sensitive Info in Logs
+      - CWE-1004 # Cookie Without HttpOnly
+    testing_focus:
+      - Check all HTTP security headers
+      - Test for directory listing
+      - Verify debug mode is disabled
+      - Check default credentials
+      - Review CORS configuration
+      - Inspect server version disclosure
+
+  A06:
+    id: "A06:2021"
+    name: Vulnerable and Outdated Components
+    description: >
+      Previously titled Using Components with Known Vulnerabilities.
+      Difficult to test but frequently found in assessments.
+    prevalence: 8.77%
+    incidence_rate: 27%
+    notable_cwes:
+      - CWE-1104 # Unmaintained Third Party Components
+    testing_focus:
+      - Enumerate all client-side and server-side components
+      - Check versions against CVE databases
+      - Identify end-of-life frameworks
+      - Review JavaScript library versions
+
+  A07:
+    id: "A07:2021"
+    name: Identification and Authentication Failures
+    description: >
+      Previously Broken Authentication (#2). Dropped to #7 due to increased
+      availability of standardized frameworks. Still critical when found.
+    prevalence: 2.55%
+    incidence_rate: 30%
+    notable_cwes:
+      - CWE-287  # Improper Authentication
+      - CWE-307  # No Brute Force Protection
+      - CWE-384  # Session Fixation
+      - CWE-613  # Insufficient Session Expiration
+    testing_focus:
+      - Test for credential stuffing and brute force
+      - Verify session management (fixation, expiration)
+      - Check password policy enforcement
+      - Test multi-factor authentication bypass
+      - Verify JWT implementation
+
+  A08:
+    id: "A08:2021"
+    name: Software and Data Integrity Failures
+    description: >
+      New category for 2021. Related to code and infrastructure that does not protect
+      against integrity violations. Includes insecure deserialization (previously A08:2017).
+    prevalence: 2.05%
+    incidence_rate: 16%
+    notable_cwes:
+      - CWE-502  # Deserialization of Untrusted Data
+      - CWE-829  # Untrusted Functionality Inclusion
+    testing_focus:
+      - Check for insecure deserialization
+      - Verify software update integrity (signatures)
+      - Review CI/CD pipeline security
+      - Check SRI for CDN resources
+
+  A09:
+    id: "A09:2021"
+    name: Security Logging and Monitoring Failures
+    description: >
+      Previously Insufficient Logging & Monitoring (#10). Moved up to #9.
+      Without logging, breaches cannot be detected. Average time to detect
+      a breach is 287 days.
+    prevalence: 6.51%
+    incidence_rate: 19%
+    notable_cwes:
+      - CWE-778  # Insufficient Logging
+    testing_focus:
+      - Verify login success/failure logging
+      - Check for tamper-evident log mechanisms
+      - Verify alerting thresholds
+      - Test log injection
+
+  A10:
+    id: "A10:2021"
+    name: Server-Side Request Forgery (SSRF)
+    description: >
+      New category for 2021. Added from community survey (highest voted).
+      SSRF flaws occur when a web app fetches a remote resource without
+      validating the user-supplied URL.
+    prevalence: 2.72%
+    incidence_rate: 7%
+    notable_cwes:
+      - CWE-918  # SSRF
+    testing_focus:
+      - Identify URL/URI parameters in requests
+      - Test with internal IP addresses (127.0.0.1, 169.254.169.254)
+      - Check cloud metadata endpoint access
+      - Test URL scheme bypass (file://, gopher://)
+      - Verify allowlist/blocklist implementation
+
+changes_from_2017:
+  merged:
+    - from: "A04:2017 XML External Entities (XXE)"
+      into: "A03:2021 Injection"
+    - from: "A07:2017 Cross-Site Scripting (XSS)"
+      into: "A03:2021 Injection"
+  new:
+    - "A04:2021 Insecure Design"
+    - "A08:2021 Software and Data Integrity Failures"
+    - "A10:2021 Server-Side Request Forgery"
+  renamed:
+    - from: "A02:2017 Broken Authentication"
+      to: "A07:2021 Identification and Authentication Failures"
+    - from: "A03:2017 Sensitive Data Exposure"
+      to: "A02:2021 Cryptographic Failures"
+    - from: "A08:2017 Insecure Deserialization"
+      to: "A08:2021 Software and Data Integrity Failures"
+    - from: "A10:2017 Insufficient Logging & Monitoring"
+      to: "A09:2021 Security Logging and Monitoring Failures"
+
+references:
+  - https://owasp.org/Top10/
+  - https://owasp.org/www-project-web-security-testing-guide/
+
+tags:
+  - reference
+  - classification
+  - owasp
