@@ -170,7 +170,19 @@ export class PythonBridge {
         reject(new Error(`Python bridge call timed out after ${(timeout ?? this.defaultTimeout) / 1000}s: ${method}`))
       }, timeout ?? this.defaultTimeout)
 
-      this.pending.set(id, { resolve, reject, timer })
+      const parseResult = (result: any) => {
+        // Worker returns JSON-encoded strings for special methods — parse them
+        if (typeof result === "string") {
+          try {
+            return JSON.parse(result)
+          } catch {
+            return result
+          }
+        }
+        return result
+      }
+
+      this.pending.set(id, { resolve: (r) => resolve(parseResult(r)), reject, timer })
 
       const line = JSON.stringify(request) + "\n"
       this.process?.stdin?.write(line, (err) => {

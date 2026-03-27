@@ -21,7 +21,7 @@ export function bridgeTool<T extends z.ZodType>(
     parameters,
     async execute(args, ctx) {
       const bridge = PythonBridge.instance()
-      const result = await bridge.call(id, args)
+      const result = await bridge.call(id, args as Record<string, any>)
 
       const output = formatResult
         ? formatResult(result)

@@ -1977,7 +1977,7 @@ function Bash(props: ToolProps<typeof BashTool>) {
   )
 }
 
-function Write(props: ToolProps<any>) {
+function Write(props: ToolProps<Tool.Info<any>>) {
   const { theme, syntax } = useTheme()
   const code = createMemo(() => {
     if (!props.input.content) return ""
@@ -2175,7 +2175,7 @@ function Task(props: ToolProps<typeof TaskTool>) {
   )
 }
 
-function Edit(props: ToolProps<any>) {
+function Edit(props: ToolProps<Tool.Info<any>>) {
   const ctx = use()
   const { theme, syntax } = useTheme()
 
@@ -2227,7 +2227,7 @@ function Edit(props: ToolProps<any>) {
   )
 }
 
-function ApplyPatch(props: ToolProps<any>) {
+function ApplyPatch(props: ToolProps<Tool.Info<any>>) {
   const ctx = use()
   const { theme, syntax } = useTheme()
 

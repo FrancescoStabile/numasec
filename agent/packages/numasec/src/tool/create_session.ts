@@ -6,6 +6,6 @@ export const CreateSessionTool = bridgeTool(
   "create_session",
   DESCRIPTION,
   z.object({
-    target_url: z.string().describe("Target URL or hostname being assessed (e.g., https://example.com)"),
+    target: z.string().describe("Target URL or hostname being assessed (e.g., https://example.com)"),
   }),
 )

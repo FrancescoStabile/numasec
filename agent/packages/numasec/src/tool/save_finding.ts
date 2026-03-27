@@ -6,7 +6,7 @@ export const SaveFindingTool = bridgeTool(
   "save_finding",
   DESCRIPTION,
   z.object({
-    session_id: z.string().describe("Session ID from create_session"),
+    session_id: z.string().optional().describe("Session ID from create_session"),
     title: z.string().describe("Finding title"),
     severity: z.enum(["critical", "high", "medium", "low", "info"]).describe("Severity level"),
     description: z.string().optional().describe("Detailed vulnerability description"),

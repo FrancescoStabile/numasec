@@ -344,8 +344,8 @@ class ServiceProber:
 
             # Second connection attempt to enumerate algorithms
             try:
-                conn = await asyncio.wait_for(
-                    asyncssh.create_connection(
+                conn = await asyncio.wait_for(  # type: ignore[arg-type]
+                    asyncssh.create_connection(  # type: ignore[arg-type]
                         None,
                         host,
                         port=port,
@@ -354,7 +354,7 @@ class ServiceProber:
                     ),
                     timeout=timeout + 1.0,
                 )
-                _, ssh_conn = conn
+                _, ssh_conn = conn  # type: ignore[misc]
                 alg_info = {
                     "kex": list(getattr(ssh_conn, "_kex_algs", [])),
                     "ciphers": list(getattr(ssh_conn, "_enc_algs", [])),

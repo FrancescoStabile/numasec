@@ -125,7 +125,7 @@ function read(info: ToolProps<typeof ReadTool>) {
   })
 }
 
-function write(info: ToolProps<any>) {
+function write(info: ToolProps<Tool.Info<any>>) {
   block(
     {
       icon: "←",
@@ -142,7 +142,7 @@ function webfetch(info: ToolProps<typeof WebFetchTool>) {
   })
 }
 
-function edit(info: ToolProps<any>) {
+function edit(info: ToolProps<Tool.Info<any>>) {
   const title = normalizePath(info.input.filePath)
   const diff = info.metadata.diff
   block(
@@ -154,7 +154,7 @@ function edit(info: ToolProps<any>) {
   )
 }
 
-function codesearch(info: ToolProps<any>) {
+function codesearch(info: ToolProps<Tool.Info<any>>) {
   inline({
     icon: "◇",
     title: `Exa Code Search "${info.input.query}"`,

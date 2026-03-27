@@ -44,7 +44,8 @@ export namespace Plugin {
   export class Service extends ServiceMap.Service<Service, Interface>()("@numasec/Plugin") {}
 
   // Built-in plugins that are directly imported (not installed from npm)
-  const INTERNAL_PLUGINS: PluginInstance[] = [CodexAuthPlugin, CopilotAuthPlugin, GitlabAuthPlugin, PoeAuthPlugin]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const INTERNAL_PLUGINS: any[] = [CodexAuthPlugin, CopilotAuthPlugin, GitlabAuthPlugin, PoeAuthPlugin]
 
   // Old npm package names for plugins that are now built-in — skip if users still have them in config
   const DEPRECATED_PLUGIN_PACKAGES = ["numasec-openai-codex-auth", "numasec-copilot-auth"]
