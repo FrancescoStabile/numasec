@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "python"]
+
+  - package-ecosystem: "npm"
+    directory: "/agent"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "typescript"]
+    ignore:
+      # Pinned to specific versions intentionally
+      - dependency-name: "@opentui/*"
