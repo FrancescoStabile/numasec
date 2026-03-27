@@ -436,6 +436,8 @@ async def _handle_kb_search(params: dict) -> Any:
 
 async def _handle_plan(params: dict) -> Any:
     """Get pentest plan / coverage."""
+    from dataclasses import asdict
+
     from numasec.core.planner import DeterministicPlanner
     from numasec.models.target import TargetProfile
 
@@ -449,7 +451,7 @@ async def _handle_plan(params: dict) -> Any:
 
     if action in ("initial", "status"):
         plan = planner.create_plan(profile, scope=scope)
-        return json.dumps(plan, indent=2, default=str)
+        return json.dumps(asdict(plan), indent=2, default=str)
 
     if action == "coverage_gaps":
         from numasec.core.coverage import _OWASP_LABELS, OWASP_TOOL_MAP
@@ -528,7 +530,7 @@ async def _handle_plan(params: dict) -> Any:
 
     if action == "next":
         plan = planner.create_plan(profile, scope=scope)
-        return json.dumps(plan, indent=2, default=str)
+        return json.dumps(asdict(plan), indent=2, default=str)
 
     return json.dumps({"error": f"Unknown plan action: {action}"}, indent=2)
 
