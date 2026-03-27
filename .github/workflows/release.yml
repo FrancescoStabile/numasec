@@ -58,12 +58,24 @@ jobs:
           bun-version: latest
       - run: bun install
         working-directory: agent
-      - run: bun run build
+      - run: bun run build -- --single
         working-directory: agent/packages/numasec
+      - name: Collect and rename binaries
+        shell: bash
+        run: |
+          mkdir -p agent/packages/numasec/release
+          for dir in agent/packages/numasec/dist/*/; do
+            name=$(basename "$dir")
+            for f in "$dir/bin/numasec"*; do
+              [ -f "$f" ] || continue
+              ext="${f##*numasec}"
+              cp "$f" "agent/packages/numasec/release/${name}${ext}"
+            done
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: numasec-${{ matrix.os }}
-          path: agent/packages/numasec/dist/
+          path: agent/packages/numasec/release/
 
   github-release:
     name: Create GitHub Release
