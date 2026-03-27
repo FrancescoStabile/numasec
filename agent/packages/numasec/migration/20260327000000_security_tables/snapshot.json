@@ -1,0 +1,12 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "a1b2c3d4-5678-9abc-def0-123456789abc",
+  "prevIds": ["f13dfa58-7fb4-47a2-8f6b-dc70258e14ed"],
+  "ddl": [
+    { "name": "target", "entityType": "tables" },
+    { "name": "finding", "entityType": "tables" },
+    { "name": "credential", "entityType": "tables" },
+    { "name": "coverage", "entityType": "tables" }
+  ]
+}

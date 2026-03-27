@@ -2,8 +2,7 @@ import { spawn, type ChildProcess } from "child_process"
 import { Log } from "../util/log"
 import { ulid } from "ulid"
 import readline from "readline"
-import path from "path"
-import fs from "fs"
+import { ensurePythonEnv } from "./setup"
 
 const log = Log.create({ service: "python-bridge" })
 
@@ -41,39 +40,6 @@ export class PythonBridge {
     return PythonBridge._instance
   }
 
-  private findPythonPath(): string {
-    // Check for virtual environment in the numasec Python package
-    const projectRoot = path.resolve(__dirname, "../../../../..")
-    const candidates = [
-      process.env.NUMASEC_PYTHON_PATH,
-      path.join(projectRoot, ".venv/bin/python"),
-      path.join(projectRoot, ".venv/bin/python3"),
-      "python3",
-      "python",
-    ].filter(Boolean) as string[]
-
-    for (const candidate of candidates) {
-      try {
-        if (candidate.includes("/") && fs.existsSync(candidate)) {
-          return candidate
-        }
-        if (!candidate.includes("/")) {
-          return candidate
-        }
-      } catch {
-        continue
-      }
-    }
-
-    return "python3"
-  }
-
-  private findWorkerModule(): string {
-    const projectRoot = path.resolve(__dirname, "../../../../..")
-    // The Python package is at the project root level (numasec/)
-    return projectRoot
-  }
-
   async start(): Promise<void> {
     if (this.ready) return
     if (this.startPromise) return this.startPromise
@@ -83,13 +49,13 @@ export class PythonBridge {
   }
 
   private async _start(): Promise<void> {
-    this.pythonPath = this.findPythonPath()
-    const workerDir = this.findWorkerModule()
+    const env = await ensurePythonEnv()
+    this.pythonPath = env.pythonPath
 
-    log.info("starting python bridge", { python: this.pythonPath, cwd: workerDir })
+    log.info("starting python bridge", { python: this.pythonPath, cwd: env.projectRoot })
 
     this.process = spawn(this.pythonPath, ["-m", "numasec.worker"], {
-      cwd: workerDir,
+      cwd: env.projectRoot,
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,

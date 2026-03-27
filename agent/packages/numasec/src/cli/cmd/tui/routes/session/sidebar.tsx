@@ -24,7 +24,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     mcp: true,
     diff: true,
     todo: true,
-    lsp: true,
+    findings: true,
   })
 
   // Sort MCP servers alphabetically for consistent display order
@@ -58,6 +58,50 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
       tokens: total.toLocaleString(),
       percentage: model?.limit.context ? Math.round((total / model.limit.context) * 100) : null,
     }
+  })
+
+  // Derive findings from save_finding tool results in messages
+  const findings = createMemo(() => {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+    const severityRe = /\b(critical|high|medium|low|info)\b/i
+    for (const msg of messages()) {
+      const parts = sync.data.part[msg.id] ?? []
+      for (const part of parts) {
+        if (part.type !== "tool" || part.state.status !== "completed") continue
+        if (!part.tool.includes("save_finding")) continue
+        const out = (part.state as { output?: string }).output ?? ""
+        try {
+          const data = JSON.parse(out)
+          const sev = (data.severity ?? data.finding?.severity ?? "").toLowerCase()
+          if (sev in counts) counts[sev as keyof typeof counts]++
+          else counts.info++
+        } catch {
+          const match = out.match(severityRe)
+          if (match) counts[match[1].toLowerCase() as keyof typeof counts]++
+          else counts.info++
+        }
+      }
+    }
+    return counts
+  })
+  const totalFindings = createMemo(() => {
+    const c = findings()
+    return c.critical + c.high + c.medium + c.low + c.info
+  })
+
+  // Derive target URL from recon/create_session tool inputs
+  const targetUrl = createMemo(() => {
+    for (const msg of messages()) {
+      const parts = sync.data.part[msg.id] ?? []
+      for (const part of parts) {
+        if (part.type !== "tool") continue
+        if (!part.tool.includes("create_session") && !part.tool.includes("recon")) continue
+        const state = part.state as { input?: Record<string, unknown> }
+        const url = state.input?.target ?? state.input?.url ?? state.input?.base_url
+        if (typeof url === "string" && url.startsWith("http")) return url
+      }
+    }
+    return undefined
   })
 
   const directory = useDirectory()
@@ -167,47 +211,71 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 </Show>
               </box>
             </Show>
+            <Show when={targetUrl()}>
+              <box>
+                <text fg={theme.text}>
+                  <b>Target</b>
+                </text>
+                <text fg={theme.textMuted}>{targetUrl()}</text>
+              </box>
+            </Show>
             <box>
               <box
                 flexDirection="row"
                 gap={1}
-                onMouseDown={() => sync.data.lsp.length > 2 && setExpanded("lsp", !expanded.lsp)}
+                onMouseDown={() => totalFindings() > 0 && setExpanded("findings", !expanded.findings)}
               >
-                <Show when={sync.data.lsp.length > 2}>
-                  <text fg={theme.text}>{expanded.lsp ? "▼" : "▶"}</text>
+                <Show when={totalFindings() > 0}>
+                  <text fg={theme.text}>{expanded.findings ? "▼" : "▶"}</text>
                 </Show>
                 <text fg={theme.text}>
-                  <b>LSP</b>
+                  <b>Findings</b>
+                  <Show when={totalFindings() > 0}>
+                    <span style={{ fg: theme.textMuted }}> ({totalFindings()})</span>
+                  </Show>
                 </text>
               </box>
-              <Show when={sync.data.lsp.length <= 2 || expanded.lsp}>
-                <Show when={sync.data.lsp.length === 0}>
-                  <text fg={theme.textMuted}>
-                    {sync.data.config.lsp === false
-                      ? "LSPs have been disabled in settings"
-                      : "LSPs will activate as files are read"}
-                  </text>
+              <Show when={totalFindings() === 0}>
+                <text fg={theme.textMuted}>
+                  No findings yet — use /target to start
+                </text>
+              </Show>
+              <Show when={totalFindings() > 0 && expanded.findings}>
+                <Show when={findings().critical > 0}>
+                  <box flexDirection="row" gap={1}>
+                    <text flexShrink={0} fg={theme.error}>●</text>
+                    <text fg={theme.text}>Critical</text>
+                    <text fg={theme.textMuted}>{findings().critical}</text>
+                  </box>
                 </Show>
-                <For each={sync.data.lsp}>
-                  {(item) => (
-                    <box flexDirection="row" gap={1}>
-                      <text
-                        flexShrink={0}
-                        style={{
-                          fg: {
-                            connected: theme.success,
-                            error: theme.error,
-                          }[item.status],
-                        }}
-                      >
-                        •
-                      </text>
-                      <text fg={theme.textMuted}>
-                        {item.id} {item.root}
-                      </text>
-                    </box>
-                  )}
-                </For>
+                <Show when={findings().high > 0}>
+                  <box flexDirection="row" gap={1}>
+                    <text flexShrink={0} fg={theme.error}>●</text>
+                    <text fg={theme.text}>High</text>
+                    <text fg={theme.textMuted}>{findings().high}</text>
+                  </box>
+                </Show>
+                <Show when={findings().medium > 0}>
+                  <box flexDirection="row" gap={1}>
+                    <text flexShrink={0} fg={theme.warning}>●</text>
+                    <text fg={theme.text}>Medium</text>
+                    <text fg={theme.textMuted}>{findings().medium}</text>
+                  </box>
+                </Show>
+                <Show when={findings().low > 0}>
+                  <box flexDirection="row" gap={1}>
+                    <text flexShrink={0} fg={theme.success}>●</text>
+                    <text fg={theme.text}>Low</text>
+                    <text fg={theme.textMuted}>{findings().low}</text>
+                  </box>
+                </Show>
+                <Show when={findings().info > 0}>
+                  <box flexDirection="row" gap={1}>
+                    <text flexShrink={0} fg={theme.textMuted}>●</text>
+                    <text fg={theme.text}>Info</text>
+                    <text fg={theme.textMuted}>{findings().info}</text>
+                  </box>
+                </Show>
               </Show>
             </box>
             <Show when={todo().length > 0 && todo().some((t) => t.status !== "completed")}>
@@ -308,9 +376,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             <span style={{ fg: theme.text }}>{directory().split("/").at(-1)}</span>
           </text>
           <text fg={theme.textMuted}>
-            <span style={{ fg: theme.success }}>•</span> <b>Open</b>
+            <span style={{ fg: theme.success }}>•</span> <b>numa</b>
             <span style={{ fg: theme.text }}>
-              <b>Code</b>
+              <b>sec</b>
             </span>{" "}
             <span>{Installation.VERSION}</span>
           </text>

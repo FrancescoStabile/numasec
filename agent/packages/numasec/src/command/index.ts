@@ -10,6 +10,11 @@ import { Skill } from "../skill"
 import { Log } from "../util/log"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_TARGET from "./template/target.txt"
+import PROMPT_FINDINGS from "./template/findings.txt"
+import PROMPT_REPORT from "./template/report.txt"
+import PROMPT_COVERAGE from "./template/coverage.txt"
+import PROMPT_CREDS from "./template/creds.txt"
 
 export namespace Command {
   const log = Log.create({ service: "command" })
@@ -63,6 +68,11 @@ export namespace Command {
   export const Default = {
     INIT: "init",
     REVIEW: "review",
+    TARGET: "target",
+    FINDINGS: "findings",
+    REPORT: "report",
+    COVERAGE: "coverage",
+    CREDS: "creds",
   } as const
 
   export interface Interface {
@@ -101,6 +111,58 @@ export namespace Command {
           },
           subtask: true,
           hints: hints(PROMPT_REVIEW),
+        }
+
+        // ── Security commands ──────────────────────────────────
+        commands[Default.TARGET] = {
+          name: Default.TARGET,
+          description: "set pentest target and begin reconnaissance",
+          source: "command",
+          agent: "pentest",
+          get template() {
+            return PROMPT_TARGET
+          },
+          hints: hints(PROMPT_TARGET),
+        }
+        commands[Default.FINDINGS] = {
+          name: Default.FINDINGS,
+          description: "list all security findings",
+          source: "command",
+          get template() {
+            return PROMPT_FINDINGS
+          },
+          subtask: true,
+          hints: hints(PROMPT_FINDINGS),
+        }
+        commands[Default.REPORT] = {
+          name: Default.REPORT,
+          description: "generate pentest report [markdown|html|sarif|json]",
+          source: "command",
+          agent: "pentest",
+          get template() {
+            return PROMPT_REPORT
+          },
+          hints: hints(PROMPT_REPORT),
+        }
+        commands[Default.COVERAGE] = {
+          name: Default.COVERAGE,
+          description: "show OWASP Top 10 coverage matrix",
+          source: "command",
+          get template() {
+            return PROMPT_COVERAGE
+          },
+          subtask: true,
+          hints: hints(PROMPT_COVERAGE),
+        }
+        commands[Default.CREDS] = {
+          name: Default.CREDS,
+          description: "list discovered credentials",
+          source: "command",
+          get template() {
+            return PROMPT_CREDS
+          },
+          subtask: true,
+          hints: hints(PROMPT_CREDS),
         }
 
         for (const [name, command] of Object.entries(cfg.command ?? {})) {

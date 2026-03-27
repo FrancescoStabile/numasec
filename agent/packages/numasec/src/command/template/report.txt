@@ -1,0 +1,15 @@
+Generate a penetration test report.
+
+Format: $ARGUMENTS
+
+If no format is specified, default to markdown.
+
+Call `generate_report` with the requested format to produce the final report.
+Then display a summary of:
+- Target tested
+- Duration
+- Findings by severity
+- OWASP Top 10 coverage
+- Key recommendations
+
+Available formats: markdown, html, sarif, json

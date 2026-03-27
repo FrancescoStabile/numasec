@@ -34,14 +34,15 @@ import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
-import type { WriteTool } from "@/tool/write"
+// Deleted tools — renderers kept for compatibility with old sessions
+type WriteTool = any
 import { BashTool } from "@/tool/bash"
 import type { GlobTool } from "@/tool/glob"
 import { TodoWriteTool } from "@/tool/todo"
 import type { GrepTool } from "@/tool/grep"
 import type { ListTool } from "@/tool/ls"
-import type { EditTool } from "@/tool/edit"
-import type { ApplyPatchTool } from "@/tool/apply_patch"
+type EditTool = any
+type ApplyPatchTool = any
 import type { WebFetchTool } from "@/tool/webfetch"
 import type { TaskTool } from "@/tool/task"
 import type { QuestionTool } from "@/tool/question"
@@ -214,6 +215,7 @@ export function Session() {
     }
   })
 
+  // Agent switching on tool completion (pentest ↔ recon)
   let lastSwitch: string | undefined = undefined
   sdk.event.on("message.part.updated", (evt) => {
     const part = evt.properties.part
@@ -222,11 +224,9 @@ export function Session() {
     if (part.state.status !== "completed") return
     if (part.id === lastSwitch) return
 
-    if (part.tool === "plan_exit") {
-      local.agent.set("build")
-      lastSwitch = part.id
-    } else if (part.tool === "plan_enter") {
-      local.agent.set("plan")
+    // Switch to pentest agent when recon phase completes
+    if (part.tool === "recon" && local.agent.name() === "recon") {
+      local.agent.set("pentest")
       lastSwitch = part.id
     }
   })
