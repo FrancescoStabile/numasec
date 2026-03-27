@@ -86,7 +86,7 @@ export namespace Plugin {
 
             for (const plugin of INTERNAL_PLUGINS) {
               log.info("loading internal plugin", { name: plugin.name })
-              const init = await plugin(input).catch((err) => {
+              const init = await plugin(input).catch((err: unknown) => {
                 log.error("failed to load internal plugin", { name: plugin.name, error: err })
               })
               if (init) hooks.push(init)
