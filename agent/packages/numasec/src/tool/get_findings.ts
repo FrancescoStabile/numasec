@@ -7,7 +7,6 @@ export const GetFindingsTool = bridgeTool(
   DESCRIPTION,
   z.object({
     session_id: z.string().describe("Session ID to query"),
-    severity: z.string().optional().describe("Filter by severity"),
-    category: z.string().optional().describe("Filter by OWASP category"),
+    severity_filter: z.string().optional().describe("Filter by severity: critical, high, medium, low, info"),
   }),
 )

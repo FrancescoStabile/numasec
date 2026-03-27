@@ -7,7 +7,6 @@ export const GenerateReportTool = bridgeTool(
   DESCRIPTION,
   z.object({
     session_id: z.string().describe("Session ID to generate report for"),
-    format: z.enum(["sarif", "markdown", "html", "json"]).optional().default("markdown"),
-    include_evidence: z.boolean().optional().default(true),
+    format: z.enum(["sarif", "markdown", "json"]).optional().default("markdown").describe("Report format"),
   }),
 )

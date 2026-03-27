@@ -6,11 +6,11 @@ export const BrowserTool = bridgeTool(
   "browser",
   DESCRIPTION,
   z.object({
-    target: z.string().describe("Target URL to open"),
-    actions: z.string().optional().describe("JSON array of browser actions"),
-    wait_for: z.string().optional().default("networkidle"),
-    screenshot: z.boolean().optional().default(false),
-    headers: z.string().optional().describe("JSON object of additional headers"),
-    auth_token: z.string().optional(),
+    action: z.enum(["navigate", "click", "fill", "screenshot"]).describe("Browser action to perform"),
+    url: z.string().optional().describe("URL to navigate to (for navigate action)"),
+    selector: z.string().optional().describe("CSS selector for click/fill actions"),
+    value: z.string().optional().describe("Value for fill action"),
+    wait_for: z.string().optional().default("load").describe("Wait condition: load, networkidle, domcontentloaded"),
+    timeout: z.number().optional().default(30).describe("Timeout in seconds"),
   }),
 )

@@ -6,12 +6,9 @@ export const AuthTestTool = bridgeTool(
   "auth_test",
   DESCRIPTION,
   z.object({
-    target: z.string().describe("Target URL or auth endpoint"),
-    tests: z.string().optional().describe("Comma-separated: jwt,oauth,spray,session,default_creds"),
-    jwt_token: z.string().optional().describe("JWT token to analyze"),
-    username_list: z.string().optional().describe("Newline-separated usernames for spray"),
-    password_list: z.string().optional().describe("Newline-separated passwords for spray"),
+    url: z.string().describe("Target URL or auth endpoint"),
+    token: z.string().optional().describe("JWT or auth token to analyze"),
     headers: z.string().optional().describe("JSON object of additional headers"),
-    auth_token: z.string().optional(),
+    checks: z.string().optional().default("jwt,creds").describe("Comma-separated: jwt,creds"),
   }),
 )

@@ -7,10 +7,6 @@ export const RunScannerBatchTool = bridgeTool(
   DESCRIPTION,
   z.object({
     session_id: z.string().describe("Session ID"),
-    target: z.string().describe("Target URL"),
-    scanners: z.string().describe("Comma-separated scanner names"),
-    params: z.string().optional().describe("JSON object of shared parameters"),
-    headers: z.string().optional().describe("JSON object of additional headers"),
-    auth_token: z.string().optional(),
+    tasks: z.string().describe("JSON array of {tool, params} objects, e.g. [{\"tool\": \"xss_test\", \"params\": {\"url\": \"...\"}}]"),
   }),
 )

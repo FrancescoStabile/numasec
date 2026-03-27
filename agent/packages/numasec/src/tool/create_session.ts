@@ -6,8 +6,6 @@ export const CreateSessionTool = bridgeTool(
   "create_session",
   DESCRIPTION,
   z.object({
-    target_url: z.string().describe("Primary target URL"),
-    session_name: z.string().optional().describe("Human-readable session name"),
-    scope: z.string().optional().describe("Comma-separated allowed domains/IPs"),
+    target_url: z.string().describe("Target URL or hostname being assessed (e.g., https://example.com)"),
   }),
 )

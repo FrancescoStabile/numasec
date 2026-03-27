@@ -6,9 +6,9 @@ export const ReconTool = bridgeTool(
   "recon",
   DESCRIPTION,
   z.object({
-    target: z.string().describe("Target host or URL to scan"),
-    checks: z.string().optional().describe("Comma-separated checks: ports,tech,services,cve"),
-    ports: z.string().optional().describe("Port range (e.g., '1-1000', 'top100')"),
-    service_detection: z.boolean().optional().default(true).describe("Probe services for version info"),
+    target: z.string().describe("Hostname, IP, or URL to scan"),
+    checks: z.string().optional().default("ports,tech").describe("Comma-separated checks: ports,tech,subdomains,dns,services"),
+    ports: z.string().optional().default("top-100").describe("Port specification: top-100, top-1000, or specific ports"),
+    timeout: z.number().optional().default(2.0).describe("Per-connection timeout in seconds"),
   }),
 )
