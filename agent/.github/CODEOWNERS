@@ -1,5 +1,0 @@
-# web + desktop packages
-packages/app/      @numasec/maintainers
-packages/tauri/    @numasec/maintainers
-packages/desktop/src-tauri/  @numasec/maintainers
-packages/desktop/  @numasec/maintainers

@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,10 +7,16 @@ dist/
 build/
 .eggs/
 *.egg
+
+# Virtual environments
 .venv/
 venv/
 env/
+
+# Environment
 .env
+
+# Testing & coverage
 *.log
 .mypy_cache/
 .ruff_cache/
@@ -17,12 +24,30 @@ env/
 htmlcov/
 .coverage
 coverage.xml
+
+# Generated artifacts
 *.sarif
 *.kbpack
+
+# Local / editor
 .sentrysec/
 .claude/
 CLAUDE.md
 .codelens/
-docs/
 .mcp.json
+.DS_Store
+
+# Internal docs (not for public repo)
 FORK_PRD.md
+
+# Agent (TypeScript TUI) build artifacts
+agent/node_modules/
+agent/.turbo/
+agent/dist/
+agent/ts-dist/
+agent/**/*.tsbuildinfo
+
+# Agent upstream docs (not part of numasec)
+agent/packages/docs/
+agent/packages/console/app/src/routes/docs/
+agent/packages/web/src/content/docs/

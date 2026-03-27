@@ -56,6 +56,15 @@ numasec = "numasec.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["numasec"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "agent/",
+  "tests/",
+  "docs/",
+  ".github/",
+  ".vscode/",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120

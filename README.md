@@ -1,173 +1,72 @@
-# numasec
+<h1 align="center">numasec</h1>
+<h3 align="center">Your AI Cyber Security companion. Open source. Runs in the terminal.</h3>
 
-AI-driven penetration testing, as a terminal and as an MCP server.
+<p align="center">
+  <img src="docs/numasec.png" alt="numasec running a pentest against OWASP Juice Shop" width="900" />
+</p>
 
-Runs structured assessments following the PTES 5-phase methodology — recon, crawling, injection, authentication, access control, through to a full report with CWE, CVSS, OWASP, and ATT&CK mappings. Use it as a standalone terminal (like Claude Code, but for pentesting) or wire it into any MCP-compatible AI assistant.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License" /></a>
+</p>
 
 ---
 
-## Two ways to use it
-
-### Terminal
-
-An interactive pentesting session in your terminal. The AI follows PTES phases, keeps a live findings panel with OWASP coverage, and generates a report when done.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/anomalyco/numasec/main/install.sh | bash
+```
+curl -fsSL https://numasec.dev/install | bash
 numasec
 ```
 
-Run `numasec` in any directory. The agent asks for a target, runs recon, then walks through exploitation phases. Everything is scoped — it won't test URLs outside the target you define.
+Type a URL, endpoint, everything. The AI scans it, finds vulnerabilities, and writes the report. You watch, approve, and steer — like pair-programming, but for security.
 
-### MCP server
+It follows real pentest methodology (PTES): reconnaissance, attack surface mapping, vulnerability testing, exploitation, reporting. Not a toy scanner that dumps a CSV. An actual AI agent that thinks, adapts, and chains attacks together.
 
-21 security tools exposed to any MCP host. Your AI assistant can call `recon`, `injection_test`, `xss_test`, `auth_test`, etc. directly, with session state and report generation built in.
-
-```bash
-pip install "numasec[mcp]"
-playwright install chromium
-```
-
-**VS Code / GitHub Copilot** — `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "numasec": {
-      "command": "numasec"
-    }
-  }
-}
-```
-
-**Claude Desktop** — `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "numasec": {
-      "command": "numasec"
-    }
-  }
-}
-```
-
-**Cursor** — use HTTP transport:
-
-```json
-{
-  "mcpServers": {
-    "numasec": {
-      "command": "numasec",
-      "args": ["--mcp-http"]
-    }
-  }
-}
-```
+Works with Claude, GPT-4, Gemini, DeepSeek, or any OpenAI-compatible model.
 
 ---
 
-## What it tests
+### What you see
 
-| Category | Details |
-|---|---|
-| Injection | SQLi (blind, time-based, union, error-based), NoSQL, SSTI, command injection, XXE |
-| Client-side | Reflected XSS, DOM XSS with canary injection, CSRF, open redirect |
-| Authentication | JWT attacks, OAuth testing, credential spray, default credentials |
-| Access control | IDOR, CORS misconfiguration, path traversal, LFI |
-| Server-side | SSRF with cloud metadata detection, host header injection, XXE |
-| Recon | Port scanning, tech fingerprinting, SSL/TLS analysis, CVE enrichment via NVD |
-| Discovery | Directory and file enumeration, OpenAPI/Swagger import, JS source analysis |
-| Manual | Raw HTTP requests, Playwright browser sessions, out-of-band callbacks |
+A live terminal session. Findings pop up in a sidebar as they're discovered — color-coded by severity, grouped into attack chains, with OWASP Top 10 coverage tracking in the header. Everything is scoped: the agent won't touch anything outside your target.
 
-## Tools (21)
+Type `/target https://yourapp.com` to start. Type `/findings` to see what it found. Type `/report` to get the deliverable.
 
-| Tool | What it does |
-|---|---|
-| `recon` | Port scan, tech fingerprint, service probing, CVE enrichment |
-| `crawl` | HTTP + SPA crawling, OpenAPI/Swagger import |
-| `injection_test` | SQLi, NoSQL, SSTI, command injection, GraphQL injection |
-| `xss_test` | Reflected + DOM XSS with canary injection |
-| `auth_test` | JWT attacks, OAuth testing, credential spray |
-| `access_control_test` | IDOR, CSRF, CORS misconfiguration |
-| `ssrf_test` | SSRF with cloud metadata detection |
-| `path_test` | LFI, XXE, open redirect, host header injection |
-| `dir_fuzz` | Directory and file enumeration |
-| `js_analyze` | Secrets in source, exposed endpoints, DOM sinks |
-| `browser` | Playwright-based browser interaction |
-| `http_request` | Raw HTTP requests |
-| `oob` | Out-of-band detection (DNS/HTTP callbacks) |
-| `run_scanner_batch` | Parallel multi-scanner execution |
-| `kb_search` | Search 34 KB templates: techniques, CWEs, payloads |
-| `plan` | Scan planning, OWASP coverage tracking, next-step suggestions |
-| `create_session` | Start an assessment session |
-| `save_finding` | Store a finding — auto-enriched with CWE, CVSS, OWASP, ATT&CK |
-| `get_findings` | Retrieve and filter findings by severity |
-| `generate_report` | Export as SARIF 2.1.0, Markdown, HTML, or JSON |
-| `relay_credentials` | Pass discovered credentials into authenticated testing |
+### What it finds
 
-## Knowledge base
+SQL injection (blind, time-based, union, error-based), XSS (reflected, stored, DOM), SSRF with cloud metadata detection, authentication flaws (JWT attacks, OAuth misconfig, credential spraying, default passwords), IDOR, CSRF, CORS misconfig, path traversal, LFI, command injection, SSTI, XXE, GraphQL introspection — and it chains them. A leaked API key in JS → SSRF → cloud metadata → account takeover.
 
-34 YAML templates indexed for BM25 search, covering:
+### What it produces
 
-- Detection patterns (SQLi, XSS, SSRF, auth, WAF bypass, API security, business logic)
-- Exploitation by target: DBMS-specific SQL injection, SSTI per engine, XXE, cloud metadata  
-- Post-exploitation: Linux/Windows privilege escalation, Docker escape, token impersonation
-- Payloads: SQL injection, XSS, SSTI/command injection, reverse shells, web shells
-- Remediation guides for every vulnerability class
+- **SARIF** — drop it into GitHub Code Scanning
+- **HTML** — share with the team
+- **Markdown / JSON** — integrate anywhere
 
-## Findings enrichment
-
-Every finding saved via `save_finding` is automatically enriched:
-
-1. CWE ID inferred from the finding title/type
-2. CVSS 3.1 base score and vector computed from the CWE
-3. OWASP Top 10 category mapped from the CWE
-4. MITRE ATT&CK technique mapped from the CWE
-
-SARIF 2.1.0 output is directly compatible with GitHub Code Scanning.
-
-## Benchmark
-
-96% recall on OWASP Juice Shop v17 — 25 of 26 ground truth vulnerabilities found, all 10 OWASP categories covered, 68 total findings.
+Every finding comes with CWE ID, CVSS 3.1 score, OWASP category, MITRE ATT&CK technique, and remediation guidance. Not just "you have a vuln" — actionable output.
 
 ---
 
-## Requirements
+### How it works
 
-- Python 3.11+
-- Playwright (for browser-based testing)
-- Optional: `nmap`, `naabu` for faster port scanning
-- Optional: `asyncssh`, `smbprotocol` for SSH/SMB protocol testing
+The terminal is a TypeScript TUI (forked from [OpenCode](https://github.com/opencode-ai/opencode), MIT) driving 21 Python security scanners through a JSON-RPC bridge. A knowledge base of 34 templates covers detection patterns, exploitation techniques per DBMS/engine/OS, post-exploitation, payloads, and remediation — so the AI doesn't hallucinate attack methodology, it looks it up.
 
-```bash
-pip install -e ".[protocols]"   # SSH + SMB support
-pip install -e ".[all]"         # Everything including dev tools
-```
+96% recall on OWASP Juice Shop v17 — 25 of 26 ground-truth vulnerabilities found across all 10 OWASP categories.
 
-## Configuration
+---
 
-Pass environment variables through your MCP client's `env` block. numasec does not read `.env` files.
-
-| Variable | Description | Default |
-|---|---|---|
-| `NUMASEC_ALLOW_INTERNAL` | Allow scanning localhost/private IPs (labs) | `0` |
-| `NUMASEC_NVD_API_KEY` | NVD API key for CVE enrichment | — |
-| `NUMASEC_RATE_PER_MINUTE` | Per-session call limit | `9999` |
-| `NUMASEC_RATE_CONCURRENT` | Per-session concurrency | `100` |
-| `NUMASEC_RATE_GLOBAL_PER_MINUTE` | Global call limit | `9999` |
-| `NUMASEC_RATE_GLOBAL_CONCURRENT` | Global concurrency | `200` |
-| `MCP_TRANSPORT` | Transport: `stdio` or `http` | `stdio` |
-
-## Development
+### Development
 
 ```bash
 pip install -e ".[all]"
-pytest tests/ -v -m "not slow and not benchmark"
+pytest tests/ -v
 ruff check numasec/
-mypy numasec/
 ```
 
-## License
+924 tests. Benchmarks against Juice Shop, DVWA, and WebGoat in `tests/benchmarks/`.
 
-MIT
+---
+
+**Built by [Francesco Stabile](https://www.linkedin.com/in/francesco-stabile-dev)**.
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/francesco-stabile-dev)
+[![X](https://img.shields.io/badge/X-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/Francesco_Sta)
+
+[MIT License](LICENSE)
