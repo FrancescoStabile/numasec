@@ -93,6 +93,92 @@ class McpSessionStore:
         logger.info("Finding added to %s: %s", session_id, finding.id)
         return finding.id
 
+    async def build_chains(self, session_id: str) -> dict[str, list[str]]:
+        """Auto-detect and assign attack chains based on URL/parameter overlap.
+
+        Findings sharing the same target URL base path are grouped into chains.
+        Findings with explicit ``related_finding_ids`` are merged into the same chain.
+
+        Returns:
+            Dict mapping chain_id → list of finding IDs in the chain.
+        """
+        findings = await self.get_findings(session_id)
+        if not findings:
+            return {}
+
+        from urllib.parse import urlparse
+
+        # Group findings by URL base (scheme + netloc + first path segment)
+        url_groups: dict[str, list[Any]] = {}
+        for f in findings:
+            url = getattr(f, "url", "") or ""
+            if not url:
+                continue
+            parsed = urlparse(url)
+            base = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rsplit('/', 1)[0]}"
+            url_groups.setdefault(base, []).append(f)
+
+        chains: dict[str, list[str]] = {}
+        chain_counter = 0
+
+        # Merge related_finding_ids into same chain
+        id_to_chain: dict[str, str] = {}
+        for f in findings:
+            fid = getattr(f, "id", "")
+            existing_chain = getattr(f, "chain_id", "")
+            if existing_chain:
+                id_to_chain[fid] = existing_chain
+
+        # Build chains from URL groups (only multi-finding groups)
+        for _base, group in url_groups.items():
+            if len(group) < 2:
+                continue
+            chain_counter += 1
+            cid = f"chain-{chain_counter}"
+
+            # Check if any finding in this group already has a chain_id
+            existing = {id_to_chain[g.id] for g in group if g.id in id_to_chain}
+            if existing:
+                cid = existing.pop()
+
+            fids = []
+            for f in group:
+                f.chain_id = cid
+                id_to_chain[f.id] = cid
+                fids.append(f.id)
+            chains[cid] = fids
+
+        # Merge chains connected by related_finding_ids
+        for f in findings:
+            related = getattr(f, "related_finding_ids", []) or []
+            if not related:
+                continue
+            fid = getattr(f, "id", "")
+            my_chain = id_to_chain.get(fid)
+            for rid in related:
+                other_chain = id_to_chain.get(rid)
+                if my_chain and other_chain and my_chain != other_chain:
+                    # Merge other_chain into my_chain
+                    for merge_f in findings:
+                        if getattr(merge_f, "chain_id", "") == other_chain:
+                            merge_f.chain_id = my_chain
+                    if other_chain in chains:
+                        chains.setdefault(my_chain, []).extend(chains.pop(other_chain))
+                elif my_chain and not other_chain:
+                    for merge_f in findings:
+                        if getattr(merge_f, "id", "") == rid:
+                            merge_f.chain_id = my_chain
+                            chains.setdefault(my_chain, []).append(rid)
+                            id_to_chain[rid] = my_chain
+
+        # Persist updated chain_ids
+        if chains:
+            session = await self._ensure_session(session_id)
+            await self._store.save(session)
+            logger.info("Built %d attack chains in session %s", len(chains), session_id)
+
+        return chains
+
     async def get_findings(self, session_id: str) -> list[Any]:
         """Return all findings for a session.
 

@@ -135,28 +135,70 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     return c.critical + c.high + c.medium + c.low + c.info
   })
 
-  // Derive attack chains from save_finding tool results with chain_id
+  // Derive attack chains from save_finding, build_chains, and get_findings tool results
   const attackChains = createMemo(() => {
     const chains: Record<string, { titles: string[]; severity: string }> = {}
+    const sevOrder = ["critical", "high", "medium", "low", "info"]
     for (const msg of messages()) {
       const parts = sync.data.part[msg.id] ?? []
       for (const part of parts) {
         if (part.type !== "tool" || part.state.status !== "completed") continue
-        if (!part.tool.includes("save_finding")) continue
         const out = (part.state as { output?: string }).output ?? ""
-        try {
-          const data = JSON.parse(out)
-          const chainId = data.chain_id || data.finding?.chain_id
-          if (!chainId) continue
-          if (!chains[chainId]) chains[chainId] = { titles: [], severity: "info" }
-          const title = data.title || data.finding?.title || "Finding"
-          chains[chainId].titles.push(title)
-          const sev = (data.severity || "").toLowerCase()
-          const sevOrder = ["critical", "high", "medium", "low", "info"]
-          if (sevOrder.indexOf(sev) < sevOrder.indexOf(chains[chainId].severity)) {
-            chains[chainId].severity = sev
-          }
-        } catch { /* skip */ }
+
+        // Source 1: save_finding with chain_id
+        if (part.tool.includes("save_finding")) {
+          try {
+            const data = JSON.parse(out)
+            const chainId = data.chain_id || data.finding?.chain_id
+            if (!chainId) continue
+            if (!chains[chainId]) chains[chainId] = { titles: [], severity: "info" }
+            const title = data.title || data.finding?.title || "Finding"
+            if (!chains[chainId].titles.includes(title)) chains[chainId].titles.push(title)
+            const sev = (data.severity || "").toLowerCase()
+            if (sevOrder.indexOf(sev) < sevOrder.indexOf(chains[chainId].severity)) {
+              chains[chainId].severity = sev
+            }
+          } catch { /* skip */ }
+          continue
+        }
+
+        // Source 2: build_chains tool output
+        if (part.tool.includes("build_chains")) {
+          try {
+            const data = JSON.parse(out)
+            const builtChains = data.chains
+            if (builtChains && typeof builtChains === "object") {
+              for (const [cid, fids] of Object.entries(builtChains)) {
+                if (!chains[cid]) chains[cid] = { titles: [], severity: "info" }
+                for (const fid of fids as string[]) {
+                  if (!chains[cid].titles.includes(fid)) chains[cid].titles.push(fid)
+                }
+              }
+            }
+          } catch { /* skip */ }
+          continue
+        }
+
+        // Source 3: get_findings output with chain_id on individual findings
+        if (part.tool.includes("get_findings")) {
+          try {
+            const data = JSON.parse(out)
+            const list = data.findings
+            if (!Array.isArray(list)) continue
+            for (const f of list) {
+              const chainId = f.chain_id
+              if (!chainId) continue
+              if (!chains[chainId]) chains[chainId] = { titles: [], severity: "info" }
+              const title = f.title || "Finding"
+              if (!chains[chainId].titles.includes(title)) chains[chainId].titles.push(title)
+              const sev = (f.severity || "").toLowerCase()
+              if (sevOrder.indexOf(sev) < sevOrder.indexOf(chains[chainId].severity)) {
+                chains[chainId].severity = sev
+              }
+            }
+          } catch { /* skip */ }
+          continue
+        }
       }
     }
     return Object.entries(chains).filter(([_, c]) => c.titles.length > 1)

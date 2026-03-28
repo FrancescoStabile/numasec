@@ -99,7 +99,8 @@ export function Header() {
     "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10",
   ] as const
   const coverageInfo = createMemo(() => {
-    const covered = new Set<string>()
+    const tested = new Set<string>()
+    const vulnerable = new Set<string>()
     const categoryRe = /A0[1-9]|A10/g
     const msgs = messages()
     for (let mi = 0; mi < msgs.length; mi++) {
@@ -113,24 +114,30 @@ export function Header() {
         const out = (part.state as { output?: string }).output
         if (!out) continue
 
-        // Source 1: save_finding outputs (owasp_category in enriched)
+        // Source 1: save_finding outputs (owasp_category in enriched) — these are vulnerabilities
         if (part.tool.includes("save_finding")) {
           const matches = out.match(categoryRe)
-          if (matches) matches.forEach((m) => covered.add(m))
+          if (matches) matches.forEach((m) => { tested.add(m); vulnerable.add(m) })
           continue
         }
 
-        // Source 2: get_findings outputs (each finding may have owasp category in cwe_id or text)
+        // Source 2: get_findings outputs (each finding may have owasp category)
         if (part.tool.includes("get_findings")) {
           const matches = out.match(categoryRe)
-          if (matches) matches.forEach((m) => covered.add(m))
+          if (matches) matches.forEach((m) => { tested.add(m); vulnerable.add(m) })
           continue
         }
 
-        // Source 3: plan tool coverage_gaps output
+        // Source 3: plan tool coverage_gaps output (tested categories)
         if (part.tool.includes("plan")) {
           const matches = out.match(categoryRe)
-          if (matches) matches.forEach((m) => covered.add(m))
+          if (matches) matches.forEach((m) => tested.add(m))
+          // Mark categories that appear in "covered" context as tested
+          try {
+            const data = JSON.parse(out)
+            const coveredList = data?.coverage?.covered_categories
+            if (Array.isArray(coveredList)) coveredList.forEach((c: string) => tested.add(c))
+          } catch { /* skip */ }
           continue
         }
 
@@ -142,12 +149,12 @@ export function Header() {
           for (const f of autoSaved) {
             const cat = f.owasp_category ?? ""
             const matches = cat.match(categoryRe)
-            if (matches) matches.forEach((m: string) => covered.add(m))
+            if (matches) matches.forEach((m: string) => { tested.add(m); vulnerable.add(m) })
           }
         } catch { /* skip */ }
       }
     }
-    return { covered: covered.size, total: owaspCategories.length }
+    return { tested, vulnerable, testedCount: tested.size, total: owaspCategories.length }
   })
 
   const { theme } = useTheme()
@@ -236,17 +243,26 @@ export function Header() {
                 )}
                 <ContextInfo context={context} cost={cost} />
               </box>
-              <Show when={targetUrl() || coverageInfo().covered > 0}>
+              <Show when={targetUrl() || coverageInfo().testedCount > 0}>
                 <box flexDirection={narrow() ? "column" : "row"} justifyContent="space-between" gap={1}>
                   <Show when={targetUrl()}>
                     <text fg={theme.textMuted} wrapMode="none" flexShrink={1}>
                       ☠ {targetUrl()}
                     </text>
                   </Show>
-                  <Show when={coverageInfo().covered > 0}>
-                    <text fg={theme.textMuted} wrapMode="none" flexShrink={0}>
-                      OWASP {coverageInfo().covered}/{coverageInfo().total}
-                    </text>
+                  <Show when={coverageInfo().testedCount > 0}>
+                    <box flexDirection="row" gap={0} flexShrink={0}>
+                      <text fg={theme.textMuted} wrapMode="none">OWASP </text>
+                      {owaspCategories.map((cat) => {
+                        const info = coverageInfo()
+                        const isVuln = info.vulnerable.has(cat)
+                        const isTested = info.tested.has(cat)
+                        const color = isVuln ? "#ff4444" : isTested ? "#44ff44" : "#555555"
+                        const symbol = isVuln ? "■" : isTested ? "■" : "□"
+                        return <text fg={color} wrapMode="none">{symbol}</text>
+                      })}
+                      <text fg={theme.textMuted} wrapMode="none"> {coverageInfo().testedCount}/{coverageInfo().total}</text>
+                    </box>
                   </Show>
                 </box>
               </Show>

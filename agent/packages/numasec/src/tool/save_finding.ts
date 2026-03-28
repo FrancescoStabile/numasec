@@ -16,5 +16,8 @@ export const SaveFindingTool = bridgeTool(
     cwe: z.string().optional().describe("CWE identifier (e.g., CWE-89)"),
     payload: z.string().optional().describe("Payload that triggered the finding"),
     tool_used: z.string().optional().describe("Tool that discovered the finding"),
+    related_to: z.string().optional().describe("Comma-separated finding IDs this finding relates to"),
+    chain_id: z.string().optional().describe("Attack chain ID to group related findings"),
+    confidence: z.number().optional().describe("Confidence score 0.0-1.0"),
   }),
 )
