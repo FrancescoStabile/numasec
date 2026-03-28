@@ -33,6 +33,8 @@ A live terminal session. Findings pop up in a sidebar as they're discovered — 
 
 Type `/target https://yourapp.com` to start. Type `/findings` to see what it found. Type `/report` to get the deliverable.
 
+**Five specialized agents.** Tab between pentest (default, full PTES methodology), recon (reconnaissance only), hunt (systematic OWASP Top 10 testing), review (secure code review), and report (finding management and deliverables). Each agent has tailored permissions — the recon agent can't run exploits, the review agent can't launch scanners.
+
 ### What it finds
 
 SQL injection (blind, time-based, union, error-based), XSS (reflected, stored, DOM), SSRF with cloud metadata detection, authentication flaws (JWT attacks, OAuth misconfig, credential spraying, default passwords), IDOR, CSRF, CORS misconfig, path traversal, LFI, command injection, SSTI, XXE, GraphQL introspection — and it chains them. A leaked API key in JS → SSRF → cloud metadata → account takeover.

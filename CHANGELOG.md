@@ -2,6 +2,18 @@
 
 ---
 
+## [Unreleased]
+
+### Agent Architecture
+
+- 5 primary agents with dedicated system prompts: pentest, recon, hunt, review, report
+- Tab cycling through all primary agents with color-coded indicators
+- Per-agent permission model (bash restrictions, tool access control)
+- 3 subagents with specialized prompts: scanner, analyst, explore
+- Agent colors: pentest (green), recon (blue), hunt (red), review (yellow), report (green)
+
+---
+
 ## [4.0.0] - 2026-03-27 — Agent Terminal + MCP Server
 
 Major release. numasec is now a full pentesting terminal (forked from the opencode agent, MIT)
