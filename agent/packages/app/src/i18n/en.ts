@@ -515,9 +515,9 @@ export const dict = {
   "notification.session.error.title": "Session error",
   "notification.session.error.fallbackDescription": "An error occurred",
 
-  "home.recentProjects": "Recent projects",
-  "home.empty.title": "No recent projects",
-  "home.empty.description": "Get started by opening a local project",
+  "home.recentProjects": "Recent sessions",
+  "home.empty.title": "No recent sessions",
+  "home.empty.description": "Get started by setting a target",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

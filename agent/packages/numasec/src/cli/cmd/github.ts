@@ -790,19 +790,19 @@ export const GithubRunCommand = cmd({
           .filter(Boolean)
         let prompt = (() => {
           if (!isCommentEvent) {
-            return "Review this pull request"
+            return "Review this pull request for security vulnerabilities"
           }
           const body = (payload as IssueCommentEvent | PullRequestReviewCommentEvent).comment.body.trim()
           const bodyLower = body.toLowerCase()
           if (mentions.some((m) => bodyLower === m)) {
             if (reviewContext) {
-              return `Review this code change and suggest improvements for the commented lines:\n\nFile: ${reviewContext.file}\nLines: ${reviewContext.line}\n\n${reviewContext.diffHunk}`
+              return `Review this code change for security vulnerabilities in the commented lines:\n\nFile: ${reviewContext.file}\nLines: ${reviewContext.line}\n\n${reviewContext.diffHunk}`
             }
             return "Summarize this thread"
           }
           if (mentions.some((m) => bodyLower.includes(m))) {
             if (reviewContext) {
-              return `${body}\n\nContext: You are reviewing a comment on file "${reviewContext.file}" at line ${reviewContext.line}.\n\nDiff context:\n${reviewContext.diffHunk}`
+              return `${body}\n\nContext: You are performing a security review on file "${reviewContext.file}" at line ${reviewContext.line}.\n\nDiff context:\n${reviewContext.diffHunk}`
             }
             return body
           }

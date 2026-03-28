@@ -9,8 +9,6 @@ import { CodexAuthPlugin } from "./codex"
 import { Session } from "../session"
 import { NamedError } from "@numasec/util/error"
 import { CopilotAuthPlugin } from "./copilot"
-import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
-import { PoeAuthPlugin } from "opencode-poe-auth"
 import { Effect, Layer, ServiceMap, Stream } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
@@ -45,7 +43,7 @@ export namespace Plugin {
 
   // Built-in plugins that are directly imported (not installed from npm)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const INTERNAL_PLUGINS: any[] = [CodexAuthPlugin, CopilotAuthPlugin, GitlabAuthPlugin, PoeAuthPlugin]
+  const INTERNAL_PLUGINS: any[] = [CodexAuthPlugin, CopilotAuthPlugin]
 
   // Old npm package names for plugins that are now built-in — skip if users still have them in config
   const DEPRECATED_PLUGIN_PACKAGES = ["numasec-openai-codex-auth", "numasec-copilot-auth"]

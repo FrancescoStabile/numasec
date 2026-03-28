@@ -1,13 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "numasec",
-  "description": "AI-powered development tool",
+  "description": "AI-powered penetration testing platform",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.11",
   "scripts": {
     "dev": "bun run --cwd packages/numasec --conditions=browser src/index.ts",
-    "dev:desktop": "bun --cwd packages/desktop tauri dev",
     "dev:web": "bun --cwd packages/app dev",
     "dev:console": "ulimit -n 10240 2>/dev/null; bun run --cwd packages/console/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
@@ -21,8 +20,7 @@
     "packages": [
       "packages/*",
       "packages/console/*",
-      "packages/sdk/js",
-      "packages/slack"
+      "packages/sdk/js"
     ],
     "catalog": {
       "@effect/platform-node": "4.0.0-beta.37",

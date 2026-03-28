@@ -61,7 +61,8 @@ export namespace ShareNext {
     return { headers, api: consoleApi, baseUrl: active.url }
   }
 
-  const disabled = process.env["NUMASEC_DISABLE_SHARE"] === "true" || process.env["NUMASEC_DISABLE_SHARE"] === "1"
+  // Sharing disabled by default — pentest session data must stay local
+  const disabled = !(process.env["NUMASEC_ENABLE_SHARE"] === "true" || process.env["NUMASEC_ENABLE_SHARE"] === "1")
 
   export async function init() {
     if (disabled) return

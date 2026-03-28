@@ -16,8 +16,10 @@ export default $config({
     }
   },
   async run() {
-    await import("./infra/app.js")
-    await import("./infra/console.js")
-    await import("./infra/enterprise.js")
+    // Console, web, and enterprise deployments shut down per PRD D3.
+    // Source kept in infra/ for future re-deployment when content is rewritten for security.
+    // await import("./infra/app.js")
+    // await import("./infra/console.js")
+    // await import("./infra/enterprise.js")
   },
 })

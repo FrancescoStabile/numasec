@@ -2,7 +2,7 @@ name: Upstream Sync Check
 
 on:
   schedule:
-    - cron: "0 9 * * 1"  # ogni lunedì alle 9:00
+    - cron: "0 9 * * 1"  # every Monday at 9:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -31,28 +31,84 @@ jobs:
           echo "count=$COUNT" >> $GITHUB_OUTPUT
           echo "merge_base=$MERGE_BASE" >> $GITHUB_OUTPUT
 
-          # Write report to file (avoids multiline env issues)
+          # Zone classification of changed files
+          ALL_FILES=$(git diff --name-only ${MERGE_BASE}..upstream/main 2>/dev/null || echo "")
+
+          SAFE_FILES=""
+          REVIEW_FILES=""
+          DIVERGED_FILES=""
+          OTHER_FILES=""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              packages/numasec/src/provider/*|packages/numasec/src/auth/*|packages/numasec/src/effect/*|packages/numasec/src/id/*|packages/numasec/src/format/*|packages/numasec/src/bus/*|packages/numasec/src/env/*|packages/ui/*|packages/plugin/*)
+                SAFE_FILES="${SAFE_FILES}${file}\n"
+                ;;
+              packages/numasec/src/session/*|packages/numasec/src/config/*|packages/numasec/src/storage/*|packages/numasec/src/mcp/*|packages/numasec/src/server/*|packages/numasec/src/permission/*|packages/numasec/src/skill/*)
+                REVIEW_FILES="${REVIEW_FILES}${file}\n"
+                ;;
+              packages/numasec/src/tool/*|packages/numasec/src/agent/*|packages/numasec/src/command/*|packages/numasec/src/bridge/*|packages/numasec/src/lsp/*|packages/numasec/src/ide/*|packages/numasec/src/worktree/*)
+                DIVERGED_FILES="${DIVERGED_FILES}${file}\n"
+                ;;
+              *)
+                OTHER_FILES="${OTHER_FILES}${file}\n"
+                ;;
+            esac
+          done <<< "$ALL_FILES"
+
+          SAFE_COUNT=$(echo -e "$SAFE_FILES" | grep -c . 2>/dev/null || echo "0")
+          REVIEW_COUNT=$(echo -e "$REVIEW_FILES" | grep -c . 2>/dev/null || echo "0")
+          DIVERGED_COUNT=$(echo -e "$DIVERGED_FILES" | grep -c . 2>/dev/null || echo "0")
+          OTHER_COUNT=$(echo -e "$OTHER_FILES" | grep -c . 2>/dev/null || echo "0")
+
+          # Write report to file
           {
             echo "## Upstream opencode — $COUNT new commits since fork"
             echo ""
             echo "**Merge base:** \`$MERGE_BASE\`"
             echo "**Upstream HEAD:** \`$BASE\`"
             echo ""
+            echo "### Zone Classification"
+            echo ""
+            echo "| Zone | Files | Action |"
+            echo "|------|-------|--------|"
+            echo "| 🟢 Safe | $SAFE_COUNT | Run \`script/upstream-merge-safe.sh --apply\` |"
+            echo "| 🟡 Review | $REVIEW_COUNT | Manual cherry-pick with \`git cherry-pick -x\` |"
+            echo "| 🔴 Diverged | $DIVERGED_COUNT | Read for insights, do not merge |"
+            echo "| ⚪ Other | $OTHER_COUNT | Evaluate per-file |"
+            echo ""
             echo "### Commits"
             echo '```'
             echo "$NEW_COMMITS"
             echo '```'
             echo ""
-            echo "### Files changed (top 30)"
-            echo '```'
-            git diff --name-only ${MERGE_BASE}..upstream/main 2>/dev/null | grep -E '\.(ts|tsx|py)$' | head -30 || echo "n/a"
-            echo '```'
-            echo ""
-            echo "### Recommended actions"
-            echo "- \`src/provider/\` changes → likely new model providers, low conflict risk"
-            echo "- \`src/session/\` changes → core session logic, review carefully"
-            echo "- \`src/agent/\` changes → skip (replaced by numasec agents)"
-            echo "- \`packages/numasec/src/tool/\` changes → review for new tool types"
+            if [ "$SAFE_COUNT" -gt 0 ]; then
+              echo "### 🟢 Safe Zone (auto-mergeable)"
+              echo '```'
+              echo -e "$SAFE_FILES" | head -20
+              echo '```'
+              echo ""
+            fi
+            if [ "$REVIEW_COUNT" -gt 0 ]; then
+              echo "### 🟡 Review Zone (manual cherry-pick)"
+              echo '```'
+              echo -e "$REVIEW_FILES" | head -20
+              echo '```'
+              echo ""
+            fi
+            if [ "$DIVERGED_COUNT" -gt 0 ]; then
+              echo "### 🔴 Diverged Zone (skip)"
+              echo '```'
+              echo -e "$DIVERGED_FILES" | head -20
+              echo '```'
+              echo ""
+            fi
+            echo "### Next Steps"
+            echo "1. Run \`./script/upstream-merge-safe.sh\` for a dry-run of Safe Zone cherry-picks"
+            echo "2. Manually review Review Zone changes with \`git cherry-pick -x <commit>\`"
+            echo "3. Log all decisions in \`UPSTREAM_LOG.md\`"
+            echo "4. Tag: \`git tag upstream-sync-$(date +%Y-%m-%d)\`"
           } > /tmp/upstream_report.md
 
           cat /tmp/upstream_report.md

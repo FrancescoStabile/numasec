@@ -97,7 +97,7 @@ export namespace Command {
 
         commands[Default.INIT] = {
           name: Default.INIT,
-          description: "create/update AGENTS.md",
+          description: "analyze target app, create security AGENTS.md",
           source: "command",
           get template() {
             return PROMPT_INITIALIZE.replace("${path}", ctx.worktree)
@@ -106,7 +106,7 @@ export namespace Command {
         }
         commands[Default.REVIEW] = {
           name: Default.REVIEW,
-          description: "review changes [commit|branch|pr], defaults to uncommitted",
+          description: "security review changes [commit|branch|pr], defaults to uncommitted",
           source: "command",
           get template() {
             return PROMPT_REVIEW.replace("${path}", ctx.worktree)
