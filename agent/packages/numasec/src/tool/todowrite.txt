@@ -1,4 +1,4 @@
-Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
+Use this tool to create and manage a structured task list for your current security session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
 It also helps the user understand the progress of the task and overall progress of their requests.
 
 ## When to Use This Tool
@@ -113,7 +113,7 @@ User: What does the git status command do?
 Assistant: The git status command shows the current state of your working directory and staging area. It displays which changes have been staged, which haven't, and which files aren't being tracked by Git. This is a fundamental command for understanding the current state of your repository before making commits.
 
 <reasoning>
-The assistant did not use the todo list because this is an informational request with no actual coding task to complete. The user is simply asking for an explanation, not for the assistant to perform multiple steps or tasks.
+The assistant did not use the todo list because this is an informational request with no actual security task to complete. The user is simply asking for an explanation, not for the assistant to perform multiple steps or tasks.
 </reasoning>
 </example>
 

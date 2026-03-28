@@ -1,6 +1,6 @@
 id = "numasec"
 name = "numasec"
-description = "The open source coding agent."
+description = "AI-powered penetration testing platform."
 version = "1.3.3"
 schema_version = 1
 authors = ["Anomaly"]

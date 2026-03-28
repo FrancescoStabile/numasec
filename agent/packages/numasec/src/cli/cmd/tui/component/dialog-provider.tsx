@@ -240,8 +240,7 @@ function ApiMethod(props: ApiMethodProps) {
           numasec: (
             <box gap={1}>
               <text fg={theme.textMuted}>
-                Numasec Zen gives you access to all the best coding models at the cheapest prices with a single API
-                key.
+                Numasec Zen gives you access to the best AI models at the cheapest prices with a single API key.
               </text>
               <text fg={theme.text}>
                 Go to <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span> to get a key
@@ -251,8 +250,8 @@ function ApiMethod(props: ApiMethodProps) {
           "numasec-go": (
             <box gap={1}>
               <text fg={theme.textMuted}>
-                Numasec Go is a $10 per month subscription that provides reliable access to popular open coding models
-                with generous usage limits.
+                Numasec Go is a $10 per month subscription that provides reliable access to popular open AI models with
+                generous usage limits.
               </text>
               <text fg={theme.text}>
                 Go to <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span> and enable Numasec Go

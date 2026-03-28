@@ -173,7 +173,7 @@ export default function () {
               <Show when={info().title}>
                 <Title>{info().title} | Numasec</Title>
               </Show>
-              <Meta name="description" content="numasec - The AI coding agent built for the terminal." />
+              <Meta name="description" content="numasec - AI-powered penetration testing platform." />
               <Meta property="og:image" content={ogImage()} />
               <Meta name="twitter:image" content={ogImage()} />
               <ClientOnlyWorkerPoolProvider>
