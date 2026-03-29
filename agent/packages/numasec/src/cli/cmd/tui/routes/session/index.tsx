@@ -62,6 +62,7 @@ import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
+import { EvidenceBrowser } from "../../component/evidence-browser"
 import { Sidebar } from "./sidebar"
 import { Flag } from "@/flag/flag"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -972,6 +973,18 @@ export function Session() {
         moveChild(-1)
         dialog.clear()
       }),
+    },
+    {
+      title: "Browse evidence",
+      value: "session.evidence",
+      category: "Security",
+      slash: {
+        name: "evidence-browser",
+        aliases: ["eb"],
+      },
+      onSelect: (dialog) => {
+        dialog.replace(() => <EvidenceBrowser sessionID={route.sessionID} />)
+      },
     },
   ])
 
