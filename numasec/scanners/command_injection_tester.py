@@ -481,7 +481,7 @@ async def python_command_injection_test(
         JSON string with test results.
     """
     param_list = params.split(",") if params else None
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     tester = CommandInjectionTester(extra_headers=extra_headers)
     result = await tester.test(url, params=param_list, method=method)
     return json.dumps(result.to_dict(), indent=2)

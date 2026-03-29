@@ -26,7 +26,7 @@ async def access_control_test(
     """
     start = time.monotonic()
     check_set = {c.strip().lower() for c in checks.split(",")}
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     results: dict[str, Any] = {
         "url": url,
         "checks_run": sorted(check_set),

@@ -12,6 +12,7 @@ def generate_markdown_report(
     target: str = "",
     *,
     include_evidence: bool = True,
+    tools_used: list[str] | None = None,
 ) -> str:
     """Generate a Markdown security assessment report."""
     lines: list[str] = []
@@ -32,7 +33,7 @@ def generate_markdown_report(
     # Executive summary
     from numasec.reporting import build_executive_summary
 
-    summary = build_executive_summary(findings, target=target)
+    summary = build_executive_summary(findings, target=target, tools_used=tools_used)
     lines.append("## Executive Summary")
     lines.append("")
     lines.append("| Metric | Value |")

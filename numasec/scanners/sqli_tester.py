@@ -872,7 +872,7 @@ async def python_sqli_test(
         JSON string with ``SQLiResult`` data.
     """
     param_list = params.split(",") if params else None
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
 
     # Normalize content_type: accept both short ("json") and MIME ("application/json") forms
     ct = content_type.lower().strip()

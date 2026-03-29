@@ -689,7 +689,7 @@ async def python_smuggling_test(url: str, headers: str | None = None) -> str:
     parsed_headers: dict[str, str] | None = None
     if headers:
         with contextlib.suppress(json.JSONDecodeError):
-            parsed_headers = json.loads(headers)
+            parsed_headers = headers if isinstance(headers, dict) else json.loads(headers)
 
     tester = SmugglingTester(extra_headers=parsed_headers)
     result = await tester.test(url)

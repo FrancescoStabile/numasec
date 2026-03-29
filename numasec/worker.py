@@ -305,6 +305,19 @@ async def _handle_generate_report(params: dict) -> Any:
     meta = await store.get_session(session_id)
     target = meta.get("target", "") if meta else ""
 
+    # Collect tools used from session events for OWASP coverage
+    tools_used: list[str] = []
+    try:
+        events = await store.get_events(session_id, "tool_call")
+        tools_used = [e.get("data", {}).get("tool", "") for e in events if isinstance(e, dict)]
+    except Exception:
+        pass
+    # Also add tools from _SCANNER_TOOLS that produced findings
+    for f in findings:
+        tool = getattr(f, "tool_used", "") or ""
+        if tool:
+            tools_used.append(tool)
+
     if fmt == "sarif":
         from numasec.reporting.sarif import generate_sarif_report
 
@@ -316,7 +329,7 @@ async def _handle_generate_report(params: dict) -> Any:
     if fmt in ("markdown", "html"):
         from numasec.reporting.markdown import generate_markdown_report
 
-        md_report = generate_markdown_report(findings, target=target)
+        md_report = generate_markdown_report(findings, target=target, tools_used=tools_used)
         return json.dumps(
             {"format": "markdown", "findings_count": len(findings), "content": md_report}, indent=2, default=str
         )
@@ -330,7 +343,7 @@ async def _handle_generate_report(params: dict) -> Any:
             "findings_count": len(findings),
             "session_id": session_id,
             "target": target,
-            "executive_summary": build_executive_summary(findings, target=target),
+            "executive_summary": build_executive_summary(findings, target=target, tools_used=tools_used),
             "findings": [
                 {
                     "id": f.id,
@@ -610,11 +623,13 @@ _SCANNER_TOOLS = {
 _VULN_TYPE_MAP: dict[str, tuple[str, str, str]] = {
     "sql_injection": ("high", "CWE-89", "SQL Injection in '{param}'"),
     "nosql_injection": ("high", "CWE-943", "NoSQL Injection in '{param}'"),
+    "nosql": ("high", "CWE-943", "NoSQL Injection in '{param}'"),
     "ssti": ("high", "CWE-94", "Server-Side Template Injection in '{param}'"),
     "command_injection": ("critical", "CWE-78", "OS Command Injection in '{param}'"),
     "reflected": ("medium", "CWE-79", "Reflected XSS in '{param}'"),
     "stored": ("high", "CWE-79", "Stored XSS in '{param}'"),
     "dom_indicator": ("medium", "CWE-79", "DOM-based XSS indicator in '{param}'"),
+    "dom_xss": ("high", "CWE-79", "DOM-based XSS in '{param}'"),
     "xss": ("medium", "CWE-79", "Cross-Site Scripting in '{param}'"),
     "lfi": ("high", "CWE-22", "Local File Inclusion via '{param}'"),
     "open_redirect": ("medium", "CWE-601", "Open Redirect via '{param}'"),
@@ -624,31 +639,55 @@ _VULN_TYPE_MAP: dict[str, tuple[str, str, str]] = {
     "idor": ("high", "CWE-639", "Insecure Direct Object Reference in '{param}'"),
     "csrf": ("medium", "CWE-352", "Cross-Site Request Forgery"),
     "missing_token": ("medium", "CWE-352", "Missing CSRF Token"),
+    "origin_not_validated": ("high", "CWE-352", "Origin Header Not Validated (CSRF)"),
+    "weak_samesite": ("medium", "CWE-1275", "Weak SameSite Cookie Policy"),
     "cors": ("high", "CWE-942", "CORS Misconfiguration"),
     "reflected_origin": ("critical", "CWE-942", "CORS Reflected Origin"),
     "null_origin": ("high", "CWE-942", "CORS Null Origin Allowed"),
     "wildcard": ("medium", "CWE-942", "CORS Wildcard Origin"),
+    "wildcard_credentials": ("critical", "CWE-942", "CORS Wildcard with Credentials"),
     "jwt_none_alg": ("critical", "CWE-287", "JWT None Algorithm Bypass"),
     "jwt_weak_secret": ("high", "CWE-287", "JWT Weak Secret"),
     "jwt_exp_missing": ("low", "CWE-287", "JWT Missing Expiration"),
+    "jwt_no_expiry": ("low", "CWE-287", "JWT Missing Expiration"),
+    "jwt_kid_injection": ("high", "CWE-287", "JWT KID Path Traversal"),
+    "jwt_password_leak": ("critical", "CWE-522", "JWT Leaks Password Hash"),
     "default_credentials": ("critical", "CWE-798", "Default Credentials"),
     "password_spray": ("high", "CWE-521", "Weak Password (Spray)"),
+    "spray_valid_creds": ("high", "CWE-521", "Valid Credentials via Password Spray"),
     "missing_rate_limit": ("medium", "CWE-307", "Missing Rate Limiting"),
     "oauth_open_redirect": ("high", "CWE-601", "OAuth Open Redirect"),
+    "oauth_state_missing": ("medium", "CWE-352", "OAuth Missing State Parameter"),
+    "api_key_in_url": ("medium", "CWE-598", "API Key Exposed in URL"),
+    "bearer_exposed": ("high", "CWE-522", "Bearer Token Exposed"),
     "crlf_header": ("high", "CWE-113", "CRLF Header Injection in '{param}'"),
     "crlf_splitting": ("critical", "CWE-113", "HTTP Response Splitting in '{param}'"),
     "crlf_log": ("medium", "CWE-117", "CRLF Log Injection in '{param}'"),
+    "crlf_injection": ("high", "CWE-113", "CRLF Injection in '{param}'"),
     "header_injection": ("high", "CWE-113", "CRLF Header Injection in '{param}'"),
     "response_splitting": ("critical", "CWE-113", "HTTP Response Splitting in '{param}'"),
     "log_injection": ("medium", "CWE-117", "CRLF Log Injection in '{param}'"),
     "unrestricted_upload": ("critical", "CWE-434", "Unrestricted File Upload"),
     "webshell": ("critical", "CWE-434", "Web Shell Upload"),
+    "file_upload": ("high", "CWE-434", "File Upload Vulnerability"),
     "mime_bypass": ("high", "CWE-434", "MIME Type Bypass Upload"),
     "limit_bypass": ("high", "CWE-362", "Race Condition Limit Bypass"),
     "state_change": ("high", "CWE-362", "Race Condition State Change"),
     "cl_te": ("critical", "CWE-444", "HTTP Request Smuggling (CL.TE)"),
     "te_cl": ("critical", "CWE-444", "HTTP Request Smuggling (TE.CL)"),
     "te_te": ("critical", "CWE-444", "HTTP Request Smuggling (TE.TE)"),
+    "http_request_smuggling": ("critical", "CWE-444", "HTTP Request Smuggling"),
+}
+
+# Fallback type when scanner doesn't provide a "type" field in vulnerability dict
+_TOOL_TYPE_FALLBACK: dict[str, str] = {
+    "injection_test": "sql_injection",
+    "xss_test": "xss",
+    "auth_test": "default_credentials",
+    "access_control_test": "idor",
+    "ssrf_test": "ssrf",
+    "path_test": "lfi",
+    "upload_test": "file_upload",
 }
 
 
@@ -670,7 +709,10 @@ async def _auto_save_findings(result: Any, tool_name: str, session_id: str) -> l
         if not isinstance(vuln, dict):
             continue
 
-        vtype = (vuln.get("type") or "").lower()
+        vtype = (vuln.get("type") or vuln.get("vuln_type") or "").lower()
+        # Fall back to tool-name-derived type if scanner doesn't provide one
+        if not vtype:
+            vtype = _TOOL_TYPE_FALLBACK.get(tool_name, tool_name.replace("_test", ""))
         param = vuln.get("param") or vuln.get("parameter") or ""
         defaults = _VULN_TYPE_MAP.get(vtype, ("medium", "", "{type} vulnerability"))
 
@@ -749,6 +791,16 @@ async def dispatch(method: str, params: dict) -> Any:
         _active_session_id = call_session_id
 
     result = await reg.call(method, **normalised)
+
+    # Record tool usage for OWASP coverage tracking
+    if call_session_id and method in _SCANNER_TOOLS:
+        try:
+            from numasec.mcp._singletons import get_mcp_session_store
+
+            store = get_mcp_session_store()
+            await store.add_event(call_session_id, "tool_call", {"tool": method, "url": normalised.get("url", "")})
+        except Exception:
+            pass
 
     # Auto-save findings from scanner tools
     if method in _SCANNER_TOOLS and call_session_id:

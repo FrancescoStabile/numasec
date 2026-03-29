@@ -514,7 +514,7 @@ def create_default_tool_registry() -> ToolRegistry:
     )
 
     # ------------------------------------------------------------------
-    # 13. browser — unified navigate/click/fill/screenshot
+    # 13. browser — unified navigate/click/fill/screenshot/evaluate
     # ------------------------------------------------------------------
     from numasec.tools.composite_browser import browser
 
@@ -525,19 +525,23 @@ def create_default_tool_registry() -> ToolRegistry:
             "name": "browser",
             "description": (
                 "Interact with a headless browser: navigate to URL, click elements, "
-                "fill form fields, or take screenshots. For SPA testing and DOM interaction."
+                "fill form fields, take screenshots, or evaluate JavaScript. "
+                "For SPA testing and DOM interaction."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["navigate", "click", "fill", "screenshot"],
+                        "enum": ["navigate", "click", "fill", "screenshot", "evaluate"],
                         "description": "Browser action to perform",
                     },
                     "url": {"type": "string", "description": "URL for navigate action"},
                     "selector": {"type": "string", "description": "CSS/text selector for click/fill"},
-                    "value": {"type": "string", "description": "Value to type for fill action"},
+                    "value": {
+                        "type": "string",
+                        "description": "Value to type (fill) or JavaScript code (evaluate)",
+                    },
                     "wait_for": {
                         "type": "string",
                         "enum": ["load", "domcontentloaded", "networkidle"],

@@ -426,7 +426,7 @@ async def python_xxe_test(url: str, headers: str | None = None) -> str:
     parsed_headers: dict[str, str] | None = None
     if headers:
         with contextlib.suppress(json.JSONDecodeError):
-            parsed_headers = json.loads(headers)
+            parsed_headers = headers if isinstance(headers, dict) else json.loads(headers)
 
     tester = XxeTester()
     result = await tester.test(url, headers=parsed_headers)

@@ -400,7 +400,7 @@ async def python_nosql_test(url: str, method: str = "GET", headers: str = "") ->
     Returns:
         JSON string with ``NoSqlResult`` data.
     """
-    extra_headers = json.loads(headers) if headers else {}
+    extra_headers = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     tester = NoSqlTester(extra_headers=extra_headers)
     result = await tester.test(url, method=method)
     return json.dumps(result.to_dict(), indent=2)

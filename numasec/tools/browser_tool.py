@@ -211,3 +211,37 @@ async def browser_screenshot() -> dict[str, Any]:
         "screenshot_b64": b64,
         "size_bytes": len(raw),
     }
+
+
+async def browser_evaluate(code: str) -> dict[str, Any]:
+    """Evaluate JavaScript in the browser context.
+
+    Parameters
+    ----------
+    code:
+        JavaScript expression or function to evaluate (e.g. ``document.title``
+        or ``() => document.querySelectorAll('a').length``).
+    """
+    try:
+        page = await _get_page()
+    except RuntimeError as exc:
+        return {"success": False, "error": str(exc)}
+
+    logger.info("Evaluating JavaScript (%d chars)", len(code))
+
+    try:
+        result = await page.evaluate(code)
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "code": code[:500]}
+
+    # Serialize result safely
+    result_str = str(result)
+    if len(result_str) > 100_000:
+        result_str = result_str[:100_000] + "... (truncated)"
+
+    return {
+        "success": True,
+        "result": result,
+        "result_type": type(result).__name__,
+        "url": str(page.url),
+    }

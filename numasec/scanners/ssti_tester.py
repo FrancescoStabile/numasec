@@ -373,7 +373,7 @@ async def python_ssti_test(
         JSON string with ``SstiResult`` data.
     """
     param_list = params.split(",") if params else None
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     tester = SstiTester(extra_headers=extra_headers, waf_evasion=waf_evasion)
     result = await tester.test(url, params=param_list, method=method)
     return json.dumps(result.to_dict(), indent=2)

@@ -400,7 +400,7 @@ async def python_js_analyze(
     parsed_headers: dict[str, str] | None = None
     if headers:
         with contextlib.suppress(json.JSONDecodeError):
-            parsed_headers = json.loads(headers)
+            parsed_headers = headers if isinstance(headers, dict) else json.loads(headers)
 
     js_url_list: list[str] | None = None
     if js_files:

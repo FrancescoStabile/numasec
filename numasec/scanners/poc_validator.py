@@ -745,7 +745,7 @@ async def python_poc_validate(
         return json.dumps({"error": "findings must be a JSON array"})
 
     try:
-        extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+        extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     except json.JSONDecodeError:
         extra_headers = {}
 

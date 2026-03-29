@@ -9,25 +9,26 @@ logger = logging.getLogger(__name__)
 
 
 async def browser(
-    action: Literal["navigate", "click", "fill", "screenshot"],
+    action: Literal["navigate", "click", "fill", "screenshot", "evaluate"],
     url: str = "",
     selector: str = "",
     value: str = "",
     wait_for: str = "load",
     timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Interact with a headless browser: navigate, click, fill forms, take screenshots.
+    """Interact with a headless browser: navigate, click, fill forms, take screenshots, or evaluate JS.
 
     Args:
-        action: Browser action — navigate, click, fill, or screenshot.
+        action: Browser action — navigate, click, fill, screenshot, or evaluate.
         url: URL to navigate to (required for navigate action).
         selector: CSS or text selector (required for click and fill actions).
-        value: Value to type (required for fill action).
+        value: Value to type (for fill) or JavaScript code (for evaluate).
         wait_for: Wait condition for navigate: load, domcontentloaded, networkidle.
         timeout: Navigation timeout in seconds.
     """
     from numasec.tools.browser_tool import (
         browser_click,
+        browser_evaluate,
         browser_fill,
         browser_navigate,
         browser_screenshot,
@@ -47,5 +48,9 @@ async def browser(
         return await browser_fill(selector=selector, value=value)
     elif action == "screenshot":
         return await browser_screenshot()
+    elif action == "evaluate":
+        if not value:
+            return {"error": "value (JavaScript code) is required for evaluate action"}
+        return await browser_evaluate(code=value)
     else:
-        return {"error": f"Unknown action: {action}. Use: navigate, click, fill, screenshot"}
+        return {"error": f"Unknown action: {action}. Use: navigate, click, fill, screenshot, evaluate"}

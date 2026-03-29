@@ -311,7 +311,7 @@ async def python_race_test(
     parsed_headers: dict[str, str] | None = None
     if headers:
         with contextlib.suppress(json.JSONDecodeError):
-            parsed_headers = json.loads(headers)
+            parsed_headers = headers if isinstance(headers, dict) else json.loads(headers)
 
     start = time.monotonic()
     tester = RaceTester(

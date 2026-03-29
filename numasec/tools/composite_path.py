@@ -32,7 +32,7 @@ async def path_test(
     """
     start = time.monotonic()
     check_set = {c.strip().lower() for c in checks.split(",")}
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     param_list: list[str] | None = [p.strip() for p in params.split(",") if p.strip()] or None
     results: dict[str, Any] = {
         "url": url,

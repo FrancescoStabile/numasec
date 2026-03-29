@@ -487,7 +487,7 @@ async def python_crlf_test(
         JSON string with ``CrlfResult`` data.
     """
     param_list = [p.strip() for p in params.split(",") if p.strip()] if params else None
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     body_dict: dict[str, str] | None = None
     if body:
         try:

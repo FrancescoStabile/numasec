@@ -101,16 +101,17 @@ export function Header() {
 
   // Maps scanner tool names to OWASP categories they cover (mirrors numasec/core/coverage.py)
   const toolToOwasp: Record<string, string[]> = {
-    access_control_test: ["A01"],
+    access_control_test: ["A01", "A08"],
     auth_test: ["A01", "A02", "A07"],
-    injection_test: ["A03", "A04"],
+    injection_test: ["A03", "A04", "A07"],
     xss_test: ["A03"],
     ssrf_test: ["A10"],
     path_test: ["A03", "A10"],
-    recon: ["A05", "A06"],
+    recon: ["A05", "A06", "A09"],
     crawl: ["A05"],
     js_analyze: ["A05"],
     dir_fuzz: ["A05"],
+    upload_test: ["A04"],
   }
 
   const coverageInfo = createMemo(() => {

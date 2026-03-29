@@ -47,11 +47,20 @@ def calculate_risk_score(findings: list[Any]) -> float:
     return min(100.0, round(total, 1))
 
 
-def build_executive_summary(findings: list[Any], target: str = "") -> dict[str, Any]:
+def build_executive_summary(
+    findings: list[Any], target: str = "", tools_used: list[str] | None = None
+) -> dict[str, Any]:
     """Build executive summary data from findings.
 
     Returns a dict with risk_score, severity_counts, top_remediation,
     and owasp_coverage_pct -- suitable for embedding in any report format.
+
+    Args:
+        findings: List of Finding objects.
+        target: Target URL.
+        tools_used: Optional list of tool names that were run during the
+            session.  Used to determine which OWASP categories were tested
+            (even if no vulnerabilities were found).
     """
     severity_counts = Counter(f.severity.value if hasattr(f.severity, "value") else str(f.severity) for f in findings)
     risk_score = calculate_risk_score(findings)
@@ -72,15 +81,32 @@ def build_executive_summary(findings: list[Any], target: str = "") -> dict[str, 
         entry += f" -- {sev.upper()}"
         top_remediation.append(entry)
 
-    # OWASP coverage
-    owasp_cats = {f.owasp_category for f in findings if f.owasp_category}
-    owasp_pct = round(len(owasp_cats) / 10 * 100) if owasp_cats else 0
+    # OWASP coverage: categories with findings (vulnerable)
+    vulnerable_cats = {f.owasp_category for f in findings if f.owasp_category}
+
+    # Categories tested: union of vulnerable + tool-derived coverage
+    tested_cats = set(vulnerable_cats)
+    if tools_used:
+        from numasec.core.coverage import _TOOL_TO_OWASP
+
+        for tool in tools_used:
+            for cat in _TOOL_TO_OWASP.get(tool, []):
+                # Use short form (A01) for consistency
+                short = cat.split("_")[0]
+                tested_cats.add(short)
+    # Also normalize vulnerable cats to short form
+    tested_short = set()
+    for c in tested_cats:
+        tested_short.add(c.split("_")[0] if "_" in c else c)
+
+    owasp_pct = round(len(tested_short) / 10 * 100) if tested_short else 0
 
     return {
         "risk_score": risk_score,
         "total_findings": len(findings),
         "severity_counts": dict(severity_counts),
         "top_remediation": top_remediation,
-        "owasp_categories_hit": sorted(owasp_cats),
+        "owasp_categories_hit": sorted(vulnerable_cats),
+        "owasp_categories_tested": sorted(tested_short),
         "owasp_coverage_pct": owasp_pct,
     }

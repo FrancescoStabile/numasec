@@ -310,7 +310,7 @@ async def python_idor_test(
         import contextlib
 
         with contextlib.suppress(json.JSONDecodeError):
-            parsed_headers = json.loads(headers)
+            parsed_headers = headers if isinstance(headers, dict) else json.loads(headers)
 
     tester = IDORTester()
     result = await tester.test(url, headers=parsed_headers)

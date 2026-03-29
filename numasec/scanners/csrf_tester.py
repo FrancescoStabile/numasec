@@ -292,7 +292,7 @@ async def python_csrf_test(url: str, headers: str = "") -> str:
     Returns:
         JSON string with ``CsrfResult`` data.
     """
-    extra_headers = json.loads(headers) if headers else {}
+    extra_headers = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     tester = CsrfTester(extra_headers=extra_headers)
     result = await tester.test(url)
     return json.dumps(result.to_dict(), indent=2)

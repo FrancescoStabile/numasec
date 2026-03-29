@@ -628,8 +628,11 @@ async def python_upload_test(
 
     extra_headers: dict[str, str] | None = None
     if headers:
-        with contextlib.suppress(json.JSONDecodeError):
-            extra_headers = json.loads(headers)
+        if isinstance(headers, dict):
+            extra_headers = headers
+        else:
+            with contextlib.suppress(json.JSONDecodeError):
+                extra_headers = json.loads(headers)
 
     tester = UploadTester(extra_headers=extra_headers)
     result = await tester.test(url, field_name=field_name)

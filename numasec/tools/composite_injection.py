@@ -36,7 +36,7 @@ async def injection_test(
     """
     start = time.monotonic()
     type_set = {t.strip().lower() for t in types.split(",")}
-    extra_headers: dict[str, str] = json.loads(headers) if headers else {}
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     param_list: list[str] | None = [p.strip() for p in params.split(",") if p.strip()] or None
     body_dict: dict[str, str] | None = json.loads(body) if body else None
     results: dict[str, Any] = {

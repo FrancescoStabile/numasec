@@ -7,10 +7,11 @@ determine which OWASP categories have been tested.
 from __future__ import annotations
 
 # Maps OWASP categories to the tools that can test them.
+# Includes both composite tools (dispatched by worker) and individual scanners.
 OWASP_TOOL_MAP: dict[str, list[str]] = {
     "A01_access_control": ["idor_test", "auth_test", "csrf_test", "access_control_test"],
     "A02_crypto_failures": ["auth_test", "http_request"],
-    "A03_injection": ["sqli_test", "nosql_test", "xss_test", "xxe_test", "ssti_test"],
+    "A03_injection": ["sqli_test", "nosql_test", "xss_test", "xxe_test", "ssti_test", "injection_test"],
     "A04_insecure_design": ["idor_test", "http_request", "injection_test"],
     "A05_misconfiguration": [
         "http_request",
@@ -19,12 +20,15 @@ OWASP_TOOL_MAP: dict[str, list[str]] = {
         "host_header_test",
         "js_analyze",
         "browser_crawl_site",
+        "recon",
+        "crawl",
+        "dir_fuzz",
     ],
-    "A06_vuln_components": ["nuclei_scan", "http_request"],
-    "A07_auth_failures": ["auth_test", "sqli_test"],
-    "A08_integrity_failures": ["csrf_test", "http_request"],
-    "A09_logging_failures": ["http_request"],
-    "A10_ssrf": ["ssrf_test", "open_redirect_test"],
+    "A06_vuln_components": ["nuclei_scan", "http_request", "recon"],
+    "A07_auth_failures": ["auth_test", "sqli_test", "injection_test"],
+    "A08_integrity_failures": ["csrf_test", "http_request", "access_control_test"],
+    "A09_logging_failures": ["http_request", "recon"],
+    "A10_ssrf": ["ssrf_test", "open_redirect_test", "path_test"],
 }
 
 # Reverse map: tool → OWASP categories it covers.
