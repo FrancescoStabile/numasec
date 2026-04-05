@@ -116,6 +116,7 @@ class BurpIssue:
 # Import: Burp issues XML → BurpIssue list
 # ---------------------------------------------------------------------------
 
+
 def _text(el: ET.Element | None, tag: str) -> str:
     """Safely extract text from a child element."""
     if el is None:
@@ -188,6 +189,7 @@ def parse_burp_xml(xml_content: str) -> list[BurpIssue]:
 # Export: numasec findings → Burp XML string
 # ---------------------------------------------------------------------------
 
+
 def _cdata(text: str) -> str:
     """Wrap text in a CDATA section for XML embedding."""
     safe = text.replace("]]>", "]]]]><![CDATA[>")
@@ -251,6 +253,7 @@ def findings_to_burp_xml(findings: list[dict[str, Any]]) -> str:
 # Import: Burp sitemap XML → endpoint list
 # ---------------------------------------------------------------------------
 
+
 def parse_burp_sitemap(xml_content: str) -> list[dict[str, Any]]:
     """Parse a Burp Suite sitemap XML export and return discovered endpoints.
 
@@ -305,6 +308,7 @@ def parse_burp_sitemap(xml_content: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # MCP tool wrapper
 # ---------------------------------------------------------------------------
+
 
 async def python_burp_bridge(
     action: str,

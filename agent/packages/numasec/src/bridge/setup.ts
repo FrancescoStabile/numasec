@@ -112,22 +112,27 @@ async function syncVenv(uvPath: string, projectRoot: string): Promise<string> {
 /**
  * Ensure the Python environment is ready and return the python path.
  * Called lazily on first bridge call.
+ *
+ * In pip-install mode (NUMASEC_PYTHON_PATH set by the Python launcher),
+ * the Python interpreter is already available — no project root or venv
+ * setup is needed. In dev mode, walks up to find pyproject.toml and
+ * creates/reuses a .venv.
  */
 export async function ensurePythonEnv(): Promise<{ pythonPath: string; projectRoot: string }> {
+  // pip-install mode: Python launcher provides the interpreter path directly
+  if (process.env.NUMASEC_PYTHON_PATH && existsSync(process.env.NUMASEC_PYTHON_PATH)) {
+    log.info("using NUMASEC_PYTHON_PATH (pip-install mode)", { python: process.env.NUMASEC_PYTHON_PATH })
+    return { pythonPath: process.env.NUMASEC_PYTHON_PATH, projectRoot: "" }
+  }
+
+  // Dev mode: locate project root and manage venv
   const projectRoot = findProjectRoot()
   log.info("project root", { path: projectRoot })
 
-  // Check for pre-existing venv first (common dev scenario)
   const existingVenv = path.join(projectRoot, ".venv", "bin", "python")
   if (existsSync(existingVenv)) {
     log.info("using existing venv", { python: existingVenv })
     return { pythonPath: existingVenv, projectRoot }
-  }
-
-  // Check NUMASEC_PYTHON_PATH env override
-  if (process.env.NUMASEC_PYTHON_PATH && existsSync(process.env.NUMASEC_PYTHON_PATH)) {
-    log.info("using NUMASEC_PYTHON_PATH", { python: process.env.NUMASEC_PYTHON_PATH })
-    return { pythonPath: process.env.NUMASEC_PYTHON_PATH, projectRoot }
   }
 
   const uvPath = await ensureUv()

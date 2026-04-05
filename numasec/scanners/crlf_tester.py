@@ -177,7 +177,13 @@ class CrlfTester:
             # Test each detected parameter
             for param_name, location in test_params:
                 vulns = await self._test_param(
-                    client, url, param_name, location, method, body, baseline,
+                    client,
+                    url,
+                    param_name,
+                    location,
+                    method,
+                    body,
+                    baseline,
                 )
                 for vuln in vulns:
                     result.vulnerabilities.append(vuln)
@@ -354,61 +360,73 @@ class CrlfTester:
                 continue
 
             resp = await self._send_with_payload(
-                client, url, param, payload, location, method, body,
+                client,
+                url,
+                param,
+                payload,
+                location,
+                method,
+                body,
             )
             if resp is None:
                 continue
 
             # Check for header injection
             if category == "header_injection" and self._check_header_injection(resp):
-                vulns.append(CrlfVulnerability(
-                    parameter=param,
-                    payload=payload,
-                    evidence=(
-                        f"Injected header 'X-CRLF-Test: {_HEADER_MARKER}' "
-                        f"appeared in response headers via parameter '{param}'"
-                    ),
-                    severity="high",
-                    confidence=1.0,
-                    injection_type="header_injection",
-                ))
+                vulns.append(
+                    CrlfVulnerability(
+                        parameter=param,
+                        payload=payload,
+                        evidence=(
+                            f"Injected header 'X-CRLF-Test: {_HEADER_MARKER}' "
+                            f"appeared in response headers via parameter '{param}'"
+                        ),
+                        severity="high",
+                        confidence=1.0,
+                        injection_type="header_injection",
+                    )
+                )
                 found_types.add("header_injection")
                 logger.info("CRLF header injection confirmed: param=%s", param)
                 continue
 
             # Check for response splitting
             if category == "response_splitting" and self._check_response_splitting(resp):
-                vulns.append(CrlfVulnerability(
-                    parameter=param,
-                    payload=payload,
-                    evidence=(
-                        f"Response splitting marker '{_BODY_MARKER}' found in "
-                        f"response body via parameter '{param}'. "
-                        f"Injected content rendered after double CRLF."
-                    ),
-                    severity="critical",
-                    confidence=0.9,
-                    injection_type="response_splitting",
-                ))
+                vulns.append(
+                    CrlfVulnerability(
+                        parameter=param,
+                        payload=payload,
+                        evidence=(
+                            f"Response splitting marker '{_BODY_MARKER}' found in "
+                            f"response body via parameter '{param}'. "
+                            f"Injected content rendered after double CRLF."
+                        ),
+                        severity="critical",
+                        confidence=0.9,
+                        injection_type="response_splitting",
+                    )
+                )
                 found_types.add("response_splitting")
                 logger.info("CRLF response splitting confirmed: param=%s", param)
                 continue
 
             # Check for log injection (behavioral difference)
             if "log_injection" not in found_types and self._check_log_injection(resp, baseline):
-                vulns.append(CrlfVulnerability(
-                    parameter=param,
-                    payload=payload,
-                    evidence=(
-                        f"Behavioral change detected via parameter '{param}': "
-                        f"baseline status={baseline[0]}, response status={resp.status_code}; "
-                        f"baseline length={baseline[1]}, response length={len(resp.text)}. "
-                        f"Possible log injection or header manipulation."
-                    ),
-                    severity="medium",
-                    confidence=0.5,
-                    injection_type="log_injection",
-                ))
+                vulns.append(
+                    CrlfVulnerability(
+                        parameter=param,
+                        payload=payload,
+                        evidence=(
+                            f"Behavioral change detected via parameter '{param}': "
+                            f"baseline status={baseline[0]}, response status={resp.status_code}; "
+                            f"baseline length={baseline[1]}, response length={len(resp.text)}. "
+                            f"Possible log injection or header manipulation."
+                        ),
+                        severity="medium",
+                        confidence=0.5,
+                        injection_type="log_injection",
+                    )
+                )
                 found_types.add("log_injection")
                 logger.info("CRLF log injection suspected: param=%s", param)
 
@@ -435,26 +453,33 @@ class CrlfTester:
                     continue
 
                 resp = await self._send_with_header_payload(
-                    client, url, header_name, f"https://example.com/{payload}",
-                    method, body,
+                    client,
+                    url,
+                    header_name,
+                    f"https://example.com/{payload}",
+                    method,
+                    body,
                 )
                 if resp is None:
                     continue
 
                 if self._check_header_injection(resp):
-                    vulns.append(CrlfVulnerability(
-                        parameter=f"header:{header_name}",
-                        payload=payload,
-                        evidence=(
-                            f"Injected header 'X-CRLF-Test: {_HEADER_MARKER}' "
-                            f"appeared in response via {header_name} header"
-                        ),
-                        severity="high",
-                        confidence=1.0,
-                        injection_type="header_injection",
-                    ))
+                    vulns.append(
+                        CrlfVulnerability(
+                            parameter=f"header:{header_name}",
+                            payload=payload,
+                            evidence=(
+                                f"Injected header 'X-CRLF-Test: {_HEADER_MARKER}' "
+                                f"appeared in response via {header_name} header"
+                            ),
+                            severity="high",
+                            confidence=1.0,
+                            injection_type="header_injection",
+                        )
+                    )
                     logger.info(
-                        "CRLF header injection via %s confirmed", header_name,
+                        "CRLF header injection via %s confirmed",
+                        header_name,
                     )
                     break  # One finding per header is enough
 

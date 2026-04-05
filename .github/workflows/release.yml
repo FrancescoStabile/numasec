@@ -52,7 +52,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            build_targets: "linux"
+          - os: macos-latest
+            build_targets: "darwin"
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -60,20 +64,31 @@ jobs:
           bun-version: latest
       - run: bun install
         working-directory: agent
-      - run: bun run build -- --single
+      # Build all targets for this OS (cross-compiles x64+arm64)
+      - run: bun run build
         working-directory: agent/packages/numasec
-      - name: Collect and rename binaries
+        env:
+          NUMASEC_BUILD_OS: ${{ matrix.build_targets }}
+      - name: Create release archives
         shell: bash
         run: |
           mkdir -p agent/packages/numasec/release
-          for dir in agent/packages/numasec/dist/*/; do
+          for dir in agent/packages/numasec/dist/numasec-*/; do
+            [ -d "$dir" ] || continue
             name=$(basename "$dir")
-            for f in "$dir/bin/numasec"*; do
-              [ -f "$f" ] || continue
-              ext="${f##*numasec}"
-              cp "$f" "agent/packages/numasec/release/${name}${ext}"
-            done
+            binary="$dir/bin/numasec"
+            [ -f "$binary" ] || continue
+
+            case "$name" in
+              *linux*|*darwin*)
+                tar -czf "agent/packages/numasec/release/${name}.tar.gz" -C "$dir/bin" numasec
+                ;;
+              *windows*)
+                (cd "$dir/bin" && zip -r "../../../release/${name}.zip" numasec.exe)
+                ;;
+            esac
           done
+          ls -lh agent/packages/numasec/release/
       - uses: actions/upload-artifact@v4
         with:
           name: numasec-${{ matrix.os }}
@@ -122,7 +137,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: agent/packages/numasec
+          context: .
+          file: agent/packages/numasec/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

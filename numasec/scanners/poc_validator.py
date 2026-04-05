@@ -183,7 +183,9 @@ class PocValidator:
             )
 
     async def validate_findings(
-        self, findings: list[dict[str, Any]], target: str = "",
+        self,
+        findings: list[dict[str, Any]],
+        target: str = "",
     ) -> ValidationResult:
         """Validate a list of findings and collect aggregate statistics."""
         result = ValidationResult(target=target)
@@ -261,7 +263,9 @@ class PocValidator:
     # -- CWE-89: SQL injection ----------------------------------------------
 
     async def _validate_sqli(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -274,7 +278,9 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="sqli",
             )
@@ -318,7 +324,9 @@ class PocValidator:
                     )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No SQL error or boolean difference detected",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -328,7 +336,9 @@ class PocValidator:
     # -- CWE-79: Cross-Site Scripting ---------------------------------------
 
     async def _validate_xss(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -340,7 +350,9 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="xss",
             )
@@ -377,7 +389,9 @@ class PocValidator:
                 )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="Payload not reflected unescaped in response",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -387,7 +401,9 @@ class PocValidator:
     # -- CWE-22: Local File Inclusion / Path Traversal ----------------------
 
     async def _validate_lfi(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -400,7 +416,9 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="lfi",
             )
@@ -442,7 +460,9 @@ class PocValidator:
                 )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No LFI markers or size difference detected",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -452,7 +472,9 @@ class PocValidator:
     # -- CWE-918: Server-Side Request Forgery -------------------------------
 
     async def _validate_ssrf(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -465,7 +487,9 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="ssrf",
             )
@@ -502,7 +526,9 @@ class PocValidator:
                 )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No SSRF indicators or response differences detected",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -512,7 +538,9 @@ class PocValidator:
     # -- CWE-78: OS Command Injection --------------------------------------
 
     async def _validate_cmdi(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -557,7 +585,9 @@ class PocValidator:
                         )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No command injection output detected",
             request_dump=self._dump_request(url, param, payload or "; id", method),
             technique="cmdi",
@@ -566,7 +596,9 @@ class PocValidator:
     # -- CWE-113: CRLF Injection --------------------------------------------
 
     async def _validate_crlf(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -578,7 +610,9 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="crlf",
             )
@@ -612,7 +646,9 @@ class PocValidator:
             )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No injected headers or response splitting detected",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -622,7 +658,9 @@ class PocValidator:
     # -- Generic validator: baseline comparison -----------------------------
 
     async def _validate_generic(
-        self, finding: dict[str, Any], finding_id: str,
+        self,
+        finding: dict[str, Any],
+        finding_id: str,
     ) -> PocResult:
         url = finding.get("url", "")
         param = finding.get("parameter", "")
@@ -631,7 +669,9 @@ class PocValidator:
 
         if not url or not param or not payload:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Insufficient finding data (missing url, parameter, or payload)",
                 technique="generic",
             )
@@ -642,14 +682,18 @@ class PocValidator:
 
         if exploit_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Exploit request returned no response",
                 technique="generic",
             )
 
         if baseline_resp is None:
             return PocResult(
-                finding_id=finding_id, validated=False, confidence=0.0,
+                finding_id=finding_id,
+                validated=False,
+                confidence=0.0,
                 evidence="Baseline request returned no response",
                 technique="generic",
             )
@@ -661,8 +705,7 @@ class PocValidator:
                 validated=True,
                 confidence=0.5,
                 evidence=(
-                    f"Status code changed: baseline {baseline_resp.status_code} "
-                    f"→ exploit {exploit_resp.status_code}"
+                    f"Status code changed: baseline {baseline_resp.status_code} → exploit {exploit_resp.status_code}"
                 ),
                 request_dump=self._dump_request(url, param, payload, method),
                 response_status=exploit_resp.status_code,
@@ -704,7 +747,9 @@ class PocValidator:
             )
 
         return PocResult(
-            finding_id=finding_id, validated=False, confidence=0.0,
+            finding_id=finding_id,
+            validated=False,
+            confidence=0.0,
             evidence="No significant difference between baseline and exploit responses",
             request_dump=self._dump_request(url, param, payload, method),
             response_status=exploit_resp.status_code,
@@ -745,7 +790,9 @@ async def python_poc_validate(
         return json.dumps({"error": "findings must be a JSON array"})
 
     try:
-        extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
+        extra_headers: dict[str, str] = (
+            headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
+        )
     except json.JSONDecodeError:
         extra_headers = {}
 

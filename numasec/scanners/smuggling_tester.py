@@ -461,7 +461,10 @@ class SmugglingTester:
         ).encode() + ref_body
 
         ref_response, ref_elapsed = await self._send_raw_request(
-            host, port, ref_raw, use_tls=use_tls,
+            host,
+            port,
+            ref_raw,
+            use_tls=use_tls,
         )
 
         # Now test each obfuscation variant
@@ -481,42 +484,49 @@ class SmugglingTester:
             ).encode() + body
 
             response, elapsed = await self._send_raw_request(
-                host, port, raw, use_tls=use_tls,
+                host,
+                port,
+                raw,
+                use_tls=use_tls,
             )
 
             # Compare with reference: significant timing difference?
             timing_diff = abs(elapsed - ref_elapsed)
             if timing_diff >= _TIMING_THRESHOLD_S:
-                vulns.append(SmugglingVulnerability(
-                    smuggle_type="te_te",
-                    evidence=(
-                        f"TE.TE obfuscation variant '{variant_name}' caused a "
-                        f"timing anomaly: {elapsed:.1f}s vs reference {ref_elapsed:.1f}s "
-                        f"(delta {timing_diff:.1f}s). Header used: '{te_header}'. "
-                        f"The server handles this TE variant differently from the "
-                        f"standard 'Transfer-Encoding: chunked', indicating the "
-                        f"front-end and back-end disagree on body framing."
-                    ),
-                    severity="critical",
-                    confidence=0.6,
-                ))
+                vulns.append(
+                    SmugglingVulnerability(
+                        smuggle_type="te_te",
+                        evidence=(
+                            f"TE.TE obfuscation variant '{variant_name}' caused a "
+                            f"timing anomaly: {elapsed:.1f}s vs reference {ref_elapsed:.1f}s "
+                            f"(delta {timing_diff:.1f}s). Header used: '{te_header}'. "
+                            f"The server handles this TE variant differently from the "
+                            f"standard 'Transfer-Encoding: chunked', indicating the "
+                            f"front-end and back-end disagree on body framing."
+                        ),
+                        severity="critical",
+                        confidence=0.6,
+                    )
+                )
                 continue
 
             # Different response status/pattern from reference?
             ref_status = self._extract_status_code(ref_response)
             var_status = self._extract_status_code(response)
             if ref_status and var_status and ref_status != var_status:
-                vulns.append(SmugglingVulnerability(
-                    smuggle_type="te_te",
-                    evidence=(
-                        f"TE.TE obfuscation variant '{variant_name}' produced a "
-                        f"different HTTP status ({var_status}) than the standard "
-                        f"TE header ({ref_status}). Header: '{te_header}'. "
-                        f"Servers handle this variant differently."
-                    ),
-                    severity="critical",
-                    confidence=0.8,
-                ))
+                vulns.append(
+                    SmugglingVulnerability(
+                        smuggle_type="te_te",
+                        evidence=(
+                            f"TE.TE obfuscation variant '{variant_name}' produced a "
+                            f"different HTTP status ({var_status}) than the standard "
+                            f"TE header ({ref_status}). Header: '{te_header}'. "
+                            f"Servers handle this variant differently."
+                        ),
+                        severity="critical",
+                        confidence=0.8,
+                    )
+                )
 
         return vulns
 

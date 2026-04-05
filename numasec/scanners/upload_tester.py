@@ -63,7 +63,7 @@ _NULL_BYTE_FILENAME = "file.php\x00.jpg"
 _SVG_CONTENT = (
     '<?xml version="1.0" encoding="UTF-8"?>'
     '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
-    f"<text x=\"10\" y=\"20\">{_SVG_MARKER}</text></svg>"
+    f'<text x="10" y="20">{_SVG_MARKER}</text></svg>'
 )
 
 # Minimal JPEG header (SOI + APP0) followed by a harmless PHP comment marker.
@@ -114,8 +114,8 @@ class _FormParser(HTMLParser):
                 "file_inputs": [],
             }
         elif tag == "input" and self._current_form is not None and attr_map.get("type", "").lower() == "file":
-                name = attr_map.get("name", "file")
-                self._current_form["file_inputs"].append(name)
+            name = attr_map.get("name", "file")
+            self._current_form["file_inputs"].append(name)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "form" and self._current_form is not None:
@@ -140,7 +140,9 @@ def _parse_upload_forms(html: str) -> list[dict[str, Any]]:
 class UploadVulnerability:
     """A single file upload finding."""
 
-    upload_type: str  # "unrestricted_type" | "webshell" | "mime_bypass" | "double_ext" | "null_byte" | "svg_xss" | "polyglot"
+    upload_type: (
+        str  # "unrestricted_type" | "webshell" | "mime_bypass" | "double_ext" | "null_byte" | "svg_xss" | "polyglot"
+    )
     filename_sent: str
     content_type_sent: str
     evidence: str
@@ -377,30 +379,34 @@ class UploadTester:
 
             accessible = await self._check_file_accessible(client, url, filename, _MARKER)
             if accessible:
-                result.vulnerabilities.append(UploadVulnerability(
-                    upload_type="webshell",
-                    filename_sent=filename,
-                    content_type_sent=ct,
-                    evidence=(
-                        f"Uploaded file '{filename}' is accessible and contains the marker. "
-                        f"Server stores and serves uploaded files with dangerous extensions."
-                    ),
-                    severity="critical",
-                    confidence=1.0,
-                ))
+                result.vulnerabilities.append(
+                    UploadVulnerability(
+                        upload_type="webshell",
+                        filename_sent=filename,
+                        content_type_sent=ct,
+                        evidence=(
+                            f"Uploaded file '{filename}' is accessible and contains the marker. "
+                            f"Server stores and serves uploaded files with dangerous extensions."
+                        ),
+                        severity="critical",
+                        confidence=1.0,
+                    )
+                )
                 result.vulnerable = True
             elif self._is_accepted(resp):
-                result.vulnerabilities.append(UploadVulnerability(
-                    upload_type="unrestricted_type",
-                    filename_sent=filename,
-                    content_type_sent=ct,
-                    evidence=(
-                        f"Server accepted upload of '{filename}' with Content-Type '{ct}' "
-                        f"without returning an error. Extension '{ext}' may be executable."
-                    ),
-                    severity="high",
-                    confidence=0.6,
-                ))
+                result.vulnerabilities.append(
+                    UploadVulnerability(
+                        upload_type="unrestricted_type",
+                        filename_sent=filename,
+                        content_type_sent=ct,
+                        evidence=(
+                            f"Server accepted upload of '{filename}' with Content-Type '{ct}' "
+                            f"without returning an error. Extension '{ext}' may be executable."
+                        ),
+                        severity="high",
+                        confidence=0.6,
+                    )
+                )
                 result.vulnerable = True
 
     async def _test_mime_bypass(
@@ -419,18 +425,20 @@ class UploadTester:
             return
 
         if self._is_accepted(resp):
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="mime_bypass",
-                filename_sent=filename,
-                content_type_sent="image/jpeg",
-                evidence=(
-                    f"Server accepted '{filename}' with Content-Type 'image/jpeg'. "
-                    f"MIME type validation may rely only on Content-Type header, "
-                    f"not on file extension or magic bytes."
-                ),
-                severity="high",
-                confidence=0.7,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="mime_bypass",
+                    filename_sent=filename,
+                    content_type_sent="image/jpeg",
+                    evidence=(
+                        f"Server accepted '{filename}' with Content-Type 'image/jpeg'. "
+                        f"MIME type validation may rely only on Content-Type header, "
+                        f"not on file extension or magic bytes."
+                    ),
+                    severity="high",
+                    confidence=0.7,
+                )
+            )
             result.vulnerable = True
 
     async def _test_double_extension(
@@ -449,18 +457,20 @@ class UploadTester:
                 continue
 
             if self._is_accepted(resp):
-                result.vulnerabilities.append(UploadVulnerability(
-                    upload_type="double_ext",
-                    filename_sent=filename,
-                    content_type_sent="image/jpeg",
-                    evidence=(
-                        f"Server accepted file with double extension '{filename}'. "
-                        f"If the server processes the first extension, "
-                        f"the file may be executed as PHP/JSP."
-                    ),
-                    severity="high",
-                    confidence=0.8,
-                ))
+                result.vulnerabilities.append(
+                    UploadVulnerability(
+                        upload_type="double_ext",
+                        filename_sent=filename,
+                        content_type_sent="image/jpeg",
+                        evidence=(
+                            f"Server accepted file with double extension '{filename}'. "
+                            f"If the server processes the first extension, "
+                            f"the file may be executed as PHP/JSP."
+                        ),
+                        severity="high",
+                        confidence=0.8,
+                    )
+                )
                 result.vulnerable = True
                 break  # One finding per category is sufficient
 
@@ -480,18 +490,20 @@ class UploadTester:
             return
 
         if self._is_accepted(resp):
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="null_byte",
-                filename_sent=repr(filename),
-                content_type_sent="image/jpeg",
-                evidence=(
-                    "Server accepted file with null byte in filename "
-                    f"('{repr(filename)}'). Null byte may truncate the "
-                    "filename to 'file.php' on the server side."
-                ),
-                severity="high",
-                confidence=0.8,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="null_byte",
+                    filename_sent=repr(filename),
+                    content_type_sent="image/jpeg",
+                    evidence=(
+                        "Server accepted file with null byte in filename "
+                        f"('{repr(filename)}'). Null byte may truncate the "
+                        "filename to 'file.php' on the server side."
+                    ),
+                    severity="high",
+                    confidence=0.8,
+                )
+            )
             result.vulnerable = True
 
     async def _test_svg_xss(
@@ -511,30 +523,34 @@ class UploadTester:
 
         accessible = await self._check_file_accessible(client, url, filename, _SVG_MARKER)
         if accessible:
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="svg_xss",
-                filename_sent=filename,
-                content_type_sent="image/svg+xml",
-                evidence=(
-                    f"Uploaded SVG file is accessible and contains the marker '{_SVG_MARKER}'. "
-                    "An attacker could embed JavaScript in an SVG for stored XSS."
-                ),
-                severity="high",
-                confidence=1.0,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="svg_xss",
+                    filename_sent=filename,
+                    content_type_sent="image/svg+xml",
+                    evidence=(
+                        f"Uploaded SVG file is accessible and contains the marker '{_SVG_MARKER}'. "
+                        "An attacker could embed JavaScript in an SVG for stored XSS."
+                    ),
+                    severity="high",
+                    confidence=1.0,
+                )
+            )
             result.vulnerable = True
         elif self._is_accepted(resp):
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="svg_xss",
-                filename_sent=filename,
-                content_type_sent="image/svg+xml",
-                evidence=(
-                    "Server accepted SVG upload without error. "
-                    "If served inline, SVG files can execute embedded JavaScript."
-                ),
-                severity="medium",
-                confidence=0.5,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="svg_xss",
+                    filename_sent=filename,
+                    content_type_sent="image/svg+xml",
+                    evidence=(
+                        "Server accepted SVG upload without error. "
+                        "If served inline, SVG files can execute embedded JavaScript."
+                    ),
+                    severity="medium",
+                    confidence=0.5,
+                )
+            )
             result.vulnerable = True
 
     async def _test_polyglot(
@@ -553,18 +569,20 @@ class UploadTester:
             return
 
         if self._is_accepted(resp):
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="polyglot",
-                filename_sent=filename,
-                content_type_sent="image/jpeg",
-                evidence=(
-                    f"Server accepted polyglot file '{filename}' (JPEG header + PHP comment). "
-                    "File passes magic-byte checks but may be executed as PHP "
-                    "if the server processes the .php extension."
-                ),
-                severity="high",
-                confidence=0.7,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="polyglot",
+                    filename_sent=filename,
+                    content_type_sent="image/jpeg",
+                    evidence=(
+                        f"Server accepted polyglot file '{filename}' (JPEG header + PHP comment). "
+                        "File passes magic-byte checks but may be executed as PHP "
+                        "if the server processes the .php extension."
+                    ),
+                    severity="high",
+                    confidence=0.7,
+                )
+            )
             result.vulnerable = True
 
     async def _test_content_type_mismatch(
@@ -579,23 +597,31 @@ class UploadTester:
         filename = "photo.jpg"
         content = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00"
         resp = await self._upload_file(
-            client, url, field_name, filename, content, "application/octet-stream", method,
+            client,
+            url,
+            field_name,
+            filename,
+            content,
+            "application/octet-stream",
+            method,
         )
         if resp is None:
             return
 
         if self._is_accepted(resp):
-            result.vulnerabilities.append(UploadVulnerability(
-                upload_type="mime_bypass",
-                filename_sent=filename,
-                content_type_sent="application/octet-stream",
-                evidence=(
-                    f"Server accepted '{filename}' with Content-Type 'application/octet-stream'. "
-                    "Content-Type validation may be missing or insufficient."
-                ),
-                severity="medium",
-                confidence=0.5,
-            ))
+            result.vulnerabilities.append(
+                UploadVulnerability(
+                    upload_type="mime_bypass",
+                    filename_sent=filename,
+                    content_type_sent="application/octet-stream",
+                    evidence=(
+                        f"Server accepted '{filename}' with Content-Type 'application/octet-stream'. "
+                        "Content-Type validation may be missing or insufficient."
+                    ),
+                    severity="medium",
+                    confidence=0.5,
+                )
+            )
             result.vulnerable = True
 
 

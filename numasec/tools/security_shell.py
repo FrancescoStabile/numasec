@@ -1,4 +1,5 @@
 """Smart security shell — structured wrappers for common security tools."""
+
 from __future__ import annotations
 
 import asyncio
@@ -84,6 +85,7 @@ _UNSAFE_TARGET_RE = re.compile(
 # Tool availability detection
 # ---------------------------------------------------------------------------
 
+
 def detect_available_tools() -> dict[str, bool]:
     """Return a mapping of tool name → whether the binary is on ``$PATH``."""
     return {name: shutil.which(info["binary"]) is not None for name, info in KNOWN_TOOLS.items()}
@@ -92,6 +94,7 @@ def detect_available_tools() -> dict[str, bool]:
 # ---------------------------------------------------------------------------
 # Target validation
 # ---------------------------------------------------------------------------
+
 
 def _validate_target(target: str) -> bool:
     """Return ``True`` if *target* looks like a safe remote host/URL.
@@ -106,7 +109,7 @@ def _validate_target(target: str) -> bool:
     # Strip common URL schemes for the regex check
     for scheme in ("https://", "http://"):
         if stripped.lower().startswith(scheme):
-            stripped = stripped[len(scheme):]
+            stripped = stripped[len(scheme) :]
             break
 
     # Strip user:pass@ prefix if present
@@ -119,6 +122,7 @@ def _validate_target(target: str) -> bool:
 # ---------------------------------------------------------------------------
 # Output parsers
 # ---------------------------------------------------------------------------
+
 
 def _parse_nmap_xml(output: str) -> dict[str, Any]:
     """Parse nmap XML (``-oX -``) into structured host/port data."""
@@ -161,13 +165,15 @@ def _parse_ffuf_json(output: str) -> dict[str, Any]:
 
     results: list[dict[str, Any]] = []
     for entry in data.get("results", []):
-        results.append({
-            "url": entry.get("url", ""),
-            "status": entry.get("status", 0),
-            "length": entry.get("length", 0),
-            "words": entry.get("words", 0),
-            "lines": entry.get("lines", 0),
-        })
+        results.append(
+            {
+                "url": entry.get("url", ""),
+                "status": entry.get("status", 0),
+                "length": entry.get("length", 0),
+                "words": entry.get("words", 0),
+                "lines": entry.get("lines", 0),
+            }
+        )
     return {"results": results}
 
 
@@ -186,12 +192,14 @@ def _parse_nuclei_jsonl(output: str) -> dict[str, Any]:
             continue
         try:
             data = json.loads(line)
-            findings.append({
-                "template": data.get("template-id", ""),
-                "severity": data.get("info", {}).get("severity", "info"),
-                "matched": data.get("matched-at", ""),
-                "name": data.get("info", {}).get("name", ""),
-            })
+            findings.append(
+                {
+                    "template": data.get("template-id", ""),
+                    "severity": data.get("info", {}).get("severity", "info"),
+                    "matched": data.get("matched-at", ""),
+                    "name": data.get("info", {}).get("name", ""),
+                }
+            )
         except json.JSONDecodeError:
             continue
     return {"findings": findings}
@@ -239,11 +247,13 @@ def _parse_nikto_json(output: str) -> dict[str, Any]:
         items = data.get("vulnerabilities", data.get("items", []))
 
     for item in items:
-        vulns.append({
-            "id": str(item.get("id", item.get("OSVDB", ""))),
-            "msg": item.get("msg", item.get("message", "")),
-            "method": item.get("method", "GET"),
-        })
+        vulns.append(
+            {
+                "id": str(item.get("id", item.get("OSVDB", ""))),
+                "msg": item.get("msg", item.get("message", "")),
+                "method": item.get("method", "GET"),
+            }
+        )
     return {"vulnerabilities": vulns}
 
 
@@ -256,13 +266,15 @@ def _parse_httpx_json(output: str) -> dict[str, Any]:
             continue
         try:
             data = json.loads(line)
-            probes.append({
-                "url": data.get("url", data.get("input", "")),
-                "status": data.get("status_code", data.get("status-code", 0)),
-                "tech": data.get("tech", data.get("technologies", [])),
-                "title": data.get("title", ""),
-                "content_length": data.get("content_length", data.get("content-length", 0)),
-            })
+            probes.append(
+                {
+                    "url": data.get("url", data.get("input", "")),
+                    "status": data.get("status_code", data.get("status-code", 0)),
+                    "tech": data.get("tech", data.get("technologies", [])),
+                    "title": data.get("title", ""),
+                    "content_length": data.get("content_length", data.get("content-length", 0)),
+                }
+            )
         except json.JSONDecodeError:
             continue
     return {"probes": probes}
@@ -286,6 +298,7 @@ _PARSERS: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 async def security_shell(
     tool: str,
@@ -318,27 +331,42 @@ async def security_shell(
     # 1. Validate tool name
     if tool not in KNOWN_TOOLS:
         available = ", ".join(sorted(KNOWN_TOOLS))
-        return wrap_result("security_shell", target, {
-            "error": f"Unknown tool '{tool}'. Supported: {available}",
-            "success": False,
-        }, start)
+        return wrap_result(
+            "security_shell",
+            target,
+            {
+                "error": f"Unknown tool '{tool}'. Supported: {available}",
+                "success": False,
+            },
+            start,
+        )
 
     tool_info = KNOWN_TOOLS[tool]
 
     # 2. Check binary availability
     if not shutil.which(tool_info["binary"]):
-        return wrap_result("security_shell", target, {
-            "error": f"Tool '{tool}' ({tool_info['binary']}) is not installed or not on $PATH. Install it first.",
-            "success": False,
-            "available_tools": {k: shutil.which(v["binary"]) is not None for k, v in KNOWN_TOOLS.items()},
-        }, start)
+        return wrap_result(
+            "security_shell",
+            target,
+            {
+                "error": f"Tool '{tool}' ({tool_info['binary']}) is not installed or not on $PATH. Install it first.",
+                "success": False,
+                "available_tools": {k: shutil.which(v["binary"]) is not None for k, v in KNOWN_TOOLS.items()},
+            },
+            start,
+        )
 
     # 3. Validate target safety
     if not _validate_target(target):
-        return wrap_result("security_shell", target, {
-            "error": f"Target '{target}' is not allowed. Only remote hosts/URLs are permitted.",
-            "success": False,
-        }, start)
+        return wrap_result(
+            "security_shell",
+            target,
+            {
+                "error": f"Target '{target}' is not allowed. Only remote hosts/URLs are permitted.",
+                "success": False,
+            },
+            start,
+        )
 
     # 4. Build command as a list (no shell=True)
     cmd: list[str] = [tool_info["binary"]]
@@ -367,16 +395,26 @@ async def security_shell(
             await proc.wait()  # type: ignore[union-attr]
         except ProcessLookupError:
             pass
-        return wrap_result("security_shell", target, {
-            "error": f"Command timed out after {timeout}s",
-            "success": False,
-            "tool": tool,
-        }, start)
+        return wrap_result(
+            "security_shell",
+            target,
+            {
+                "error": f"Command timed out after {timeout}s",
+                "success": False,
+                "tool": tool,
+            },
+            start,
+        )
     except OSError as exc:
-        return wrap_result("security_shell", target, {
-            "error": f"Failed to execute '{tool_info['binary']}': {exc}",
-            "success": False,
-        }, start)
+        return wrap_result(
+            "security_shell",
+            target,
+            {
+                "error": f"Failed to execute '{tool_info['binary']}': {exc}",
+                "success": False,
+            },
+            start,
+        )
 
     stdout = stdout_bytes.decode("utf-8", errors="replace")
     stderr = stderr_bytes.decode("utf-8", errors="replace")

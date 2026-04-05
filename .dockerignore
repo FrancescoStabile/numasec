@@ -1,0 +1,24 @@
+# Docker build context: only needs Python source + pre-built TUI binaries
+.git
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.vscode
+__pycache__
+*.pyc
+tests/
+docs/
+templates/
+community-templates/
+sessions.db
+uv.lock
+**/node_modules
+agent/packages/numasec/src/
+agent/packages/numasec/script/
+agent/packages/numasec/migration/
+agent/packages/numasec/bin/
+agent/packages/app/
+agent/packages/sdk/
+agent/packages/ui/
+agent/packages/containers/

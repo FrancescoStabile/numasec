@@ -51,7 +51,8 @@ all = [
 ]
 
 [project.scripts]
-numasec = "numasec.__main__:main"
+numasec = "numasec.launcher:main"
+numasec-mcp = "numasec.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["numasec"]

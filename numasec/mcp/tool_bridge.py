@@ -168,13 +168,15 @@ async def _auto_save_findings(result: Any, tool_name: str, session_id: str) -> l
 
         try:
             finding_id = await store.add_finding(session_id, finding)
-            saved.append({
-                "finding_id": finding_id,
-                "title": title,
-                "severity": severity,
-                "cwe": cwe,
-                "owasp_category": finding.owasp_category,
-            })
+            saved.append(
+                {
+                    "finding_id": finding_id,
+                    "title": title,
+                    "severity": severity,
+                    "cwe": cwe,
+                    "owasp_category": finding.owasp_category,
+                }
+            )
         except Exception as exc:
             logger.warning("Auto-save failed for '%s': %s", title, exc)
 

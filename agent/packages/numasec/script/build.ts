@@ -154,6 +154,8 @@ const allTargets: {
   },
 ]
 
+const osFilter = process.env.NUMASEC_BUILD_OS // "linux", "darwin", "win32" — set by CI
+
 const targets = muslFlag
   ? allTargets.filter((item) => item.abi === "musl")
   : singleFlag
@@ -175,6 +177,8 @@ const targets = muslFlag
 
       return true
     })
+  : osFilter
+  ? allTargets.filter((item) => item.os === osFilter)
   : allTargets
 
 await $`rm -rf dist`
