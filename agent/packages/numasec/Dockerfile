@@ -7,7 +7,7 @@ ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=${BUN_RUNTIME_TRANSPILER_CACHE_PATH}
 
 RUN apk add --no-cache \
     libgcc libstdc++ ripgrep \
-    python3 py3-pip
+    python3 py3-pip py3-cryptography
 
 # Install numasec Python package (MCP security scanner backend)
 COPY pyproject.toml README.md /tmp/numasec/

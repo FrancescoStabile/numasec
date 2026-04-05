@@ -155,7 +155,7 @@ async def _auto_save_findings(result: Any, tool_name: str, session_id: str) -> l
         finding = Finding(
             title=title,
             severity=sev_map.get(severity, Severity.MEDIUM),
-            url=target_url,
+            url=target_url or "",
             cwe_id=cwe,
             evidence=(vuln.get("evidence") or "")[:1000],
             description=title,

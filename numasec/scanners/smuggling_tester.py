@@ -268,18 +268,18 @@ class SmugglingTester:
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl.CERT_NONE
 
-        reader: asyncio.StreamReader | None = None
         writer: asyncio.StreamWriter | None = None
         try:
-            reader, writer = await asyncio.wait_for(
+            r, w = await asyncio.wait_for(
                 asyncio.open_connection(host, port, ssl=ssl_ctx),
                 timeout=timeout,
             )
+            writer = w
             start = time.monotonic()
-            writer.write(raw_request)
-            await writer.drain()
+            w.write(raw_request)
+            await w.drain()
             try:
-                response = await asyncio.wait_for(reader.read(4096), timeout=timeout)
+                response = await asyncio.wait_for(r.read(4096), timeout=timeout)
             except TimeoutError:
                 response = b""
             elapsed = time.monotonic() - start

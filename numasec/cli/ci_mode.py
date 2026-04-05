@@ -181,7 +181,7 @@ def _extract_vulns(result: Any, tool_name: str) -> list[dict[str, Any]]:
     if not isinstance(result, dict):
         return []
 
-    return list(result.get("vulnerabilities", result.get("findings", [])))
+    return list(result.get("vulnerabilities", result.get("findings", [])) or [])
 
 
 def _meets_threshold(finding: Finding, threshold: str) -> bool:

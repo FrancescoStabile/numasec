@@ -244,7 +244,7 @@ def _parse_nikto_json(output: str) -> dict[str, Any]:
     if isinstance(data, list):
         items = data
     elif isinstance(data, dict):
-        items = data.get("vulnerabilities", data.get("items", []))
+        items = data.get("vulnerabilities", data.get("items", [])) or []
 
     for item in items:
         vulns.append(

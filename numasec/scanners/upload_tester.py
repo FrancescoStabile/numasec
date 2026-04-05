@@ -113,7 +113,7 @@ class _FormParser(HTMLParser):
                 "enctype": attr_map.get("enctype", ""),
                 "file_inputs": [],
             }
-        elif tag == "input" and self._current_form is not None and attr_map.get("type", "").lower() == "file":
+        elif tag == "input" and self._current_form is not None and (attr_map.get("type") or "").lower() == "file":
             name = attr_map.get("name", "file")
             self._current_form["file_inputs"].append(name)
 
