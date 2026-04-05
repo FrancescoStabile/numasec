@@ -138,7 +138,7 @@
     "remeda": "catalog:",
     "semver": "^7.6.3",
     "solid-js": "catalog:",
-    "strip-ansi": "7.1.2",
+    "strip-ansi": "7.2.0",
     "tree-sitter-bash": "0.25.0",
     "turndown": "7.2.0",
     "ulid": "catalog:",
