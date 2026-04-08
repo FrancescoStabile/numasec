@@ -54,7 +54,7 @@ class DeterministicPlanner:
     """
 
     SCOPE_TIMEOUTS = {
-        "quick": 3,
+        "quick": 7,
         "standard": 10,
         "deep": 30,
     }
@@ -463,3 +463,133 @@ class DeterministicPlanner:
             lower_url = url.lower()
             return any(p in lower_url for p in ("url=", "image", "file", "upload", "img", "src"))
         return False
+
+
+# ---------------------------------------------------------------------------
+# Replan signal extraction from tool results
+# ---------------------------------------------------------------------------
+
+# WAF signature strings commonly found in 403 response bodies
+_WAF_SIGNATURES = frozenset({
+    "cloudflare", "akamai", "sucuri", "imperva", "incapsula",
+    "modsecurity", "mod_security", "aws waf", "barracuda",
+    "fortiweb", "f5 big-ip", "wallarm", "comodo", "wordfence",
+})
+
+# SPA framework indicators in HTML responses
+_SPA_INDICATORS = frozenset({
+    "__next_data__", "__nuxt__", "ng-app", "ng-version",
+    "data-reactroot", "data-react", "id=\"__next\"",
+    "id=\"app\"", "id=\"root\"", "vue-router",
+})
+
+
+def extract_replan_signals(tool_name: str, result: dict[str, Any]) -> list[ReplanSignal]:
+    """Inspect a tool result and return replan signals for the planner.
+
+    Called after each tool execution to detect conditions that should
+    trigger plan adjustments (new technologies, WAF, rate limiting, etc.).
+
+    Args:
+        tool_name: Name of the tool that produced the result.
+        result: The tool's result dict (varies by tool).
+
+    Returns:
+        Zero or more ReplanSignal objects.
+    """
+    signals: list[ReplanSignal] = []
+    if not isinstance(result, dict):
+        return signals
+
+    # Flatten: some results are wrapped in an envelope
+    inner = result.get("data", result)
+    if not isinstance(inner, dict):
+        return signals
+
+    # --- WAF detection ---
+    # Check for 403 responses with WAF signatures
+    status = inner.get("status_code") or inner.get("status")
+    body_lower = str(inner.get("body", "") or inner.get("evidence", "")).lower()
+    if status == 403 or any(sig in body_lower for sig in _WAF_SIGNATURES):
+        signals.append(ReplanSignal(
+            type="waf_detected",
+            confidence=0.8,
+            data={"source": tool_name},
+            replan_reason=f"WAF detected during {tool_name}",
+        ))
+
+    # --- Rate limiting ---
+    if status == 429:
+        signals.append(ReplanSignal(
+            type="rate_limited",
+            confidence=0.9,
+            data={"source": tool_name},
+            replan_reason=f"Rate limited during {tool_name}",
+        ))
+
+    # --- Technology identification ---
+    technologies = inner.get("technologies") or inner.get("tech") or []
+    if isinstance(technologies, list):
+        for tech in technologies:
+            name = tech.get("name", tech) if isinstance(tech, dict) else str(tech)
+            if name:
+                signals.append(ReplanSignal(
+                    type="technology_identified",
+                    confidence=0.7,
+                    data={"technology": name, "source": tool_name},
+                    replan_reason=f"Technology {name} detected by {tool_name}",
+                ))
+
+    # --- API app detection ---
+    endpoints = inner.get("endpoints") or inner.get("urls") or []
+    if isinstance(endpoints, list):
+        api_paths = [e for e in endpoints if "/api/" in str(e)]
+        if api_paths:
+            signals.append(ReplanSignal(
+                type="api_app_detected",
+                confidence=0.8,
+                data={"api_paths": api_paths[:10], "source": tool_name},
+                replan_reason="API endpoints detected",
+            ))
+
+        # --- Large surface ---
+        if len(endpoints) > 100:
+            signals.append(ReplanSignal(
+                type="large_surface",
+                confidence=0.9,
+                data={"endpoint_count": len(endpoints), "source": tool_name},
+                replan_reason=f"Large attack surface: {len(endpoints)} endpoints",
+            ))
+
+    # --- SPA detection ---
+    content_type = str(inner.get("content_type", "")).lower()
+    if "text/html" in content_type or tool_name in ("crawl", "recon"):
+        page_content = str(inner.get("body", "") or inner.get("raw", "")).lower()
+        if any(indicator in page_content for indicator in _SPA_INDICATORS):
+            signals.append(ReplanSignal(
+                type="spa_detected",
+                confidence=0.7,
+                data={"source": tool_name},
+                replan_reason="SPA framework detected in page content",
+            ))
+
+    # --- Auth obtained ---
+    vulns = inner.get("vulnerabilities") or []
+    if isinstance(vulns, list):
+        for v in vulns:
+            vtype = v.get("vuln_type", "") if isinstance(v, dict) else ""
+            if vtype in ("default_creds", "weak_password", "spray_success"):
+                creds = v.get("evidence", "")
+                signals.append(ReplanSignal(
+                    type="auth_obtained",
+                    confidence=0.9,
+                    data={
+                        "token_type": "password",
+                        "evidence": creds[:200],
+                        "source": tool_name,
+                    },
+                    replan_reason="Valid credentials discovered",
+                ))
+                break
+
+    return signals

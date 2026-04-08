@@ -142,7 +142,8 @@ class RaceTester:
         """Run race condition tests against *url*.
 
         Sends *repeat* identical requests concurrently and analyses the
-        responses for race-condition indicators.
+        responses for race-condition indicators. Compares against a
+        sequential baseline to reduce false positives from dynamic content.
 
         Args:
             url: Target endpoint URL.
@@ -160,17 +161,29 @@ class RaceTester:
             timeout=self.timeout,
             headers=self.extra_headers if self.extra_headers else None,
         ) as client:
+            # Baseline: 2 sequential requests to measure natural response variation
+            baseline_hashes: set[str] = set()
+            for _ in range(2):
+                try:
+                    if method.upper() == "POST":
+                        resp = await client.post(url, json=body or {})
+                    else:
+                        resp = await client.get(url)
+                    baseline_hashes.add(hashlib.md5(resp.content).hexdigest())  # noqa: S324
+                except httpx.HTTPError:
+                    pass
+
             responses = await self._flood_endpoint(client, url, method, body, repeat)
 
         result.requests_sent = len(responses)
-        vulns = self._analyze_responses(responses, url)
+        vulns = self._analyze_responses(responses, url, baseline_hashes)
         if vulns:
             result.vulnerable = True
             result.vulnerabilities.extend(vulns)
 
         result.duration_ms = (time.monotonic() - start) * 1000
         logger.info(
-            "Race test complete: %s — %d vulns, %d/%d responses, %.0fms",
+            "Race test complete: %s - %d vulns, %d/%d responses, %.0fms",
             url,
             len(result.vulnerabilities),
             len(responses),
@@ -206,8 +219,13 @@ class RaceTester:
         self,
         responses: list[httpx.Response],
         url: str,
+        baseline_hashes: set[str] | None = None,
     ) -> list[RaceVulnerability]:
-        """Inspect concurrent responses for race-condition indicators."""
+        """Inspect concurrent responses for race-condition indicators.
+
+        Uses baseline_hashes (from sequential requests) to filter out
+        natural response variation and reduce false positives.
+        """
         if not responses:
             return []
 
@@ -218,8 +236,6 @@ class RaceTester:
         total = len(responses)
 
         # --- Technique 1: Limit bypass -----------------------------------
-        # If *every* request succeeded and the batch was large enough, the
-        # endpoint may lack proper concurrency guards.
         if success_count == total and total >= _MIN_SUCCESS_FOR_LIMIT_BYPASS:
             vulns.append(
                 RaceVulnerability(
@@ -235,8 +251,6 @@ class RaceTester:
             )
 
         # --- Technique 2: Duplicate action detection ---------------------
-        # A mix of success and conflict/rate-limit codes suggests the server
-        # *tried* to enforce limits but some requests slipped through.
         rejection_codes = {409, 429, 403, 423}
         rejected = sum(status_counts.get(code, 0) for code in rejection_codes)
         if success_count > 1 and rejected > 0:
@@ -256,16 +270,24 @@ class RaceTester:
 
         # --- Technique 3: Response inconsistency (state_change) ----------
         body_hashes = [hashlib.md5(r.content).hexdigest() for r in responses]  # noqa: S324
-        unique_bodies = len(set(body_hashes))
+        unique_bodies = set(body_hashes)
 
-        if unique_bodies > 1 and unique_bodies < total * _STATE_CHANGE_UNIQUENESS_THRESHOLD:
+        # Subtract baseline variation to avoid FP from dynamic content
+        if baseline_hashes:
+            novel_bodies = unique_bodies - baseline_hashes
+        else:
+            novel_bodies = unique_bodies
+
+        novel_count = len(novel_bodies)
+        if novel_count > 1 and novel_count < total * _STATE_CHANGE_UNIQUENESS_THRESHOLD:
             vulns.append(
                 RaceVulnerability(
                     race_type="state_change",
                     endpoint=url,
                     confidence=0.7,
                     evidence=(
-                        f"{unique_bodies} unique response bodies among {total} concurrent requests. "
+                        f"{len(unique_bodies)} unique response bodies among {total} concurrent "
+                        f"requests ({novel_count} novel vs baseline). "
                         "Inconsistent state suggests a TOCTOU race condition."
                     ),
                 )

