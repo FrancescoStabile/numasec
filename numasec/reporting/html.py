@@ -149,7 +149,7 @@ def _build_chains_html(findings: list[Finding]) -> str:
     esc = html.escape
     parts = ['<h2>Attack Chains</h2>']
 
-    for chain_id, chain_findings in chains.items():
+    for _chain_id, chain_findings in chains.items():
         max_sev = min(
             chain_findings,
             key=lambda f: ["critical", "high", "medium", "low", "info"].index(f.severity.value),

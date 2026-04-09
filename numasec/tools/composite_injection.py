@@ -130,7 +130,7 @@ async def injection_test(
     # OOB blind injection: inject OOB payloads and poll for callbacks
     if oob_domain and oob_session_cid:
         try:
-            blind_vulns = await _oob_blind_injection(
+            await _oob_blind_injection(
                 url, oob_domain, type_set, method, extra_headers, param_list, body_dict
             )
 

@@ -35,7 +35,7 @@ class ToolRegistry:
             raise KeyError(f"Tool '{name}' not registered")
         try:
             return await asyncio.wait_for(self._tools[name](**kwargs), timeout=_TOOL_TIMEOUT)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error("Tool '%s' timed out after %ds", name, _TOOL_TIMEOUT)
             return {"error": f"Tool '{name}' timed out after {_TOOL_TIMEOUT}s", "timed_out": True}
 

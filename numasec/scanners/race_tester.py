@@ -273,10 +273,7 @@ class RaceTester:
         unique_bodies = set(body_hashes)
 
         # Subtract baseline variation to avoid FP from dynamic content
-        if baseline_hashes:
-            novel_bodies = unique_bodies - baseline_hashes
-        else:
-            novel_bodies = unique_bodies
+        novel_bodies = unique_bodies - baseline_hashes if baseline_hashes else unique_bodies
 
         novel_count = len(novel_bodies)
         if novel_count > 1 and novel_count < total * _STATE_CHANGE_UNIQUENESS_THRESHOLD:

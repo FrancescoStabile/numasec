@@ -120,7 +120,7 @@ def generate_markdown_report(
     if chains:
         lines.append("## Attack Chains")
         lines.append("")
-        for chain_id, chain_findings in chains.items():
+        for _chain_id, chain_findings in chains.items():
             chain_title = " > ".join(f.title for f in chain_findings)
             max_sev = min(
                 chain_findings,

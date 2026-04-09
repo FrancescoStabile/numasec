@@ -58,10 +58,7 @@ def calculate_risk_score(findings: list[Any]) -> float:
             total_cvss += cvss * conf
             cvss_count += 1
 
-    if cvss_count > 0:
-        score = 0.6 * total_cvss + 0.4 * total_severity
-    else:
-        score = total_severity
+    score = 0.6 * total_cvss + 0.4 * total_severity if cvss_count > 0 else total_severity
 
     return min(100.0, round(score, 1))
 

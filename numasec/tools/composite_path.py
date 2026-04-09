@@ -104,7 +104,10 @@ async def path_test(
                 oob_cid = setup_data["correlation_id"]
 
                 # Inject blind XXE payloads
+                import contextlib
+
                 import httpx
+
                 from numasec.core.http import create_client
 
                 xxe_payloads = [
@@ -113,14 +116,12 @@ async def path_test(
                 ]
                 async with create_client(timeout=10, headers=extra_headers or None) as client:
                     for payload in xxe_payloads:
-                        try:
+                        with contextlib.suppress(httpx.HTTPError):
                             await client.post(
                                 url,
                                 content=payload,
                                 headers={"Content-Type": "application/xml"},
                             )
-                        except httpx.HTTPError:
-                            pass
 
                 await asyncio.sleep(3)
                 poll_raw = await python_oob_poll(correlation_id=oob_cid)

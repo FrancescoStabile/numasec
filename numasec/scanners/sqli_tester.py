@@ -244,9 +244,8 @@ def _json_semantic_diff(true_resp: httpx.Response, false_resp: httpx.Response) -
             tv, fv = true_data[key], false_data[key]
             if tv != fv:
                 # Skip fields that look like timestamps or nonces
-                if isinstance(tv, (int, float)) and isinstance(fv, (int, float)):
-                    if abs(tv - fv) < 10:
-                        continue
+                if isinstance(tv, (int, float)) and isinstance(fv, (int, float)) and abs(tv - fv) < 10:
+                    continue
                 diffs += 1
         if diffs > 0:
             return f"{diffs} value(s) differ"
