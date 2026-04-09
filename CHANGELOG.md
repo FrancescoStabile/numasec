@@ -2,6 +2,26 @@
 
 ---
 
+## [4.1.4] — Agent Intelligence & Tool Reliability
+
+### Improved
+
+- Rewrote agent system prompts for all 5 primary + 4 sub-agents (clearer methodology, less over-prompting)
+- Enriched tool output with actionable next-step suggestions across all scanners
+- Added OOB (out-of-band) cross-references to ssrf_test and path_test tool descriptions
+
+### Fixed
+
+- Parameter type coercion: injection_test and auth_test now handle JSON arrays from MCP clients
+- JS analyzer: detect SPA framework routes (Angular `path: "admin"`) and relative API paths
+- Tool descriptions follow consistent WHEN/HOW pattern for better LLM tool selection
+
+### Docs
+
+- README: corrected tool count (21+ scanners), removed hardcoded test count
+
+---
+
 ## [4.1.3] - 2026-04-08 — Dependency Updates & ai-sdk v6 Migration
 
 ### Dependencies

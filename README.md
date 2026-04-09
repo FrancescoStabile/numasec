@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <b>96% recall on Juice Shop</b> · <b>100% on DVWA</b> · 33 security tools · MCP-native · open source
+  <b>96% recall on Juice Shop</b> · <b>100% on DVWA</b> · 21+ security scanners · MCP-native · open source
 </p>
 
 ---
@@ -33,13 +33,7 @@ Or with Docker:
 docker run -it francescosta/numasec
 ```
 
-Or with pip:
-```bash
-pip install numasec
-numasec
-```
-
-Pick your LLM provider from the TUI, type `pentest https://yourapp.com`, and it starts. Automated penetration testing against any web application. Works with any model: DeepSeek, Claude, GPT, Ollama, or any OpenAI-compatible endpoint.
+Pick your LLM provider, type `pentest https://yourapp.com`, and it starts. Automated penetration testing against any web application. Works with any model: DeepSeek, Claude, GPT, Ollama, or any OpenAI-compatible endpoint.
 
 ---
 
@@ -49,8 +43,8 @@ Claude Code writes code. Copilot reviews it. Cursor helps you navigate it. But w
 
 numasec is that agent.
 
-- **Built for security from the ground up.** Not a wrapper around ChatGPT. 33 security tools, 34 attack templates, a deterministic planner based on the [CHECKMATE](https://arxiv.org/abs/2512.11143) paper. The AI coordinates and analyzes. It doesn't hallucinate the methodology.
-- **MCP-native.** Ships with 33 built-in security tools and connects to any MCP server. Add your own tools, same protocol Claude Code and Cursor use for extensibility.
+- **Built for security from the ground up.** Not a wrapper around ChatGPT. 21+ security scanners, 34 attack templates, a deterministic planner based on the [CHECKMATE](https://arxiv.org/abs/2512.11143) paper. The AI coordinates and analyzes. It doesn't hallucinate the methodology.
+- **MCP-native.** Ships with 21+ built-in security scanners and connects to any MCP server. Add your own tools, same protocol Claude Code and Cursor use for extensibility.
 - **Attack chains, not isolated findings.** Leaked API key in JS → SSRF → cloud metadata → account takeover. Documented with full evidence.
 - **Benchmarked and reproducible.** 96% recall on Juice Shop. 100% on DVWA. Full coverage on WebGoat. Better than most manual security assessments. [Run them yourself.](tests/benchmarks/)
 
@@ -123,7 +117,7 @@ pentest https://app.com
 └───────────────────┬───────────────────────────┘
                     ▼
 ┌───────────────────────────────────────────────┐
-│  33 Security Tools                            │
+│  21+ Security Scanners                        │
 │  SQLi · XSS · SSRF · Auth · IDOR · CSRF       │
 │  Smuggling · Race · Upload · SSTI · ...       │
 └───────────────────┬───────────────────────────┘
@@ -146,7 +140,7 @@ Reports include executive summary, risk score (0-100), OWASP coverage matrix, at
 
 ## LLM Providers
 
-All 33 tools run locally. You bring any LLM. Pick your provider from the TUI.
+All 21+ scanners run locally. You bring any LLM. Pick your provider from the TUI.
 
 | Provider | Cost per pentest | Why |
 |---|---|---|
@@ -181,7 +175,7 @@ cd agent && bun install && bun run build  # TUI
 docker run -it francescosta/numasec
 ```
 
-Full TUI + all 33 security tools. Multi-arch (amd64, arm64).
+Full TUI + all security scanners. Multi-arch (amd64, arm64).
 
 ### pip
 
@@ -230,7 +224,7 @@ numasec                  # Launch the TUI
 ```bash
 pip install -e ".[all]"
 
-# Tests (1295 unit + 3 benchmark suites)
+# Tests
 pytest tests/ -v
 pytest tests/ -m "not slow and not benchmark"   # fast run
 
