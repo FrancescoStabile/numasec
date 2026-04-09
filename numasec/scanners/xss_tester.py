@@ -125,10 +125,10 @@ def _detect_context(html_text: str, canary: str) -> str:
     if idx == -1:
         return "not_reflected"
 
-    before = html_text[max(0, idx - 500):idx]
+    before = html_text[max(0, idx - 500) : idx]
 
     # Inside HTML comment?
-    if "<!--" in before and "-->" not in before[before.rfind("<!--"):]:
+    if "<!--" in before and "-->" not in before[before.rfind("<!--") :]:
         return "html_comment"
 
     # Inside <script> tag?

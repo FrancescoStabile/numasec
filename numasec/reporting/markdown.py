@@ -136,8 +136,7 @@ def generate_markdown_report(
                 )
             lines.append("")
             lines.append(
-                f"**Combined risk:** {len(chain_findings)} linked findings. "
-                f"Highest severity: {max_sev.severity.value}."
+                f"**Combined risk:** {len(chain_findings)} linked findings. Highest severity: {max_sev.severity.value}."
             )
             lines.append("")
 

@@ -218,7 +218,11 @@ def create_default_tool_registry() -> ToolRegistry:
                     "params": {"type": "string", "description": "Comma-separated param names. Auto-detect if omitted"},
                     "method": {"type": "string", "enum": ["GET", "POST"], "default": "GET"},
                     "headers": {"type": "string", "description": "JSON string of HTTP headers for auth testing"},
-                    "waf_evasion": {"type": "boolean", "description": "Enable WAF bypass encoding for payloads", "default": False},
+                    "waf_evasion": {
+                        "type": "boolean",
+                        "description": "Enable WAF bypass encoding for payloads",
+                        "default": False,
+                    },
                 },
                 "required": ["url"],
             },

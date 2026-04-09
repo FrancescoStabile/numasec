@@ -1029,11 +1029,7 @@ class AuthTester:
                     x5c = key.get("x5c")
                     if x5c:
                         cert_b64 = x5c[0]
-                        pem = (
-                            "-----BEGIN CERTIFICATE-----\n"
-                            + cert_b64
-                            + "\n-----END CERTIFICATE-----"
-                        )
+                        pem = "-----BEGIN CERTIFICATE-----\n" + cert_b64 + "\n-----END CERTIFICATE-----"
                         return pem
 
             except (httpx.HTTPError, ValueError, KeyError):

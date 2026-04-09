@@ -130,18 +130,20 @@ async def path_test(
                 interactions = poll_data.get("interactions", [])
                 if interactions:
                     results["oob_xxe"] = {"blind_xxe_confirmed": True, "interactions": interactions}
-                    results["vulnerabilities"].append({
-                        "type": "blind_xxe",
-                        "severity": "high",
-                        "confidence": 0.95,
-                        "evidence": (
-                            f"Blind XXE confirmed via OOB callback: "
-                            f"{interactions[0].get('protocol', 'unknown')} from "
-                            f"{interactions[0].get('remote_address', 'unknown')}"
-                        ),
-                        "parameter": "",
-                        "payload": f"XXE with OOB domain: {oob_domain}",
-                    })
+                    results["vulnerabilities"].append(
+                        {
+                            "type": "blind_xxe",
+                            "severity": "high",
+                            "confidence": 0.95,
+                            "evidence": (
+                                f"Blind XXE confirmed via OOB callback: "
+                                f"{interactions[0].get('protocol', 'unknown')} from "
+                                f"{interactions[0].get('remote_address', 'unknown')}"
+                            ),
+                            "parameter": "",
+                            "payload": f"XXE with OOB domain: {oob_domain}",
+                        }
+                    )
         except Exception as exc:
             results["oob_xxe"] = {"error": str(exc)}
 

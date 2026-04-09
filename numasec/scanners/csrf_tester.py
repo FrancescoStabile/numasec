@@ -101,9 +101,7 @@ def _parse_forms(html: str) -> list[_ParsedForm]:
         method = attrs.get("method", "GET").upper()
         action = attrs.get("action", "")
 
-        is_state_changing = method.lower() in _STATE_METHODS or any(
-            kw in action.lower() for kw in _STATE_KEYWORDS
-        )
+        is_state_changing = method.lower() in _STATE_METHODS or any(kw in action.lower() for kw in _STATE_KEYWORDS)
 
         hidden_inputs: dict[str, str] = {}
         csrf_token_name = ""
@@ -123,14 +121,16 @@ def _parse_forms(html: str) -> list[_ParsedForm]:
                 has_csrf_token = True
                 csrf_token_name = name
 
-        forms.append(_ParsedForm(
-            method=method,
-            action=action,
-            is_state_changing=is_state_changing,
-            hidden_inputs=hidden_inputs,
-            has_csrf_token=has_csrf_token,
-            csrf_token_name=csrf_token_name,
-        ))
+        forms.append(
+            _ParsedForm(
+                method=method,
+                action=action,
+                is_state_changing=is_state_changing,
+                hidden_inputs=hidden_inputs,
+                has_csrf_token=has_csrf_token,
+                csrf_token_name=csrf_token_name,
+            )
+        )
     return forms
 
 
@@ -306,10 +306,7 @@ class CsrfTester:
         result.has_csrf_token = any(f.has_csrf_token for f in self._forms)
 
         # Only flag missing tokens on state-changing forms
-        state_changing_no_token = [
-            f for f in self._forms
-            if f.is_state_changing and not f.has_csrf_token
-        ]
+        state_changing_no_token = [f for f in self._forms if f.is_state_changing and not f.has_csrf_token]
 
         if state_changing_no_token:
             methods = ", ".join(sorted({f.method for f in state_changing_no_token}))

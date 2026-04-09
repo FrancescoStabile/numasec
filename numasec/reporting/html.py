@@ -147,7 +147,7 @@ def _build_chains_html(findings: list[Finding]) -> str:
         return ""
 
     esc = html.escape
-    parts = ['<h2>Attack Chains</h2>']
+    parts = ["<h2>Attack Chains</h2>"]
 
     for _chain_id, chain_findings in chains.items():
         max_sev = min(
@@ -160,22 +160,22 @@ def _build_chains_html(findings: list[Finding]) -> str:
         parts.append(
             f'<div style="border-left: 4px solid {color}; padding: 12px; margin: 16px 0; background: #f8f9fa;">'
         )
-        parts.append(f'<h3>Chain: {title}</h3>')
-        parts.append('<ol>')
+        parts.append(f"<h3>Chain: {title}</h3>")
+        parts.append("<ol>")
         for cf in chain_findings:
             sev_color = _SEVERITY_COLORS.get(cf.severity.value, "#6c757d")
             url_part = f" (<code>{esc(cf.url)}</code>)" if cf.url else ""
             param_part = f" - Parameter <code>{esc(cf.parameter)}</code>" if cf.parameter else ""
             parts.append(
-                f'<li><b>{esc(cf.title)}</b> '
+                f"<li><b>{esc(cf.title)}</b> "
                 f'<span style="color:{sev_color};">[{esc(cf.severity.value.upper())}]</span>'
-                f'{url_part}{param_part}</li>'
+                f"{url_part}{param_part}</li>"
             )
-        parts.append('</ol>')
+        parts.append("</ol>")
         parts.append(
-            f'<p><b>Combined risk:</b> {len(chain_findings)} linked findings. '
-            f'Highest severity: {esc(max_sev.severity.value)}.</p>'
+            f"<p><b>Combined risk:</b> {len(chain_findings)} linked findings. "
+            f"Highest severity: {esc(max_sev.severity.value)}.</p>"
         )
-        parts.append('</div>')
+        parts.append("</div>")
 
     return "\n  ".join(parts)

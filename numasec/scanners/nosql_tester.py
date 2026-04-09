@@ -332,8 +332,8 @@ class NoSqlTester:
             ('{"$where": "1==1"}', {"email": "admin", "password": {"$where": "1==1"}}),
             ('{"$exists": true}', {"email": {"$exists": True}, "password": {"$exists": True}}),
             # username/password variant (common field names)
-            ('username $ne', {"username": {"$ne": ""}, "password": {"$ne": ""}}),
-            ('user $ne', {"user": {"$ne": ""}, "pass": {"$ne": ""}}),
+            ("username $ne", {"username": {"$ne": ""}, "password": {"$ne": ""}}),
+            ("user $ne", {"user": {"$ne": ""}, "pass": {"$ne": ""}}),
         ]
 
         for payload_desc, json_body in operator_payloads:
