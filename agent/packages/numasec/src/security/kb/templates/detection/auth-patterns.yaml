@@ -1,0 +1,63 @@
+id: auth-detection
+category: detection
+title: Authentication and Authorization Vulnerability Detection
+info:
+  name: Authentication and Authorization Issues
+  severity: high
+  cwe: CWE-287
+  owasp: "A01:2021"
+  description: >
+    Broken access control and authentication flaws allow attackers to bypass login,
+    escalate privileges, access unauthorized resources, or impersonate other users.
+    This is the #1 OWASP Top 10 category for 2021.
+
+patterns:
+  - type: idor_check
+    description: Insecure Direct Object Reference testing
+    technique: >
+      Modify numeric/UUID IDs in URLs or request bodies to access other users' data.
+      Compare response content between authorized and manipulated requests.
+    test_patterns:
+      - path_param_increment: "/api/users/{id} → try id+1, id-1"
+      - uuid_swap: "Replace UUID with another user's UUID from earlier responses"
+      - parameter_pollution: "Add duplicate id params: ?id=1&id=2"
+
+  - type: privilege_escalation
+    description: Vertical privilege escalation tests
+    checks:
+      - role_parameter: "Check for role=admin, isAdmin=true in requests"
+      - header_bypass: "Try X-Forwarded-For: 127.0.0.1 for admin access"
+      - method_change: "Switch GET→POST or POST→PUT to bypass restrictions"
+      - path_traversal: "/api/v1/user/profile → /api/v1/admin/users"
+
+  - type: session_management
+    description: Session handling weaknesses
+    checks:
+      - session_fixation: "Can session ID be set before authentication?"
+      - session_after_logout: "Is session invalidated after logout?"
+      - session_entropy: "Is session token sufficiently random? (min 128 bits)"
+      - concurrent_sessions: "Are concurrent sessions allowed/limited?"
+      - cookie_flags: "HttpOnly, Secure, SameSite attributes present?"
+
+  - type: jwt_weaknesses
+    description: JWT-specific vulnerability checks
+    checks:
+      - alg_none: "Set algorithm to 'none' and remove signature"
+      - alg_confusion: "Switch RS256 → HS256 using public key as HMAC secret"
+      - weak_secret: "Brute-force HMAC secret with common wordlists"
+      - missing_expiry: "Check for missing or far-future 'exp' claim"
+      - missing_audience: "Check for missing 'aud' claim validation"
+
+  - type: password_policy
+    description: Weak password policy indicators
+    checks:
+      - min_length: "Accepts passwords shorter than 8 characters?"
+      - common_passwords: "Accepts passwords from top-1000 list?"
+      - rate_limiting: "No lockout after N failed attempts?"
+      - enumeration: "Different response for valid vs invalid usernames?"
+
+tags:
+  - authentication
+  - authorization
+  - session
+  - owasp-top10

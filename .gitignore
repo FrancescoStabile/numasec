@@ -61,3 +61,4 @@ bin/.tui-version
 
 # Local dev install script
 install-local.sh
+hardening/

