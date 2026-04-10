@@ -5,7 +5,9 @@
  * - Follow redirects (configurable depth)
  * - Skip TLS verification (NODE_TLS_REJECT_UNAUTHORIZED=0)
  * - Configurable timeout
- * - SSRF protection: blocks private IPs unless NUMASEC_ALLOW_INTERNAL=1
+ *
+ * No target restrictions — numasec is a pentesting tool.
+ * The user is responsible for authorization on any target.
  */
 
 const DEFAULT_TIMEOUT = 15_000
@@ -19,7 +21,6 @@ export interface HttpRequestOptions {
   followRedirects?: boolean
   maxRedirects?: number
   cookies?: string
-  skipSsrfCheck?: boolean
 }
 
 export interface HttpResponse {
@@ -32,41 +33,6 @@ export interface HttpResponse {
   elapsed: number
 }
 
-// ── SSRF Protection ────────────────────────────────────────────
-
-const PRIVATE_RANGES = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\./,
-  /^169\.254\./,
-  /^::1$/,
-  /^fc/i,
-  /^fd/i,
-  /^fe80:/i,
-]
-
-const PRIVATE_HOSTS = new Set(["localhost", "0.0.0.0", "[::1]"])
-
-function isPrivateHost(hostname: string): boolean {
-  if (PRIVATE_HOSTS.has(hostname.toLowerCase())) return true
-  return PRIVATE_RANGES.some((re) => re.test(hostname))
-}
-
-function assertNotSsrf(url: string): void {
-  if (process.env.NUMASEC_ALLOW_INTERNAL === "1") return
-  try {
-    const parsed = new URL(url)
-    if (isPrivateHost(parsed.hostname)) {
-      throw new Error(`SSRF blocked: ${parsed.hostname} is a private address. Set NUMASEC_ALLOW_INTERNAL=1 to override.`)
-    }
-  } catch (e) {
-    if (e instanceof Error && e.message.startsWith("SSRF")) throw e
-    // Invalid URL — let fetch() handle it
-  }
-}
-
 // ── Core fetch wrapper ─────────────────────────────────────────
 
 /**
@@ -76,7 +42,6 @@ function assertNotSsrf(url: string): void {
  * - Returns the full body as a string
  * - Tracks redirect chains
  * - Measures elapsed time
- * - Applies SSRF protection
  */
 export async function httpRequest(
   url: string,
@@ -90,16 +55,13 @@ export async function httpRequest(
     followRedirects = true,
     maxRedirects = MAX_REDIRECTS,
     cookies,
-    skipSsrfCheck = false,
   } = options
-
-  if (!skipSsrfCheck) assertNotSsrf(url)
 
   // Disable TLS verification for scanners (targets often use self-signed certs)
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
 
   const reqHeaders: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (compatible; numasec/4.2)",
+    "User-Agent": "Mozilla/5.0 (compatible; numasec/5.0)",
     ...headers,
   }
   if (cookies) reqHeaders["Cookie"] = cookies
@@ -109,7 +71,6 @@ export async function httpRequest(
   const start = Date.now()
 
   for (let i = 0; i <= maxRedirects; i++) {
-    if (!skipSsrfCheck && i > 0) assertNotSsrf(currentUrl)
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeout)

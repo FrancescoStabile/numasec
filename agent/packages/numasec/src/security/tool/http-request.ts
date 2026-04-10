@@ -2,7 +2,7 @@
  * Tool: http_request
  *
  * Raw HTTP request tool for security testing. Full control over method,
- * headers, body, cookies. Uses the shared http-client with SSRF protection.
+ * headers, body, cookies.
  */
 
 import z from "zod"
@@ -15,8 +15,7 @@ const DESCRIPTION = `Make an HTTP request to a target URL. Use for:
 - Verifying vulnerabilities with proof-of-concept payloads
 - Checking server responses to malformed input
 
-Returns: status code, headers, body, redirect chain, elapsed time.
-SSRF protection blocks private IPs unless NUMASEC_ALLOW_INTERNAL=1.`
+Returns: status code, headers, body, redirect chain, elapsed time.`
 
 export const HttpRequestTool = Tool.define("http_request", {
   description: DESCRIPTION,
