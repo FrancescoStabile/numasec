@@ -309,7 +309,7 @@ def create_default_tool_registry() -> ToolRegistry:
                         "type": "string",
                         "description": (
                             "Known valid request body as JSON string. "
-                            "E.g. '{\"name\": \"test\", \"email\": \"x@x.com\"}'. "
+                            'E.g. \'{"name": "test", "email": "x@x.com"}\'. '
                             "Extra fields will be added to this body, not replacing it."
                         ),
                     },

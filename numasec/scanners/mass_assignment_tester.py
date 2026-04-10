@@ -382,9 +382,7 @@ async def python_mass_assignment_test(
     Returns:
         JSON string with ``MassAssignmentResult`` data.
     """
-    extra_headers: dict[str, str] = (
-        headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
-    )
+    extra_headers: dict[str, str] = headers if isinstance(headers, dict) else (json.loads(headers) if headers else {})
     body_dict: dict[str, Any] | None = json.loads(body) if body else None
     tester = MassAssignmentTester(
         extra_headers=extra_headers,

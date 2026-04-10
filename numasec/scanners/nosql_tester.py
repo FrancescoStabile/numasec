@@ -106,7 +106,7 @@ _BRACKET_PAYLOADS: list[str] = [
 # (type-validated fields like crAPI coupon_code that must be strings)
 _STRING_CONTEXT_PAYLOADS: list[str] = [
     "' || '1'=='1",
-    "\"; return 1; var x=\"",
+    '"; return 1; var x="',
     "abc' || this.password.match(/.*/) || 'a'=='b",
     "'; return true; var a='",
     "%00",
@@ -259,7 +259,9 @@ class NoSqlTester:
                 try:
                     for payload in _NOSQL_PAYLOADS:
                         # GET probe: URL-encoded payload in query string
-                        vuln = await self._probe_get(client, parsed, url_params or {param_name: ["test"]}, param_name, payload, baseline_text)
+                        vuln = await self._probe_get(
+                            client, parsed, url_params or {param_name: ["test"]}, param_name, payload, baseline_text
+                        )
                         if vuln:
                             result.vulnerabilities.append(vuln)
                             result.vulnerable = True
@@ -390,7 +392,9 @@ class NoSqlTester:
                 try:
                     resp = await client.post(url, json=json_body)
                 except httpx.HTTPError as exc:
-                    logger.debug("NoSQL POST JSON probe error (field=%s, payload=%s): %s", field_name, payload_desc, exc)
+                    logger.debug(
+                        "NoSQL POST JSON probe error (field=%s, payload=%s): %s", field_name, payload_desc, exc
+                    )
                     continue
 
                 vuln = self._evaluate_response(resp.text, baseline_text, field_name, payload_desc, "POST JSON")
@@ -429,7 +433,9 @@ class NoSqlTester:
                         resp = await client.post(url, json=test_body)
                     except httpx.HTTPError:
                         continue
-                    vuln = self._evaluate_response(resp.text, baseline_text, field_name, str_payload, "POST JSON string")
+                    vuln = self._evaluate_response(
+                        resp.text, baseline_text, field_name, str_payload, "POST JSON string"
+                    )
                     if vuln:
                         result.vulnerabilities.append(vuln)
                         result.vulnerable = True
