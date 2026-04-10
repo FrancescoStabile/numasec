@@ -86,7 +86,7 @@ async def injection_test(
             from numasec.scanners.nosql_tester import NoSqlTester
 
             nosql_tester = NoSqlTester(extra_headers=extra_headers)
-            nosql_result = await nosql_tester.test(url, method=method)
+            nosql_result = await nosql_tester.test(url, method=method, body=body_dict, params=param_list)
             result_dict = nosql_result.to_dict()
             results["nosql"] = result_dict
             results["vulnerabilities"].extend(result_dict.get("vulnerabilities", []))
