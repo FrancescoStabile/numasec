@@ -7,6 +7,7 @@
 
 import type { FindingTable } from "../security.sql"
 import type { ChainGroup } from "../chain-builder"
+import { Installation } from "@/installation"
 
 type Finding = typeof FindingTable.$inferSelect
 
@@ -85,7 +86,7 @@ export function generateSarif(findings: Finding[], targetUrl: string, chains?: C
         tool: {
           driver: {
             name: "numasec",
-            version: "5.0.0",
+            version: Installation.VERSION,
             informationUri: "https://github.com/FrancescoStabile/numasec",
             rules,
           },
@@ -109,7 +110,7 @@ export function generateMarkdown(findings: Finding[], targetUrl: string, chains?
   lines.push(``)
   lines.push(`**Target:** ${targetUrl}`)
   lines.push(`**Date:** ${now}`)
-  lines.push(`**Tool:** numasec v5.0.0`)
+  lines.push(`**Tool:** numasec v${Installation.VERSION}`)
   lines.push(`**Findings:** ${findings.length}`)
   lines.push(``)
 
@@ -279,7 +280,7 @@ export function generateHtml(findings: Finding[], targetUrl: string, chains?: Ch
 <body>
   <div class="container">
     <h1>🛡️ Security Assessment Report</h1>
-    <p class="lead">Target: <strong>${esc(targetUrl)}</strong> | Date: ${now} | numasec v5.0.0</p>
+    <p class="lead">Target: <strong>${esc(targetUrl)}</strong> | Date: ${now} | numasec v${Installation.VERSION}</p>
 
     <div class="row">
       <div class="col-4">

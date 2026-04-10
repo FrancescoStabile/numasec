@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "5.0.0",
+  "version": "1.0.0",
   "name": "numasec",
   "type": "module",
   "license": "MIT",
