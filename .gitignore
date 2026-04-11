@@ -12,6 +12,7 @@
 CLAUDE.md
 .codelens/
 .mcp.json
+.vscode/
 .DS_Store
 
 # Internal docs (not for public repo)
@@ -31,6 +32,7 @@ agent/packages/web/src/content/docs/
 sessions.db
 package.json
 docs/ROADMAP.md
+docs/PRD.md
 
 # Local dev
 hardening/
