@@ -239,9 +239,12 @@ for (const item of targets) {
     },
   })
 
+  const isWindows = item.os === "win32"
+  const binaryName = isWindows ? "numasec.exe" : "numasec"
+
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/numasec`
+    const binaryPath = `dist/${name}/bin/${binaryName}`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
@@ -253,7 +256,9 @@ for (const item of targets) {
   }
 
   await $`rm -rf ./dist/${name}/bin/tui`
-  await $`chmod +x ./dist/${name}/bin/numasec`
+  if (!isWindows) {
+    await fs.promises.chmod(`./dist/${name}/bin/${binaryName}`, 0o755)
+  }
 
   // Postinstall to fix permissions (npm may strip execute bit)
   await Bun.file(`dist/${name}/postinstall.js`).write(

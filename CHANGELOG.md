@@ -2,6 +2,16 @@
 
 ---
 
+## [1.0.4] — Windows Support
+
+- Added Windows x64, x64-baseline, and ARM64 build targets to CI
+- Fixed build script: `.exe` handling, conditional `chmod`, cross-platform smoke test
+- Fixed `security_shell` tool to use `cmd /c` on Windows instead of `sh -c`
+- Fixed cached binary path in npm launcher to use `.numasec.exe` on win32
+- numasec now ships Windows binaries via npm, GitHub Releases, and install script
+
+---
+
 ## [1.0.0] — Pure TypeScript Rewrite
 
 The entire project has been rewritten from scratch. numasec is now a single TypeScript application — no Python, no bridge, no runtime dependencies.

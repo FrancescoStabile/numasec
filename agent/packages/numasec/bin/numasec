@@ -26,7 +26,8 @@ const scriptPath = fs.realpathSync(__filename)
 const scriptDir = path.dirname(scriptPath)
 
 //
-const cached = path.join(scriptDir, ".numasec")
+const cachedName = os.platform() === "win32" ? ".numasec.exe" : ".numasec"
+const cached = path.join(scriptDir, cachedName)
 if (fs.existsSync(cached)) {
   run(cached)
 }

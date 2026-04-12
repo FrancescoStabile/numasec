@@ -34,6 +34,8 @@ jobs:
         include:
           - os: ubuntu-latest
             build_targets: "linux"
+          - os: ubuntu-latest
+            build_targets: "win32"
           - os: macos-latest
             build_targets: "darwin"
     steps:
@@ -57,26 +59,26 @@ jobs:
           for dir in agent/packages/numasec/dist/numasec-*/; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
-            binary="$dir/bin/numasec"
-            [ -f "$binary" ] || continue
 
             case "$name" in
               *linux*|*darwin*)
+                [ -f "$dir/bin/numasec" ] || continue
                 tar -czf "agent/packages/numasec/release/${name}.tar.gz" -C "$dir/bin" numasec
                 ;;
               *windows*)
+                [ -f "$dir/bin/numasec.exe" ] || continue
                 (cd "$dir/bin" && zip -r "../../../release/${name}.zip" numasec.exe)
                 ;;
             esac
           done
-          ls -lh agent/packages/numasec/release/
+          ls -lh agent/packages/numasec/release/ 2>/dev/null || echo "No release archives created"
       - uses: actions/upload-artifact@v4
         with:
-          name: numasec-${{ matrix.os }}
+          name: numasec-${{ matrix.build_targets }}
           path: agent/packages/numasec/release/
       - uses: actions/upload-artifact@v4
         with:
-          name: npm-packages-${{ matrix.os }}
+          name: npm-packages-${{ matrix.build_targets }}
           path: agent/packages/numasec/dist/
 
   github-release:

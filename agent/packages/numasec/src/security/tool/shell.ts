@@ -52,10 +52,15 @@ export const ShellTool = Tool.define("security_shell", {
       const chunks: Buffer[] = []
       const errChunks: Buffer[] = []
 
-      const proc = spawn("sh", ["-c", params.command], {
+      const isWin = process.platform === "win32"
+      const shell = isWin ? (process.env.COMSPEC || "cmd.exe") : "sh"
+      const shellArgs = isWin ? ["/c", params.command] : ["-c", params.command]
+
+      const proc = spawn(shell, shellArgs, {
         timeout,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, TERM: "dumb" },
+        windowsHide: isWin,
       })
 
       proc.stdout.on("data", (d: Buffer) => chunks.push(d))
