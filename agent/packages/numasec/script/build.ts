@@ -5,6 +5,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import solidPlugin from "@opentui/solid/bun-plugin"
+import { chmod } from "fs/promises"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -253,7 +254,7 @@ for (const item of targets) {
   }
 
   await $`rm -rf ./dist/${name}/bin/tui`
-  await $`chmod +x ./dist/${name}/bin/numasec`
+  if (!["win32", "windows"].includes(item.os.toLocaleLowerCase())) await chmod(`./dist/${name}/bin/numasec`, 0o755)
 
   // Postinstall to fix permissions (npm may strip execute bit)
   await Bun.file(`dist/${name}/postinstall.js`).write(
