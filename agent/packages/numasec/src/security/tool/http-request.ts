@@ -37,6 +37,21 @@ function replay(input: {
   return parts.join(" ")
 }
 
+function hasSqliPayloadSignal(value: string) {
+  return /('(?:\s*--|\s+or\s+|%27)|union\s+select|sleep\s*\(|waitfor\s+delay|\)\)\s*or\s*\()/i.test(value)
+}
+
+function hasAuthSuccessSignal(value: string) {
+  return /"authentication"\s*:|"token"\s*:|"session"\s*:|welcome|login succeeded|auth/i.test(value)
+}
+
+function hasVerboseErrorSignal(value: string) {
+  if (/\n\s*at\s+[^\n]+/i.test(value)) return true
+  if (/sequelizedatabaseerror|sqlite_error|postgreserror|mysql/i.test(value)) return true
+  if (/<pre>[\s\S]*error[\s\S]*<\/pre>/i.test(value)) return true
+  return false
+}
+
 const DESCRIPTION = `Make an HTTP request to a target URL. Use for:
 - Sending crafted requests during security testing
 - Testing specific endpoints with custom headers/body
@@ -197,6 +212,39 @@ export const HttpRequestTool = Tool.define("http_request", {
         method: params.method,
         parameter: "",
         payload: params.body ?? "",
+        evidence_keys: ["exchange"],
+      })
+    }
+    if (response.status >= 200 && response.status < 300 && hasSqliPayloadSignal(params.body ?? params.url) && hasAuthSuccessSignal(response.body)) {
+      verifications.push({
+        key: "sqli-auth-bypass",
+        family: "sql_injection",
+        kind: "auth_bypass",
+        title: "SQL injection payload yielded authentication success",
+        technical_severity: "critical",
+        passed: true,
+        control: "positive",
+        url: response.url,
+        method: params.method,
+        parameter: "",
+        payload: params.body ?? "",
+        evidence:
+          "A suspicious SQL injection payload returned a successful authenticated response containing token/session markers.",
+        evidence_keys: ["exchange"],
+      })
+    }
+    if (response.status >= 500 && hasVerboseErrorSignal(response.body)) {
+      verifications.push({
+        key: "error-disclosure-stacktrace",
+        family: "error_disclosure",
+        kind: "stacktrace",
+        title: "Verbose stack trace disclosed in HTTP response",
+        technical_severity: "low",
+        passed: true,
+        control: "positive",
+        url: response.url,
+        method: params.method,
+        evidence: "The response exposed verbose error details or a stack trace to the client.",
         evidence_keys: ["exchange"],
       })
     }

@@ -316,6 +316,48 @@ describe("primitive tools", () => {
     expect(rows.some((item) => item.chain_id.startsWith("CHAIN-"))).toBe(true)
   })
 
+  test("upsert_hypothesis reuses an existing ENOD node id instead of creating a duplicate", async () => {
+    const sessionID = "sess-primitive-hypothesis-reuse" as SessionID
+    seedSession(sessionID)
+
+    const first = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "SQL injection in login",
+        predicate: "crafted payload returns authenticated response",
+        asset_ref: "https://example.com/rest/user/login",
+        confidence: 0.5,
+      },
+      sessionID,
+    )
+    const hypothesisID = (first.metadata as any).nodeID as string
+
+    const second = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "SQL injection in login",
+        predicate: "crafted payload returns authenticated response",
+        asset_ref: "https://example.com/rest/user/login",
+        confidence: 1,
+        status: "confirmed",
+        hypothesis_id: hypothesisID,
+      },
+      sessionID,
+    )
+
+    expect((second.metadata as any).nodeID).toBe(hypothesisID)
+    const rows = Database.use((db) =>
+      db
+        .select()
+        .from(EvidenceNodeTable)
+        .where(eq(EvidenceNodeTable.session_id, sessionID))
+        .all(),
+    )
+    const hypotheses = rows.filter((item) => item.type === "hypothesis")
+    expect(hypotheses).toHaveLength(1)
+    expect(hypotheses[0]?.status).toBe("confirmed")
+  })
+
   test("record_evidence externalizes large payloads with local artifact references", async () => {
     const sessionID = "sess-primitive-record-evidence" as SessionID
     seedSession(sessionID)

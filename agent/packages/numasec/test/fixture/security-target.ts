@@ -89,6 +89,29 @@ function sqliBody() {
 </pre></body></html>`
 }
 
+function loginResponse(user: User) {
+  const jwt = token(user)
+  return Response.json(
+    {
+      status: "success",
+      authentication: {
+        token: jwt,
+      },
+      data: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
+    },
+    {
+      headers: {
+        "set-cookie": `session=auth-${user.id}; Path=/; HttpOnly`,
+        "access-control-allow-origin": "*",
+      },
+    },
+  )
+}
+
 export interface SecurityTargetFixture {
   readonly server: ReturnType<typeof Bun.serve>
   readonly baseUrl: string
@@ -175,6 +198,11 @@ export function startSecurityTarget(): SecurityTargetFixture {
         const body = await readJson(req)
         const email = String(body.email ?? "")
         const password = String(body.password ?? "")
+        if (email.includes("'--")) {
+          const candidate = email.split("'--")[0] ?? ""
+          const user = Array.from(users.values()).find((item) => item.email === candidate)
+          if (user) return loginResponse(user)
+        }
         if (email.includes("' UNION SELECT") || email.includes("')) OR (") || email.includes("' OR '1'='1")) {
           return new Response(sqliBody(), {
             status: 500,
@@ -194,26 +222,7 @@ export function startSecurityTarget(): SecurityTargetFixture {
             { status: 401 },
           )
         }
-        const jwt = token(user)
-        return Response.json(
-          {
-            status: "success",
-            authentication: {
-              token: jwt,
-            },
-            data: {
-              id: user.id,
-              email: user.email,
-              role: user.role,
-            },
-          },
-          {
-            headers: {
-              "set-cookie": `session=auth-${user.id}; Path=/; HttpOnly`,
-              "access-control-allow-origin": "*",
-            },
-          },
-        )
+        return loginResponse(user)
       }
 
       if (path === "/api/private/profile") {

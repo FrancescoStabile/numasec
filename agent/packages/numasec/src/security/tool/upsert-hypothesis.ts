@@ -1,6 +1,9 @@
 import z from "zod"
 import { Effect } from "effect"
+import { and, eq } from "../../storage/db"
 import { Tool } from "../../tool/tool"
+import { Database } from "../../storage/db"
+import { EvidenceNodeTable } from "../evidence.sql"
 import { EvidenceGraphStore } from "../evidence-store"
 import { makeToolResultEnvelope } from "./result-envelope"
 
@@ -20,6 +23,24 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
     supersedes_node_id: z.string().optional().describe("Existing hypothesis node superseded by this one"),
   }),
   async execute(params, ctx) {
+    const hypotheses = params.hypothesis_id
+      ? Database.use((db) =>
+          db
+            .select({
+              id: EvidenceNodeTable.id,
+              fingerprint: EvidenceNodeTable.fingerprint,
+            })
+            .from(EvidenceNodeTable)
+            .where(
+              and(
+                eq(EvidenceNodeTable.session_id, ctx.sessionID),
+                eq(EvidenceNodeTable.type, "hypothesis"),
+              ),
+            )
+            .all(),
+        )
+      : undefined
+    const existing = hypotheses?.find((item) => item.id === params.hypothesis_id || item.fingerprint === params.hypothesis_id)
     const row = Effect.runSync(
       EvidenceGraphStore.use((store) =>
         store.upsertNode({
@@ -27,13 +48,13 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
           type: "hypothesis",
           confidence: params.confidence ?? 0.3,
           status: params.status ?? "open",
-          fingerprint: params.hypothesis_id,
+          fingerprint: existing?.fingerprint ?? params.hypothesis_id,
           payload: {
             statement: params.statement,
             predicate: params.predicate,
             asset_ref: params.asset_ref ?? "",
             tags: params.tags ?? [],
-            hypothesis_id: params.hypothesis_id ?? "",
+            hypothesis_id: existing?.id ?? params.hypothesis_id ?? "",
           },
           sourceTool: "upsert_hypothesis",
         }),
@@ -58,6 +79,7 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
       title: `Hypothesis ${row.id}`,
       metadata: {
         nodeID: row.id,
+        fingerprint: row.fingerprint,
         status: row.status,
         confidence: row.confidence,
       } as any,

@@ -109,5 +109,20 @@ describe("truthful security fixture", () => {
     const sqliBody = (await sqli.text()).toLowerCase()
     expect(sqliBody).toContain("sequelize")
     expect(sqliBody).toContain("sqlite")
+
+    const bypass = await fetch(`${app.baseUrl}/rest/user/login`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        email: `${app.admin.email}'--`,
+        password: "x",
+      }),
+    })
+    expect(bypass.status).toBe(200)
+    const bypassBody = await json(bypass)
+    expect(String(bypassBody.authentication.token).length).toBeGreaterThan(10)
+    expect(bypassBody.data.email).toBe(app.admin.email)
   })
 })
