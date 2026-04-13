@@ -1,10 +1,18 @@
 Generate a penetration test report.
 
-Format: $ARGUMENTS
+Command migration note:
+- Canonical command: `/report generate [format]`
+- Legacy alias: `/report [format]` (soft-deprecated, still supported in v1.x)
 
-If no format is specified, default to markdown.
+Arguments: $ARGUMENTS
 
-Call `generate_report` with the requested format to produce the final report.
+Parse arguments as:
+- `markdown|html|sarif` optional format (default: markdown)
+- `--out <path>` optional output file path
+
+Call `generate_report` with:
+- `format`
+- `output_path` when `--out` is present
 Then display a summary of:
 - Target tested
 - Duration
@@ -12,4 +20,4 @@ Then display a summary of:
 - OWASP Top 10 coverage
 - Key recommendations
 
-Available formats: markdown, html, sarif, json
+Available formats: markdown, html, sarif

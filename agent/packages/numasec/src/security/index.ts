@@ -8,6 +8,20 @@
 export { HttpRequestTool } from "./tool/http-request"
 export { ShellTool } from "./tool/shell"
 export { BrowserTool } from "./tool/browser"
+export { ExecCommandTool } from "./tool/exec-command"
+export { MutateInputTool } from "./tool/mutate-input"
+export { ExtractObservationTool } from "./tool/extract-observation"
+export { VerifyAssertionTool } from "./tool/verify-assertion"
+export { RecordEvidenceTool } from "./tool/record-evidence"
+export { LinkEvidenceTool } from "./tool/link-evidence"
+export { QueryGraphTool } from "./tool/query-graph"
+export { ObserveSurfaceTool } from "./tool/observe-surface"
+export { UpsertHypothesisTool } from "./tool/upsert-hypothesis"
+export { UpsertFindingTool } from "./tool/upsert-finding"
+export { ConfirmFindingTool } from "./tool/confirm-finding"
+export { DeriveAttackPathsTool } from "./tool/derive-attack-paths"
+export { PlanNextTool } from "./tool/plan-next"
+export { BatchReplayTool } from "./tool/batch-replay"
 
 // Composite scanning tools
 export { ReconTool } from "./tool/recon"
@@ -56,10 +70,35 @@ export { httpRequest } from "./http-client"
 // Environment detection
 export { detectEnvironment } from "./env/detect"
 
+// Evidence graph store
+export { EvidenceGraphStore, EvidenceGraphStoreError, createEvidenceFingerprint } from "./evidence-store"
+export {
+  DEFAULT_INLINE_BYTES,
+  DEFAULT_PREVIEW_BYTES,
+  encodeArtifactPayload,
+  makeArtifactReference,
+  persistEvidenceArtifact,
+  shouldPersistArtifact,
+} from "./artifact-store"
+
 // All tools as array (for registry)
 import { HttpRequestTool } from "./tool/http-request"
 import { ShellTool } from "./tool/shell"
 import { BrowserTool } from "./tool/browser"
+import { ExecCommandTool } from "./tool/exec-command"
+import { MutateInputTool } from "./tool/mutate-input"
+import { ExtractObservationTool } from "./tool/extract-observation"
+import { VerifyAssertionTool } from "./tool/verify-assertion"
+import { RecordEvidenceTool } from "./tool/record-evidence"
+import { LinkEvidenceTool } from "./tool/link-evidence"
+import { QueryGraphTool } from "./tool/query-graph"
+import { ObserveSurfaceTool } from "./tool/observe-surface"
+import { UpsertHypothesisTool } from "./tool/upsert-hypothesis"
+import { UpsertFindingTool } from "./tool/upsert-finding"
+import { ConfirmFindingTool } from "./tool/confirm-finding"
+import { DeriveAttackPathsTool } from "./tool/derive-attack-paths"
+import { PlanNextTool } from "./tool/plan-next"
+import { BatchReplayTool } from "./tool/batch-replay"
 import { ReconTool } from "./tool/recon"
 import { CrawlTool } from "./tool/crawl"
 import { DirFuzzTool } from "./tool/dir-fuzz"
@@ -84,6 +123,20 @@ export const SecurityTools = [
   HttpRequestTool,
   ShellTool,
   BrowserTool,
+  ExecCommandTool,
+  MutateInputTool,
+  ExtractObservationTool,
+  VerifyAssertionTool,
+  RecordEvidenceTool,
+  LinkEvidenceTool,
+  QueryGraphTool,
+  ObserveSurfaceTool,
+  UpsertHypothesisTool,
+  UpsertFindingTool,
+  ConfirmFindingTool,
+  DeriveAttackPathsTool,
+  PlanNextTool,
+  BatchReplayTool,
   // Scanning
   ReconTool,
   CrawlTool,
