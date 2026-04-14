@@ -60,7 +60,7 @@
     "@types/semver": "^7.5.8",
     "@types/turndown": "5.0.5",
     "@types/which": "3.0.4",
-    "@types/yargs": "17.0.33",
+    "@types/yargs": "17.0.35",
     "@typescript/native-preview": "catalog:",
     "chromium-bidi": "15.0.0",
     "drizzle-kit": "catalog:",
