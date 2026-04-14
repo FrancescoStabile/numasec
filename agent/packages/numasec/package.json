@@ -70,7 +70,7 @@
     "typescript": "catalog:",
     "vscode-languageserver-types": "3.17.5",
     "why-is-node-running": "3.2.2",
-    "zod-to-json-schema": "3.24.5"
+    "zod-to-json-schema": "3.25.2"
   },
   "dependencies": {
     "@actions/core": "1.11.1",
@@ -156,7 +156,7 @@
     "yaml": "2.8.3",
     "yargs": "18.0.0",
     "zod": "catalog:",
-    "zod-to-json-schema": "3.24.5"
+    "zod-to-json-schema": "3.25.2"
   },
   "overrides": {
     "drizzle-orm": "catalog:"
