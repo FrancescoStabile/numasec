@@ -208,7 +208,7 @@ export namespace Provider {
           return shouldUseCopilotResponsesApi(modelID) ? sdk.responses(modelID) : sdk.chat(modelID)
         },
         options: {
-          timeout: 60_000,
+          timeout: 180_000,
           chunkTimeout: 120_000,
         },
       }
