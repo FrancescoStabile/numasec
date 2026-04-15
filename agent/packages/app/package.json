@@ -42,7 +42,7 @@
     "@numasec/sdk": "workspace:*",
     "@numasec/ui": "workspace:*",
     "@numasec/util": "workspace:*",
-    "@shikijs/transformers": "3.9.2",
+    "@shikijs/transformers": "4.0.2",
     "@solid-primitives/active-element": "2.1.3",
     "@solid-primitives/audio": "1.4.2",
     "@solid-primitives/event-bus": "1.1.2",
