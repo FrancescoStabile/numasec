@@ -44,6 +44,10 @@ Usage notes:
     <bad-example>
     cd /foo/bar && pytest tests
     </bad-example>
+  - If `workdir` or file arguments point outside the current workspace and the command can modify files or git state, treat it as external mutation:
+    - only run it when the user explicitly identified that checkout as the intended disposable remediation workspace
+    - NEVER mutate shared benchmark fixtures or third-party repos in place
+    - prefer a disposable clone/workspace and keep the canonical fixture checkout untouched
 
 # Committing changes with git
 

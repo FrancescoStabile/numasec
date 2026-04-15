@@ -316,6 +316,117 @@ describe("primitive tools", () => {
     expect(rows.some((item) => item.chain_id.startsWith("CHAIN-"))).toBe(true)
   })
 
+  test("upsert_finding keeps identical findings isolated per session", async () => {
+    const firstSession = "sess-primitive-finding-session-a" as SessionID
+    const secondSession = "sess-primitive-finding-session-b" as SessionID
+    seedSession(firstSession)
+    seedSession(secondSession)
+
+    Database.use((db) =>
+      db
+        .insert(EvidenceNodeTable)
+        .values([
+          {
+            id: "ENOD-VERIFY-SESSION-A" as any,
+            session_id: firstSession,
+            type: "verification",
+            fingerprint: "verify-session-a",
+            payload: {
+              predicate: "idor confirmed",
+              passed: true,
+            },
+            confidence: 0.9,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-VERIFY-SESSION-B" as any,
+            session_id: secondSession,
+            type: "verification",
+            fingerprint: "verify-session-b",
+            payload: {
+              predicate: "idor confirmed",
+              passed: true,
+            },
+            confidence: 0.9,
+            source_tool: "test",
+            status: "confirmed",
+          },
+        ])
+        .run(),
+    )
+
+    const firstHypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "IDOR in shared endpoint",
+        predicate: "cross-account read returns 200",
+        asset_ref: "https://example.com/api/users/1",
+      },
+      firstSession,
+    )
+    const secondHypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "IDOR in shared endpoint",
+        predicate: "cross-account read returns 200",
+        asset_ref: "https://example.com/api/users/1",
+      },
+      secondSession,
+    )
+
+    const firstFinding = await runTool(
+      UpsertFindingTool,
+      {
+        hypothesis_id: (firstHypothesis.metadata as any).nodeID,
+        title: "IDOR in shared endpoint",
+        severity: "medium",
+        impact: "Cross-account data exposure",
+        evidence_refs: ["ENOD-VERIFY-SESSION-A"],
+        url: "https://example.com/api/users/1",
+        method: "GET",
+      },
+      firstSession,
+    )
+    const secondFinding = await runTool(
+      UpsertFindingTool,
+      {
+        hypothesis_id: (secondHypothesis.metadata as any).nodeID,
+        title: "IDOR in shared endpoint",
+        severity: "medium",
+        impact: "Cross-account data exposure",
+        evidence_refs: ["ENOD-VERIFY-SESSION-B"],
+        url: "https://example.com/api/users/1",
+        method: "GET",
+      },
+      secondSession,
+    )
+
+    const firstID = (firstFinding.metadata as any).findingID as string
+    const secondID = (secondFinding.metadata as any).findingID as string
+    expect(firstID).not.toBe(secondID)
+
+    const firstRows = Database.use((db) =>
+      db
+        .select()
+        .from(FindingTable)
+        .where(eq(FindingTable.session_id, firstSession))
+        .all(),
+    )
+    const secondRows = Database.use((db) =>
+      db
+        .select()
+        .from(FindingTable)
+        .where(eq(FindingTable.session_id, secondSession))
+        .all(),
+    )
+
+    expect(firstRows).toHaveLength(1)
+    expect(secondRows).toHaveLength(1)
+    expect(String(firstRows[0]?.id)).toBe(firstID)
+    expect(String(secondRows[0]?.id)).toBe(secondID)
+  })
+
   test("upsert_hypothesis reuses an existing ENOD node id instead of creating a duplicate", async () => {
     const sessionID = "sess-primitive-hypothesis-reuse" as SessionID
     seedSession(sessionID)
@@ -678,6 +789,264 @@ describe("primitive tools", () => {
     expect((out.metadata as any).confidence).toBeLessThanOrEqual(0.75)
   })
 
+  test("upsert_finding updates an explicit target_finding_id in place when the title changes", async () => {
+    const sessionID = "sess-primitive-upsert-target-finding" as SessionID
+    seedSession(sessionID)
+
+    Database.use((db) =>
+      db
+        .insert(EvidenceNodeTable)
+        .values([
+          {
+            id: "ENOD-TARGET-POS" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "target-pos",
+            payload: {
+              predicate: "exploit succeeded",
+              passed: true,
+              control: "positive",
+            },
+            confidence: 0.9,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-TARGET-NEG" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "target-neg",
+            payload: {
+              predicate: "control denied",
+              passed: true,
+              control: "negative",
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-TARGET-IMPACT" as any,
+            session_id: sessionID,
+            type: "artifact",
+            fingerprint: "target-impact",
+            payload: {
+              created_records: 1,
+              response: {
+                status: 201,
+                body: "{\"id\":1}",
+              },
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+        ])
+        .run(),
+    )
+
+    const hypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "Mass assignment escalates role",
+        predicate: "protected fields are accepted",
+        asset_ref: "https://example.com/api/users",
+      },
+      sessionID,
+    )
+    const hypothesisID = (hypothesis.metadata as any).nodeID as string
+
+    const first = await runTool(
+      UpsertFindingTool,
+      {
+        hypothesis_id: hypothesisID,
+        title: "Mass assignment creates admin user",
+        severity: "critical",
+        impact: "Unauthenticated user creation with admin role",
+        evidence_refs: ["ENOD-TARGET-POS"],
+        negative_control_refs: ["ENOD-TARGET-NEG"],
+        impact_refs: ["ENOD-TARGET-IMPACT"],
+        url: "https://example.com/api/users",
+        method: "POST",
+        parameter: "role",
+      },
+      sessionID,
+    )
+    const findingID = (first.metadata as any).findingID as string
+
+    const second = await runTool(
+      UpsertFindingTool,
+      {
+        target_finding_id: findingID,
+        hypothesis_id: hypothesisID,
+        title: "Mass assignment allows role escalation during signup",
+        severity: "critical",
+        impact: "Unauthenticated user creation with admin role",
+        evidence_refs: ["ENOD-TARGET-POS"],
+        negative_control_refs: ["ENOD-TARGET-NEG"],
+        impact_refs: ["ENOD-TARGET-IMPACT"],
+        url: "https://example.com/api/users",
+        method: "POST",
+        parameter: "role",
+      },
+      sessionID,
+    )
+
+    expect((second.metadata as any).findingID).toBe(findingID)
+    expect((second.metadata as any).findingResolution).toBe("target_finding_id")
+
+    const rows = Database.use((db) =>
+      db
+        .select()
+        .from(FindingTable)
+        .where(eq(FindingTable.session_id, sessionID))
+        .all(),
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(String(rows[0]?.id)).toBe(findingID)
+    expect(rows[0]?.title).toBe("Mass assignment allows role escalation during signup")
+  })
+
+  test("upsert_finding rejects ambiguous manual findings in the same scope without target_finding_id", async () => {
+    const sessionID = "sess-primitive-upsert-ambiguous-scope" as SessionID
+    seedSession(sessionID)
+
+    Database.use((db) =>
+      db
+        .insert(EvidenceNodeTable)
+        .values([
+          {
+            id: "ENOD-AMB-POS" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "amb-pos",
+            payload: {
+              predicate: "exploit succeeded",
+              passed: true,
+              control: "positive",
+            },
+            confidence: 0.9,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-AMB-NEG" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "amb-neg",
+            payload: {
+              predicate: "control denied",
+              passed: true,
+              control: "negative",
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-AMB-IMPACT" as any,
+            session_id: sessionID,
+            type: "artifact",
+            fingerprint: "amb-impact",
+            payload: {
+              leaked_records: 2,
+              response: {
+                status: 200,
+                body: "{\"records\":2}",
+              },
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+        ])
+        .run(),
+    )
+
+    const hypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "Account detail API leaks foreign records",
+        predicate: "cross-account detail returns 200",
+        asset_ref: "https://example.com/api/accounts/1",
+      },
+      sessionID,
+    )
+    const hypothesisID = (hypothesis.metadata as any).nodeID as string
+
+    Database.use((db) =>
+      db
+        .insert(FindingTable)
+        .values([
+          {
+            id: "SSEC-AMB-1" as any,
+            session_id: sessionID,
+            title: "Legacy account detail leak",
+            severity: "high",
+            description: "Legacy duplicate",
+            evidence: "ENOD-AMB-POS",
+            confirmed: false,
+            state: "provisional",
+            family: "",
+            source_hypothesis_id: hypothesisID,
+            root_cause_key: "ROOT-AMB-1",
+            suppression_reason: "",
+            reportable: true,
+            manual_override: true,
+            url: "https://example.com/api/accounts/1",
+            method: "GET",
+            parameter: "id",
+            payload: "",
+            confidence: 0.5,
+            tool_used: "manual",
+          },
+          {
+            id: "SSEC-AMB-2" as any,
+            session_id: sessionID,
+            title: "Renamed account detail leak",
+            severity: "high",
+            description: "Another duplicate",
+            evidence: "ENOD-AMB-POS",
+            confirmed: false,
+            state: "provisional",
+            family: "",
+            source_hypothesis_id: hypothesisID,
+            root_cause_key: "ROOT-AMB-2",
+            suppression_reason: "",
+            reportable: true,
+            manual_override: true,
+            url: "https://example.com/api/accounts/1",
+            method: "GET",
+            parameter: "id",
+            payload: "",
+            confidence: 0.5,
+            tool_used: "manual",
+          },
+        ])
+        .run(),
+    )
+
+    await expect(
+      runTool(
+        UpsertFindingTool,
+        {
+          hypothesis_id: hypothesisID,
+          title: "Third wording for same leak",
+          severity: "high",
+          impact: "Cross-account data exposure",
+          evidence_refs: ["ENOD-AMB-POS"],
+          negative_control_refs: ["ENOD-AMB-NEG"],
+          impact_refs: ["ENOD-AMB-IMPACT"],
+          url: "https://example.com/api/accounts/1",
+          method: "GET",
+          parameter: "id",
+        },
+        sessionID,
+      ),
+    ).rejects.toThrow("multiple existing manual findings in scope")
+  })
+
   test("extract_observation ignores non-http numeric noise for status code", async () => {
     const sessionID = "sess-primitive-extract-noise" as SessionID
     seedSession(sessionID)
@@ -815,6 +1184,16 @@ describe("primitive tools", () => {
     expect((out.metadata as any).auto_selected.evidence_refs.length).toBeGreaterThan(0)
     expect((out.metadata as any).auto_selected.negative_control_refs.length).toBeGreaterThan(0)
     expect((out.metadata as any).auto_selected.impact_refs.length).toBeGreaterThan(0)
+    const row = Database.use((db) =>
+      db
+        .select({
+          status: EvidenceNodeTable.status,
+        })
+        .from(EvidenceNodeTable)
+        .where(eq(EvidenceNodeTable.id, (hypothesis.metadata as any).nodeID))
+        .get(),
+    )
+    expect(row?.status).toBe("confirmed")
   })
 
   test("confirm_finding narrows noisy session candidates and reuses active support evidence as impact", async () => {
@@ -1031,5 +1410,267 @@ describe("primitive tools", () => {
 
     expect(row?.state).toBe("provisional")
     expect(row?.confirmed).toBe(false)
+  })
+
+  test("confirm_finding reuses the only scoped provisional finding when the title changes", async () => {
+    const sessionID = "sess-primitive-confirm-finding-title-drift" as SessionID
+    seedSession(sessionID)
+
+    Database.use((db) =>
+      db
+        .insert(EvidenceNodeTable)
+        .values([
+          {
+            id: "ENOD-DRIFT-POS" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "drift-pos",
+            payload: {
+              predicate: "sql error returned",
+              passed: true,
+              control: "positive",
+            },
+            confidence: 0.9,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-DRIFT-NEG" as any,
+            session_id: sessionID,
+            type: "verification",
+            fingerprint: "drift-neg",
+            payload: {
+              predicate: "benign request denied exploit condition",
+              passed: true,
+              control: "negative",
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+          {
+            id: "ENOD-DRIFT-IMPACT" as any,
+            session_id: sessionID,
+            type: "artifact",
+            fingerprint: "drift-impact",
+            payload: {
+              leaked_records: 1,
+              response: {
+                status: 200,
+                body: "{\"records\":1}",
+              },
+            },
+            confidence: 0.8,
+            source_tool: "test",
+            status: "confirmed",
+          },
+        ])
+        .run(),
+    )
+
+    const hypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "Login email parameter is vulnerable to SQL injection",
+        predicate: "crafted request returns evidence of injection",
+        asset_ref: "https://example.com/rest/user/login",
+      },
+      sessionID,
+    )
+    const hypothesisID = (hypothesis.metadata as any).nodeID as string
+
+    const provisional = await runTool(
+      UpsertFindingTool,
+      {
+        hypothesis_id: hypothesisID,
+        title: "Legacy SQL injection wording",
+        severity: "high",
+        impact: "Authentication bypass or data extraction",
+        evidence_refs: ["ENOD-DRIFT-POS"],
+        impact_refs: ["ENOD-DRIFT-IMPACT"],
+        url: "https://example.com/rest/user/login",
+        method: "POST",
+        parameter: "email",
+      },
+      sessionID,
+    )
+    const provisionalID = (provisional.metadata as any).findingID as string
+
+    const out = await runTool(
+      ConfirmFindingTool,
+      {
+        hypothesis_id: hypothesisID,
+        title: "SQL Injection in /rest/user/login email parameter",
+        severity: "high",
+        impact: "Authentication bypass or data extraction",
+        evidence_refs: ["ENOD-DRIFT-POS"],
+        negative_control_refs: ["ENOD-DRIFT-NEG"],
+        impact_refs: ["ENOD-DRIFT-IMPACT"],
+        url: "https://example.com/rest/user/login",
+        method: "POST",
+        parameter: "email",
+      },
+      sessionID,
+    )
+
+    expect((out.metadata as any).findingID).toBe(provisionalID)
+    expect((out.metadata as any).findingResolution).toBe("single_scope_candidate")
+
+    const rows = Database.use((db) =>
+      db
+        .select()
+        .from(FindingTable)
+        .where(eq(FindingTable.session_id, sessionID))
+        .all(),
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(String(rows[0]?.id)).toBe(provisionalID)
+    expect(rows[0]?.title).toBe("SQL Injection in /rest/user/login email parameter")
+    expect(rows[0]?.state).toBe("verified")
+  })
+
+  test("confirm_finding auto-selects multiple scoped verifications for the same target", async () => {
+    const sessionID = "sess-primitive-confirm-finding-multi" as SessionID
+    seedSession(sessionID)
+
+    const hypothesis = await runTool(
+      UpsertHypothesisTool,
+      {
+        statement: "Feedback API leaks foreign records for crafted requests",
+        predicate: "multiple crafted requests return exposed records",
+        asset_ref: "https://example.com/api/feedbacks/1",
+      },
+      sessionID,
+    )
+    const hypothesisID = (hypothesis.metadata as any).nodeID as string
+
+    const positiveA = await runTool(
+      RecordEvidenceTool,
+      {
+        type: "artifact",
+        payload_text: "first crafted request returned victim feedback",
+        request: {
+          url: "https://example.com/api/feedbacks/1",
+          method: "GET",
+        },
+        response: {
+          status: 200,
+          body: "{\"record\":\"victim-a\"}",
+        },
+        hypothesis_id: hypothesisID,
+        assertions: [
+          {
+            typed: {
+              kind: "http_status",
+              equals: 200,
+            },
+            control: "positive",
+          },
+        ],
+      },
+      sessionID,
+    )
+    const positiveB = await runTool(
+      RecordEvidenceTool,
+      {
+        type: "artifact",
+        payload_text: "second crafted request returned another victim feedback",
+        request: {
+          url: "https://example.com/api/feedbacks/1",
+          method: "GET",
+        },
+        response: {
+          status: 200,
+          body: "{\"record\":\"victim-b\"}",
+        },
+        hypothesis_id: hypothesisID,
+        assertions: [
+          {
+            typed: {
+              kind: "http_status",
+              equals: 200,
+            },
+            control: "positive",
+          },
+        ],
+      },
+      sessionID,
+    )
+    const negativeA = await runTool(
+      RecordEvidenceTool,
+      {
+        type: "artifact",
+        payload_text: "control request denied for unrelated feedback",
+        request: {
+          url: "https://example.com/api/feedbacks/1",
+          method: "GET",
+        },
+        response: {
+          status: 403,
+          body: "{\"error\":\"blocked\"}",
+        },
+        hypothesis_id: hypothesisID,
+        assertions: [
+          {
+            typed: {
+              kind: "http_status",
+              equals: 200,
+            },
+            control: "negative",
+          },
+        ],
+      },
+      sessionID,
+    )
+    const negativeB = await runTool(
+      RecordEvidenceTool,
+      {
+        type: "artifact",
+        payload_text: "second control request also denied",
+        request: {
+          url: "https://example.com/api/feedbacks/1",
+          method: "GET",
+        },
+        response: {
+          status: 403,
+          body: "{\"error\":\"blocked-again\"}",
+        },
+        hypothesis_id: hypothesisID,
+        assertions: [
+          {
+            typed: {
+              kind: "http_status",
+              equals: 200,
+            },
+            control: "negative",
+          },
+        ],
+      },
+      sessionID,
+    )
+
+    const out = await runTool(
+      ConfirmFindingTool,
+      {
+        hypothesis_id: hypothesisID,
+        title: "Foreign feedback exposure",
+        severity: "high",
+        impact: "Attackers can read multiple victim feedback records",
+        url: "https://example.com/api/feedbacks/1",
+        method: "GET",
+      },
+      sessionID,
+    )
+
+    expect((out.metadata as any).findingID).toContain("SSEC-")
+    expect((out.metadata as any).auto_selected.evidence_refs).toEqual([
+      ...(positiveB.metadata as any).assertionVerificationIDs,
+      ...(positiveA.metadata as any).assertionVerificationIDs,
+    ])
+    expect((out.metadata as any).auto_selected.negative_control_refs).toEqual([
+      ...(negativeB.metadata as any).assertionVerificationIDs,
+      ...(negativeA.metadata as any).assertionVerificationIDs,
+    ])
   })
 })

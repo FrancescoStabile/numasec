@@ -6,6 +6,11 @@ import { Instance } from "../../src/project/instance"
 import { Log } from "../../src/util/log"
 import { tmpdir } from "../fixture/fixture"
 import { Session } from "../../src/session"
+import { MessageV2 } from "../../src/session/message-v2"
+import { MessageID, PartID } from "../../src/session/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
+import { Database, eq } from "../../src/storage/db"
+import { PartTable } from "../../src/session/session.sql"
 import type { Provider } from "../../src/provider/provider"
 
 Log.init({ print: false })
@@ -420,4 +425,150 @@ describe("session.getUsage", () => {
       expect(result.tokens.total).toBe(2000)
     },
   )
+})
+
+describe("session.compaction.prune", () => {
+  test("clears persisted tool payloads when old tool output is compacted", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        const model = {
+          providerID: ProviderID.make("openai"),
+          modelID: ModelID.make("gpt-4"),
+        }
+
+        async function user(text: string) {
+          const msg = await Session.updateMessage({
+            id: MessageID.ascending(),
+            role: "user",
+            sessionID: session.id,
+            agent: "default",
+            model,
+            time: {
+              created: Date.now(),
+            },
+          })
+          await Session.updatePart({
+            id: PartID.ascending(),
+            messageID: msg.id,
+            sessionID: session.id,
+            type: "text",
+            text,
+          })
+          return msg
+        }
+
+        async function tool(parentID: MessageID, output: string) {
+          const msg: MessageV2.Assistant = {
+            id: MessageID.ascending(),
+            role: "assistant",
+            sessionID: session.id,
+            mode: "default",
+            agent: "default",
+            path: {
+              cwd: tmp.path,
+              root: tmp.path,
+            },
+            cost: 0,
+            tokens: {
+              output: 0,
+              input: 0,
+              reasoning: 0,
+              cache: { read: 0, write: 0 },
+            },
+            modelID: model.modelID,
+            providerID: model.providerID,
+            parentID,
+            time: {
+              created: Date.now(),
+            },
+            finish: "tool-calls",
+          }
+          await Session.updateMessage(msg)
+          const id = PartID.ascending()
+          await Session.updatePart({
+            id,
+            messageID: msg.id,
+            sessionID: session.id,
+            type: "tool",
+            callID: `call-${id}`,
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: {
+                command: "echo retained",
+              },
+              output,
+              title: "bash",
+              metadata: {},
+              attachments: [
+                {
+                  id: PartID.ascending(),
+                  messageID: msg.id,
+                  sessionID: session.id,
+                  type: "file",
+                  url: "data:text/plain;base64,cmV0YWluZWQ=",
+                  mime: "text/plain",
+                  filename: "retained.txt",
+                },
+              ],
+              time: {
+                start: Date.now(),
+                end: Date.now(),
+              },
+            },
+          })
+          return id
+        }
+
+        const first = await user("first")
+        const firstPart = await tool(first.id, "a".repeat(120_000))
+        const second = await user("second")
+        await tool(second.id, "b".repeat(120_000))
+        const third = await user("third")
+
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          mode: "default",
+          agent: "default",
+          path: {
+            cwd: tmp.path,
+            root: tmp.path,
+          },
+          cost: 0,
+          tokens: {
+            output: 0,
+            input: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: model.modelID,
+          providerID: model.providerID,
+          parentID: third.id,
+          time: {
+            created: Date.now(),
+          },
+          finish: "end_turn",
+        })
+
+        await user("fourth")
+        await SessionCompaction.prune({
+          sessionID: session.id,
+        })
+
+        const row = Database.use((db) =>
+          db.select().from(PartTable).where(eq(PartTable.id, firstPart)).get(),
+        )
+        expect(row).toBeDefined()
+        const part = row?.data as unknown as { state: MessageV2.ToolStateCompleted }
+        expect(part.state.time.compacted).toBeDefined()
+        expect(part.state.output).toBe(MessageV2.COMPACTED_TOOL_OUTPUT)
+        expect(part.state.attachments).toEqual([])
+      },
+    })
+  })
 })

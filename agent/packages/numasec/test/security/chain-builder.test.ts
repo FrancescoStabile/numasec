@@ -146,4 +146,76 @@ describe("buildChainGroups", () => {
     expect(chains[0].id).toBe("CHAIN-001")
     expect(chains[1].id).toBe("CHAIN-002")
   })
+
+  test("does not create a chain from duplicate default-credential variants on one endpoint", () => {
+    const findings = [
+      makeFinding({
+        id: "SSEC-001" as any,
+        url: "http://example.com/rest/user/login",
+        title: "Default credentials work for admin",
+        severity: "high",
+        cwe_id: "CWE-798",
+        tool_used: "auth_test",
+      }),
+      makeFinding({
+        id: "SSEC-002" as any,
+        url: "http://example.com/rest/user/login",
+        title: "Default credentials work for user",
+        severity: "high",
+        cwe_id: "CWE-798",
+        tool_used: "auth_test",
+      }),
+    ]
+
+    expect(buildChainGroups(findings)).toEqual([])
+  })
+
+  test("does not create a chain from duplicate common-credential variants on one endpoint", () => {
+    const findings = [
+      makeFinding({
+        id: "SSEC-101" as any,
+        url: "http://example.com/rest/user/login",
+        title: "Common credentials work for admin@admin.com",
+        severity: "high",
+        cwe_id: "CWE-521",
+        tool_used: "auth_test",
+      }),
+      makeFinding({
+        id: "SSEC-102" as any,
+        url: "http://example.com/rest/user/login",
+        title: "Common credentials work for test",
+        severity: "high",
+        cwe_id: "CWE-521",
+        tool_used: "auth_test",
+      }),
+    ]
+
+    expect(buildChainGroups(findings)).toEqual([])
+  })
+
+  test("still chains distinct finding families on the same endpoint cluster", () => {
+    const findings = [
+      makeFinding({
+        id: "SSEC-001" as any,
+        url: "http://example.com/api/users",
+        title: "Default credentials work for admin",
+        severity: "high",
+        cwe_id: "CWE-798",
+        tool_used: "auth_test",
+      }),
+      makeFinding({
+        id: "SSEC-002" as any,
+        url: "http://example.com/api/users",
+        title: "Mass assignment accepted protected field role",
+        severity: "high",
+        cwe_id: "CWE-915",
+        tool_used: "access_control_test",
+      }),
+    ]
+
+    const chains = buildChainGroups(findings)
+    expect(chains.length).toBe(1)
+    expect(chains[0].findings.length).toBe(2)
+    expect(chains[0].title).toContain("→")
+  })
 })

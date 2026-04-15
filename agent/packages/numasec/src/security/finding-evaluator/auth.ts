@@ -12,15 +12,25 @@ export const AuthEvaluator: FindingEvaluator = {
       const kind = String(value.kind ?? "auth_issue")
       const title =
         String(value.title ?? "") ||
-        (kind === "default_credentials" ? "Default credentials accepted" : "Authentication weakness detected")
+        (
+          kind === "default_credentials"
+            ? "Default credentials accepted"
+            : kind === "common_credentials"
+              ? "Common credentials accepted"
+              : "Authentication weakness detected"
+        )
       out.push({
         family: "auth",
         title,
         description:
           String(value.evidence ?? "") ||
-          (kind === "default_credentials"
-            ? "A default or seeded credential set successfully authenticated against the target login flow."
-            : "Authentication weakness confirmed with a successful verification step."),
+          (
+            kind === "default_credentials"
+              ? "A default or seeded credential set successfully authenticated against the target login flow."
+              : kind === "common_credentials"
+                ? "A common or weak credential pair successfully authenticated against the target login flow."
+                : "Authentication weakness confirmed with a successful verification step."
+          ),
         severity: (value.technical_severity ?? "high") as any,
         state: "verified",
         confidence: typeof row.confidence === "number" ? row.confidence : 0.9,
@@ -36,7 +46,9 @@ export const AuthEvaluator: FindingEvaluator = {
         remediation:
           kind === "default_credentials"
             ? "Disable default or seeded credentials, force unique passwords on first use, and monitor for credential stuffing against bootstrap accounts."
-            : "Harden the authentication flow and remove weak bootstrap or bypass conditions.",
+            : kind === "common_credentials"
+              ? "Reject common or weak credentials, enforce stronger password policy, and monitor for credential stuffing against exposed login flows."
+              : "Harden the authentication flow and remove weak bootstrap or bypass conditions.",
         reportable: true,
         suppression_reason: "",
         node_ids: [row.id],

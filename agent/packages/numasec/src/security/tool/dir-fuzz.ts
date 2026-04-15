@@ -30,13 +30,14 @@ export const DirFuzzTool = Tool.define("dir_fuzz", {
     await ctx.ask({
       permission: "dir_fuzz",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url } as Record<string, any>,
     })
 
     const profile = await runObserveSurfaceProfile(
       {
         target: params.url,
+        sessionID: ctx.sessionID,
         modes: ["dir_fuzz"],
         wordlist: params.wordlist,
         extensions: params.extensions,

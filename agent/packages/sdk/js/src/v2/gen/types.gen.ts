@@ -68,21 +68,6 @@ export type EventGlobalDisposed = {
   }
 }
 
-export type EventLspClientDiagnostics = {
-  type: "lsp.client.diagnostics"
-  properties: {
-    serverID: string
-    path: string
-  }
-}
-
-export type EventLspUpdated = {
-  type: "lsp.updated"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
 export type EventMessagePartDelta = {
   type: "message.part.delta"
   properties: {
@@ -230,21 +215,6 @@ export type EventSessionCompacted = {
   }
 }
 
-export type EventFileEdited = {
-  type: "file.edited"
-  properties: {
-    file: string
-  }
-}
-
-export type EventFileWatcherUpdated = {
-  type: "file.watcher.updated"
-  properties: {
-    file: string
-    event: "add" | "change" | "unlink"
-  }
-}
-
 export type Todo = {
   /**
    * Brief description of the task
@@ -281,7 +251,6 @@ export type EventTuiCommandExecute = {
     command:
       | "session.list"
       | "session.new"
-      | "session.share"
       | "session.interrupt"
       | "session.compact"
       | "session.page.up"
@@ -440,6 +409,21 @@ export type EventSessionError = {
   }
 }
 
+export type EventFileEdited = {
+  type: "file.edited"
+  properties: {
+    file: string
+  }
+}
+
+export type EventFileWatcherUpdated = {
+  type: "file.watcher.updated"
+  properties: {
+    file: string
+    event: "add" | "change" | "unlink"
+  }
+}
+
 export type EventVcsBranchUpdated = {
   type: "vcs.branch.updated"
   properties: {
@@ -497,21 +481,6 @@ export type EventPtyDeleted = {
   type: "pty.deleted"
   properties: {
     id: string
-  }
-}
-
-export type EventWorktreeReady = {
-  type: "worktree.ready"
-  properties: {
-    name: string
-    branch: string
-  }
-}
-
-export type EventWorktreeFailed = {
-  type: "worktree.failed"
-  properties: {
-    message: string
   }
 }
 
@@ -743,6 +712,9 @@ export type ToolStateCompleted = {
     [key: string]: unknown
   }
   output: string
+  output_v2?: {
+    [key: string]: unknown
+  }
   title: string
   metadata: {
     [key: string]: unknown
@@ -798,7 +770,7 @@ export type StepFinishPart = {
   sessionID: string
   messageID: string
   type: "step-finish"
-  reason: string
+  reason?: string
   snapshot?: string
   cost: number
   tokens: {
@@ -970,8 +942,6 @@ export type Event =
   | EventServerInstanceDisposed
   | EventServerConnected
   | EventGlobalDisposed
-  | EventLspClientDiagnostics
-  | EventLspUpdated
   | EventMessagePartDelta
   | EventPermissionAsked
   | EventPermissionReplied
@@ -981,8 +951,6 @@ export type Event =
   | EventQuestionReplied
   | EventQuestionRejected
   | EventSessionCompacted
-  | EventFileEdited
-  | EventFileWatcherUpdated
   | EventTodoUpdated
   | EventTuiPromptAppend
   | EventTuiCommandExecute
@@ -993,6 +961,8 @@ export type Event =
   | EventCommandExecuted
   | EventSessionDiff
   | EventSessionError
+  | EventFileEdited
+  | EventFileWatcherUpdated
   | EventVcsBranchUpdated
   | EventWorkspaceReady
   | EventWorkspaceFailed
@@ -1000,8 +970,6 @@ export type Event =
   | EventPtyUpdated
   | EventPtyExited
   | EventPtyDeleted
-  | EventWorktreeReady
-  | EventWorktreeFailed
   | EventMessageUpdated
   | EventMessageRemoved
   | EventMessagePartUpdated
@@ -1170,7 +1138,6 @@ export type PermissionConfig =
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
       codesearch?: PermissionActionConfig
-      lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
       [key: string]: PermissionRuleConfig | Array<string> | PermissionActionConfig | undefined
@@ -1453,14 +1420,6 @@ export type Config = {
    */
   snapshot?: boolean
   /**
-   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
-   */
-  share?: "manual" | "auto" | "disabled"
-  /**
-   * @deprecated Use 'share' field instead. Share newly created sessions automatically
-   */
-  autoshare?: boolean
-  /**
    * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
    */
   autoupdate?: boolean | "notify"
@@ -1538,25 +1497,6 @@ export type Config = {
           extensions?: Array<string>
         }
       }
-  lsp?:
-    | false
-    | {
-        [key: string]:
-          | {
-              disabled: true
-            }
-          | {
-              command: Array<string>
-              extensions?: Array<string>
-              disabled?: boolean
-              env?: {
-                [key: string]: string
-              }
-              initialization?: {
-                [key: string]: unknown
-              }
-            }
-      }
   /**
    * Additional instruction files or patterns to include
    */
@@ -1565,12 +1505,6 @@ export type Config = {
   permission?: PermissionConfig
   tools?: {
     [key: string]: boolean
-  }
-  enterprise?: {
-    /**
-     * Enterprise URL
-     */
-    url?: string
   }
   compaction?: {
     /**
@@ -1753,28 +1687,6 @@ export type Workspace = {
   projectID: string
 }
 
-export type Worktree = {
-  name: string
-  branch: string
-  directory: string
-}
-
-export type WorktreeCreateInput = {
-  name?: string
-  /**
-   * Additional startup script to run after the project's start command
-   */
-  startCommand?: string
-}
-
-export type WorktreeRemoveInput = {
-  directory: string
-}
-
-export type WorktreeResetInput = {
-  directory: string
-}
-
 export type ProjectSummary = {
   id: string
   name?: string
@@ -1910,15 +1822,6 @@ export type ProviderAuthAuthorization = {
   instructions: string
 }
 
-export type Symbol = {
-  name: string
-  kind: number
-  location: {
-    uri: string
-    range: Range
-  }
-}
-
 export type FileNode = {
   name: string
   path: string
@@ -2028,13 +1931,6 @@ export type Agent = {
     [key: string]: unknown
   }
   steps?: number
-}
-
-export type LspStatus = {
-  id: string
-  name: string
-  root: string
-  status: "connected" | "error"
 }
 
 export type FormatterStatus = {
@@ -2742,109 +2638,6 @@ export type ExperimentalWorkspaceRemoveResponses = {
 export type ExperimentalWorkspaceRemoveResponse =
   ExperimentalWorkspaceRemoveResponses[keyof ExperimentalWorkspaceRemoveResponses]
 
-export type WorktreeRemoveData = {
-  body?: WorktreeRemoveInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree"
-}
-
-export type WorktreeRemoveErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type WorktreeRemoveError = WorktreeRemoveErrors[keyof WorktreeRemoveErrors]
-
-export type WorktreeRemoveResponses = {
-  /**
-   * Worktree removed
-   */
-  200: boolean
-}
-
-export type WorktreeRemoveResponse = WorktreeRemoveResponses[keyof WorktreeRemoveResponses]
-
-export type WorktreeListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree"
-}
-
-export type WorktreeListResponses = {
-  /**
-   * List of worktree directories
-   */
-  200: Array<string>
-}
-
-export type WorktreeListResponse = WorktreeListResponses[keyof WorktreeListResponses]
-
-export type WorktreeCreateData = {
-  body?: WorktreeCreateInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree"
-}
-
-export type WorktreeCreateErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type WorktreeCreateError = WorktreeCreateErrors[keyof WorktreeCreateErrors]
-
-export type WorktreeCreateResponses = {
-  /**
-   * Worktree created
-   */
-  200: Worktree
-}
-
-export type WorktreeCreateResponse = WorktreeCreateResponses[keyof WorktreeCreateResponses]
-
-export type WorktreeResetData = {
-  body?: WorktreeResetInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/worktree/reset"
-}
-
-export type WorktreeResetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type WorktreeResetError = WorktreeResetErrors[keyof WorktreeResetErrors]
-
-export type WorktreeResetResponses = {
-  /**
-   * Worktree reset
-   */
-  200: boolean
-}
-
-export type WorktreeResetResponse = WorktreeResetResponses[keyof WorktreeResetResponses]
-
 export type ExperimentalSessionListData = {
   body?: never
   path?: never
@@ -3283,74 +3076,6 @@ export type SessionAbortResponses = {
 }
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
-
-export type SessionUnshareData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/share"
-}
-
-export type SessionUnshareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionUnshareError = SessionUnshareErrors[keyof SessionUnshareErrors]
-
-export type SessionUnshareResponses = {
-  /**
-   * Successfully unshared session
-   */
-  200: Session
-}
-
-export type SessionUnshareResponse = SessionUnshareResponses[keyof SessionUnshareResponses]
-
-export type SessionShareData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/share"
-}
-
-export type SessionShareErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type SessionShareError = SessionShareErrors[keyof SessionShareErrors]
-
-export type SessionShareResponses = {
-  /**
-   * Successfully shared session
-   */
-  200: Session
-}
-
-export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
 export type SessionDiffData = {
   body?: never
@@ -3873,6 +3598,7 @@ export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnre
 export type PermissionRespondData = {
   body?: {
     response: "once" | "always" | "reject"
+    message?: string
   }
   path: {
     sessionID: string
@@ -3906,6 +3632,337 @@ export type PermissionRespondResponses = {
 }
 
 export type PermissionRespondResponse = PermissionRespondResponses[keyof PermissionRespondResponses]
+
+export type SecurityReadData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/security/{sessionID}/read"
+}
+
+export type SecurityReadResponses = {
+  /**
+   * Canonical security state
+   */
+  200: unknown
+}
+
+export type SecurityReadSummaryData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    since?: number
+  }
+  url: "/security/{sessionID}/read/summary"
+}
+
+export type SecurityReadSummaryResponses = {
+  /**
+   * Security sync summary
+   */
+  200: {
+    session_id: string
+    graph_enabled: boolean
+    generated_at: number
+    summary: {
+      scope_count: number
+      hypothesis_count: number
+      evidence_node_count: number
+      evidence_edge_count: number
+      finding_count: number
+      chain_count: number
+      coverage_count: number
+    }
+    checkpoints: {
+      scope: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+      }
+      hypotheses: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+      }
+      findings: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+      }
+      chains: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+      }
+      coverage: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+      }
+      evidence_nodes: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+        enabled: boolean
+      }
+      evidence_edges: {
+        count: number
+        latest_time_updated: number | null
+        changed: boolean
+        enabled: boolean
+      }
+    }
+    sync: {
+      since: number | null
+    }
+  }
+}
+
+export type SecurityReadSummaryResponse = SecurityReadSummaryResponses[keyof SecurityReadSummaryResponses]
+
+export type SecurityFindingsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    severity?: "critical" | "high" | "medium" | "low" | "info"
+    limit?: number
+  }
+  url: "/security/{sessionID}/findings"
+}
+
+export type SecurityFindingsResponses = {
+  /**
+   * Findings projection
+   */
+  200: unknown
+}
+
+export type SecurityFindingsSyncData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: number
+    since?: number
+    cursor?: string
+    severity?: "critical" | "high" | "medium" | "low" | "info"
+  }
+  url: "/security/{sessionID}/findings/sync"
+}
+
+export type SecurityFindingsSyncResponses = {
+  /**
+   * Findings sync projection
+   */
+  200: {
+    items: Array<{
+      id: string
+      time_updated: number
+      [key: string]: unknown | string | number
+    }>
+    sync: {
+      limit: number
+      cursor: string | null
+      since: number | null
+      next_cursor: string | null
+      has_more: boolean
+    }
+  }
+}
+
+export type SecurityFindingsSyncResponse = SecurityFindingsSyncResponses[keyof SecurityFindingsSyncResponses]
+
+export type SecurityChainsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/security/{sessionID}/chains"
+}
+
+export type SecurityChainsResponses = {
+  /**
+   * Attack chain projection
+   */
+  200: unknown
+}
+
+export type SecurityChainsSyncData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: number
+    since?: number
+    cursor?: string
+  }
+  url: "/security/{sessionID}/chains/sync"
+}
+
+export type SecurityChainsSyncResponses = {
+  /**
+   * Attack chain sync projection
+   */
+  200: {
+    items: Array<{
+      chain_id: string
+      severity: string
+      finding_count: number
+      finding_ids: Array<string>
+      urls: Array<string>
+      time_created: number
+      time_updated: number
+    }>
+    sync: {
+      limit: number
+      cursor: string | null
+      since: number | null
+      next_cursor: string | null
+      has_more: boolean
+    }
+  }
+}
+
+export type SecurityChainsSyncResponse = SecurityChainsSyncResponses[keyof SecurityChainsSyncResponses]
+
+export type SecurityEvidenceNodesData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/security/{sessionID}/evidence/nodes"
+}
+
+export type SecurityEvidenceNodesResponses = {
+  /**
+   * Evidence nodes
+   */
+  200: unknown
+}
+
+export type SecurityEvidenceNodesSyncData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: number
+    since?: number
+    cursor?: string
+  }
+  url: "/security/{sessionID}/evidence/nodes/sync"
+}
+
+export type SecurityEvidenceNodesSyncResponses = {
+  /**
+   * Evidence node sync projection
+   */
+  200: {
+    enabled: boolean
+    items: Array<{
+      id: string
+      time_updated: number
+      [key: string]: unknown | string | number
+    }>
+    sync: {
+      limit: number
+      cursor: string | null
+      since: number | null
+      next_cursor: string | null
+      has_more: boolean
+    }
+  }
+}
+
+export type SecurityEvidenceNodesSyncResponse =
+  SecurityEvidenceNodesSyncResponses[keyof SecurityEvidenceNodesSyncResponses]
+
+export type SecurityEvidenceEdgesData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/security/{sessionID}/evidence/edges"
+}
+
+export type SecurityEvidenceEdgesResponses = {
+  /**
+   * Evidence edges
+   */
+  200: unknown
+}
+
+export type SecurityEvidenceEdgesSyncData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: number
+    since?: number
+    cursor?: string
+  }
+  url: "/security/{sessionID}/evidence/edges/sync"
+}
+
+export type SecurityEvidenceEdgesSyncResponses = {
+  /**
+   * Evidence edge sync projection
+   */
+  200: {
+    enabled: boolean
+    items: Array<{
+      id: string
+      time_updated: number
+      [key: string]: unknown | string | number
+    }>
+    sync: {
+      limit: number
+      cursor: string | null
+      since: number | null
+      next_cursor: string | null
+      has_more: boolean
+    }
+  }
+}
+
+export type SecurityEvidenceEdgesSyncResponse =
+  SecurityEvidenceEdgesSyncResponses[keyof SecurityEvidenceEdgesSyncResponses]
 
 export type PermissionReplyData = {
   body?: {
@@ -4306,26 +4363,6 @@ export type FindFilesResponses = {
 }
 
 export type FindFilesResponse = FindFilesResponses[keyof FindFilesResponses]
-
-export type FindSymbolsData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    query: string
-  }
-  url: "/find/symbol"
-}
-
-export type FindSymbolsResponses = {
-  /**
-   * Symbols
-   */
-  200: Array<Symbol>
-}
-
-export type FindSymbolsResponse = FindSymbolsResponses[keyof FindSymbolsResponses]
 
 export type FileListData = {
   body?: never
@@ -5117,25 +5154,6 @@ export type AppSkillsResponses = {
 }
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
-
-export type LspStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/lsp"
-}
-
-export type LspStatusResponses = {
-  /**
-   * LSP server status
-   */
-  200: Array<LspStatus>
-}
-
-export type LspStatusResponse = LspStatusResponses[keyof LspStatusResponses]
 
 export type FormatterStatusData = {
   body?: never

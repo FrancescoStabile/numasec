@@ -50,11 +50,11 @@ chains:
         tool: "http_request"
       - step: 3
         action: "Store credentials for post-auth testing"
-        tool: "relay_credentials"
+        tool: "record_evidence"
       - step: 4
         action: "Execute full post-auth assessment"
-        technique: "plan(action='post_auth', token=<captured_token>)"
-        tool: "plan"
+        technique: "Use plan_next with auth-obtained signals and the captured token/session context"
+        tool: "plan_next"
     impact: "Unauthorized admin access, data breach"
     cwe_chain: ["CWE-798", "CWE-284", "CWE-200"]
 

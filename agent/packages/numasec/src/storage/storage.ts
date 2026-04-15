@@ -135,21 +135,31 @@ export namespace Storage {
     },
   ]
 
-  const state = lazy(async () => {
+  export async function init() {
     const dir = path.join(Global.Path.data, "storage")
-    const migration = await Filesystem.readJson<string>(path.join(dir, "migration"))
-      .then((x) => parseInt(x))
+    const legacy = path.resolve(dir, "../project")
+    if (!(await Filesystem.isDir(dir)) && !(await Filesystem.isDir(legacy))) {
+      return { dir }
+    }
+    const file = path.join(dir, "migration")
+    const migration = await Filesystem.readText(file)
+      .then((x) => {
+        const value = parseInt(x, 10)
+        return Number.isNaN(value) ? 0 : value
+      })
       .catch(() => 0)
     for (let index = migration; index < MIGRATIONS.length; index++) {
       log.info("running migration", { index })
       const migration = MIGRATIONS[index]
-      await migration(dir).catch(() => log.error("failed to run migration", { index }))
-      await Filesystem.write(path.join(dir, "migration"), (index + 1).toString())
+      await migration(dir)
+      await Filesystem.write(file, (index + 1).toString())
     }
     return {
       dir,
     }
-  })
+  }
+
+  const state = lazy(init)
 
   export async function remove(key: string[]) {
     const dir = await state().then((x) => x.dir)

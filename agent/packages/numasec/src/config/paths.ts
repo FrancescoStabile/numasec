@@ -90,7 +90,7 @@ export namespace ConfigPaths {
     })
   }
 
-  type ParseSource = string | { source: string; dir: string }
+  type ParseSource = string | { source: string; dir: string; env?: Record<string, string | undefined> }
 
   function source(input: ParseSource) {
     return typeof input === "string" ? input : input.source
@@ -100,9 +100,16 @@ export namespace ConfigPaths {
     return typeof input === "string" ? path.dirname(input) : input.dir
   }
 
+  function env(input: ParseSource) {
+    return typeof input === "string" ? undefined : input.env
+  }
+
   /** Apply {env:VAR} and {file:path} substitutions to config text. */
   async function substitute(text: string, input: ParseSource, missing: "error" | "empty" = "error") {
+    const scoped = env(input)
     text = text.replace(/\{env:([^}]+)\}/g, (_, varName) => {
+      const value = scoped?.[varName]
+      if (value !== undefined) return value
       return process.env[varName] || ""
     })
 

@@ -9,7 +9,7 @@
   <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=flat-square&color=DC143C" alt="GitHub Stars" /></a>
   <a href="#why-numasec"><img src="https://img.shields.io/badge/AI%20Cyber%20Security-Agent-DC143C?style=flat-square" alt="AI Cyber Security Agent" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License" /></a>
-  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=main&style=flat-square&label=build" alt="Build" /></a>
+  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=dev&style=flat-square&label=build" alt="Build" /></a>
   <a href="https://github.com/FrancescoStabile/numasec/releases/latest"><img src="https://img.shields.io/github/v/release/FrancescoStabile/numasec?style=flat-square&label=release" alt="Release" /></a>
 </p>
 
@@ -36,9 +36,7 @@ npm install -g numasec
 numasec
 ```
 
-Pick your provider, type `pentest https://yourapp.com`, and it starts.
-
-**Recommended cheap model:** **Grok 4 Fast**
+Connect a provider, choose a model, type `pentest https://yourapp.com`, and it starts.
 
 ## Why numasec
 
@@ -55,7 +53,7 @@ Until now.
 - **Recon. Exploit. Chain vulnerabilities. Generate reports.** Default credentials → admin access → user enumeration. SQLi → token issuance → account takeover. IDOR → data exposure → business impact.
 - **Single binary, no Python tax.** Pure TypeScript. No Docker required. `bun build` produces a single executable.
 - **Attack paths, not isolated findings.** Every serious run becomes graph nodes and edges — evidence, hypotheses, findings, resources, attack paths — not a pile of disconnected scanner output.
-- **Works with any LLM.** xAI, Anthropic, OpenAI, Gemini, OpenRouter, Bedrock, GitHub Models, Ollama, and more. **Grok 4 Fast** is the recommended cheap default right now.
+- **Works with hosted and local LLM providers.** Use the provider you already trust for reasoning and orchestration; numasec still executes the scanning, evidence capture, chaining, and reporting locally.
 
 <p align="center">
   <a href="https://github.com/FrancescoStabile/numasec/stargazers">
@@ -151,15 +149,12 @@ Reports include executive summary, risk score, OWASP coverage matrix, attack pat
 
 ## LLM Providers
 
-All 37 tools execute inside numasec. You bring any LLM.
+All 37 tools execute inside numasec. The model decides what to do next; numasec performs the recon, testing, evidence capture, and reporting.
 
-| Provider / model | Cost profile | Why |
+| Use case | Provider examples | Notes |
 |---|---|---|
-| **xAI / Grok 4 Fast** | **Cheap** | Best value right now. Recommended budget default for numasec. |
-| GPT-4.1 | Medium | Stable high-quality analysis |
-| Claude Sonnet 4 | Premium | Best reasoning for deep chains and harder investigations |
-| DeepSeek V3 | Cheap | Budget fallback |
-| **Ollama (local)** | **$0** | Run locally. Full privacy |
+| Hosted reasoning | Anthropic, OpenAI, xAI, Google, OpenRouter, Bedrock, GitHub Models | Best when you want stronger reasoning on harder chains and longer investigations |
+| Local / private | Ollama | Best when you want local execution and no external model API spend |
 
 ## Installation
 
@@ -176,7 +171,7 @@ For browser automation, install Chromium once:
 npx playwright install chromium
 ```
 
-### From source
+### From source (local build)
 
 ```bash
 git clone https://github.com/FrancescoStabile/numasec.git
@@ -184,13 +179,15 @@ cd numasec
 bash install.sh
 ```
 
+This installs a **local** build from your current checkout. Pull updates in the repo, then rerun `bash install.sh` to refresh it.
+
 Or manually:
 
 ```bash
 cd numasec/agent
 bun install
 cd packages/numasec
-bun run build
+NUMASEC_CHANNEL=local NUMASEC_VERSION=local bun run build
 # Binary at dist/numasec-<platform>-<arch>/bin/numasec
 ```
 
@@ -237,9 +234,12 @@ numasec                  # Launch the TUI
 | `/evidence show <id-or-title>` | Show full evidence for one finding |
 | `/chains list` | List derived attack paths |
 | `/finding list` | List findings by severity |
+| `/finding finalize <id-or-title>` | Finalize one provisional finding through the closure path |
 | `/remediation plan` | Generate prioritized remediation actions |
 | `/retest run [filter]` | Replay and retest saved findings |
-| `/report generate [format] [--out <path>]` | Generate report (`markdown`, `html`, `sarif`) and optionally write to file |
+| `/report status` | Show report readiness, blockers, and whether final export is currently possible |
+| `/report generate [format] [--out <path>] [--final] [--note <text>]` | Generate report (`markdown`, `html`, `sarif`); default is a working report, `--final` enforces readiness |
+| `/report finalize [format] [--out <path>] [--working] [--note <text>]` | Run the closure-aware report path; blocks with exact blocker commands instead of drifting |
 
 Legacy aliases still supported in v1.x:
 
@@ -266,6 +266,9 @@ cd packages/numasec && bun test --timeout 30000
 # Runtime validation
 cd packages/numasec && bun run test:runtime
 
+# Benchmark proof pack (runtime eval + live fixture + optional local Juice Shop)
+cd packages/numasec && bun run test:benchmark-proof
+
 # Build
 cd packages/numasec && bun run build
 ```
@@ -275,7 +278,7 @@ cd packages/numasec && bun run build
 Issues, PRs, and ideas are welcome.
 
 - **Found a bug?** Open an issue with steps to reproduce.
-- **Want to contribute code?** Fork, branch from `main`, open a PR.
+- **Want to contribute code?** Fork, branch from `dev`, open a PR.
 
 <p align="center">
   Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>.

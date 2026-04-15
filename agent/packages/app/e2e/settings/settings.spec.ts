@@ -117,7 +117,7 @@ test("changing theme persists in localStorage", async ({ page, gotoSession }) =>
   expect(dataTheme).toBe(storedThemeId)
 })
 
-test("legacy oc-1 theme migrates to oc-2", async ({ page, gotoSession }) => {
+test("legacy oc-1 theme migrates to default", async ({ page, gotoSession }) => {
   await page.addInitScript(() => {
     localStorage.setItem("numasec-theme-id", "oc-1")
     localStorage.setItem("numasec-theme-css-light", "--background-base:#fff;")
@@ -126,7 +126,7 @@ test("legacy oc-1 theme migrates to oc-2", async ({ page, gotoSession }) => {
 
   await gotoSession()
 
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "oc-2")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "default")
 
   await expect
     .poll(async () => {
@@ -134,7 +134,7 @@ test("legacy oc-1 theme migrates to oc-2", async ({ page, gotoSession }) => {
         return localStorage.getItem("numasec-theme-id")
       })
     })
-    .toBe("oc-2")
+    .toBe("default")
 
   await expect
     .poll(async () => {

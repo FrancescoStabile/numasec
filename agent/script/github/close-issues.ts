@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-const repo = "anomalyco/numasec"
+const repo = "FrancescoStabile/numasec"
 const days = 60
 const msg =
   "To stay organized issues are automatically closed after 90 days of no activity. If the issue is still relevant please open a new one."

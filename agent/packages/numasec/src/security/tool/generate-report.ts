@@ -8,92 +8,16 @@ import z from "zod"
 import path from "path"
 import { mkdir } from "fs/promises"
 import { Tool } from "../../tool/tool"
-import type { SessionID } from "../../session/schema"
-import { and, Database, eq } from "../../storage/db"
-import { EvidenceNodeTable } from "../evidence.sql"
-import { FindingTable } from "../security.sql"
 import { generateSarif, generateMarkdown, generateHtml, calculateRiskScore } from "../report/generators"
-import type { ChainGroup } from "../chain-builder"
 import * as ChainProjection from "../chain-projection"
-import { projectFindings } from "../finding-projector"
+import { readEngagementTruth } from "../report/readiness"
+import { canonicalSecuritySessionID } from "../security-session"
+import { FindingTable } from "../security.sql"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 type Finding = (typeof FindingTable)["$inferSelect"]
 
-interface ReportProjection {
-  all: Finding[]
-  verified: Finding[]
-  provisional: Finding[]
-  suppressed: Finding[]
-  chains: ChainGroup[]
-  snapshot: ChainProjection.DeriveAttackPathResult
-  canonical: {
-    input_count: number
-    canonical_count: number
-    dropped_superseded_ids: string[]
-    dropped_duplicate_ids: string[]
-  }
-  counts: {
-    raw: number
-    verified: number
-    provisional: number
-    suppressed: number
-    refuted: number
-    reportable: number
-    promotion_gaps: number
-  }
-  promotion_gap_ids: string[]
-}
-
-interface ClosureStatus {
-  hypothesis_open: number
-  hypothesis_critical_open: number
-  hypothesis_open_ids: string[]
-}
-
-function readReportProjection(sessionID: SessionID): ReportProjection {
-  const projected = projectFindings(sessionID)
-  const verified = ChainProjection.deriveAttackPathProjection({
-    sessionID,
-    includeFalsePositive: false,
-    states: ["verified"],
-  })
-  const all = projected.rows
-  return {
-    all,
-    verified: verified.findings,
-    provisional: all.filter((item) => item.reportable && item.state === "provisional"),
-    suppressed: all.filter((item) => item.state === "suppressed" || item.state === "refuted" || !item.reportable),
-    chains: verified.chains,
-    snapshot: verified,
-    canonical: verified.canonical,
-    counts: projected.counts,
-    promotion_gap_ids: projected.promotion_gap_ids,
-  }
-}
-
-function readClosureStatus(sessionID: SessionID): ClosureStatus {
-  const rows = Database.use((db) =>
-    db
-      .select()
-      .from(EvidenceNodeTable)
-      .where(and(eq(EvidenceNodeTable.session_id, sessionID), eq(EvidenceNodeTable.type, "hypothesis")))
-      .all(),
-  )
-  const openStatuses = new Set(["open", "probing", "active", "new"])
-  const open: string[] = []
-  let critical = 0
-  for (const row of rows) {
-    if (!openStatuses.has(row.status)) continue
-    open.push(row.id)
-    if (row.confidence >= 0.75) critical += 1
-  }
-  return {
-    hypothesis_open: open.length,
-    hypothesis_critical_open: critical,
-    hypothesis_open_ids: open.slice(0, 20),
-  }
-}
+const BLOCKED = "REPORT_BLOCKED_INCOMPLETE_STATE"
 
 function chooseTargetUrl(findings: Finding[]) {
   const counts = new Map<string, number>()
@@ -112,50 +36,80 @@ function chooseTargetUrl(findings: Finding[]) {
   return best || "unknown"
 }
 
+function reportMode(params: {
+  mode: "working" | "final"
+  strict?: boolean
+}) {
+  if (params.strict === true) return "final"
+  return params.mode
+}
+
+function reportNote(params: {
+  note?: string
+  incomplete_reason?: string
+}) {
+  return (params.note ?? params.incomplete_reason ?? "").trim()
+}
+
 const DESCRIPTION = `Generate a security assessment report from saved findings.
 Formats: sarif (for CI/CD), markdown (for documentation), html (self-contained visual report).
 
-The report includes:
-- Executive summary with risk score
-- All findings grouped by severity
-- CWE/CVSS/OWASP enrichment data
-- Evidence and remediation for each finding
-- OWASP Top 10 coverage analysis
-
-Call this at the END of an assessment after all findings have been saved.`
+Default behavior renders a working report from the current verified state.
+Use mode=final (or strict=true) when you need a closure-gated final report.`
 
 export const GenerateReportTool = Tool.define("generate_report", {
   description: DESCRIPTION,
   parameters: z.object({
     format: z.enum(["sarif", "markdown", "html"]).default("markdown").describe("Report format"),
     target_url: z.string().optional().describe("Target URL (auto-detected from findings if omitted)"),
-    allow_incomplete: z.boolean().optional().describe("Allow report generation when closure checks fail"),
-    incomplete_reason: z.string().optional().describe("Required when allow_incomplete=true and critical hypotheses are still open"),
+    mode: z
+      .enum(["working", "final"])
+      .default("working")
+      .describe("working renders the current report state; final enforces closure readiness"),
+    strict: z.boolean().optional().describe("Deprecated alias for mode=final"),
+    note: z.string().optional().describe("Optional operator note embedded in the rendered report"),
+    allow_incomplete: z
+      .boolean()
+      .optional()
+      .describe("Deprecated compatibility flag; working mode is now the default interactive behavior"),
+    incomplete_reason: z.string().optional().describe("Deprecated alias for note"),
     output_path: z.string().optional().describe("Optional file path to write the generated report"),
   }),
   async execute(params, ctx) {
-    const projection = readReportProjection(ctx.sessionID)
-    ChainProjection.persistAttackPathProjection(ctx.sessionID, projection.snapshot)
-    const closure = readClosureStatus(ctx.sessionID)
-    const truthReasons: string[] = []
-    if (closure.hypothesis_critical_open > 0) {
-      truthReasons.push(`${closure.hypothesis_critical_open} critical hypothesis/hypotheses still open`)
-    }
-    if (projection.counts.promotion_gaps > 0) {
-      truthReasons.push(`${projection.counts.promotion_gaps} verification(s) not promoted into findings`)
-    }
-    if (projection.provisional.length > 0) {
-      truthReasons.push(`${projection.provisional.length} provisional reportable finding(s) not counted as verified`)
-    }
-    const incomplete = truthReasons.length > 0
-    if (incomplete && params.allow_incomplete !== true) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
+    const truth = readEngagementTruth(sessionID)
+    const readiness = truth.readiness
+    ChainProjection.persistAttackPathProjection(sessionID, readiness.projection.snapshot)
+
+    if (!readiness.working_ready) {
       return {
-        title: "Report blocked: closure incomplete",
+        title: "No findings to report",
         metadata: {
-          closure,
-          incomplete,
-          truthReasons,
-          projection: projection.counts,
+          count: 0,
+          requestedMode: reportMode(params),
+          state: readiness.state,
+          engagementRevision: truth.revision,
+        } as any,
+        envelope: makeToolResultEnvelope({
+          status: "inconclusive",
+          observations: [{ type: "report", generated: false, finding_count: 0 }],
+        }),
+        output: "No findings saved for this session. Save findings first with save_finding or upsert_finding.",
+      }
+    }
+
+    const requested = reportMode(params)
+    if (requested === "final" && !readiness.final_ready) {
+      return {
+        title: `Final report blocked: readiness incomplete [${BLOCKED}]`,
+        metadata: {
+          blocked_code: BLOCKED,
+          requestedMode: requested,
+          state: readiness.state,
+          closure: readiness.closure,
+          truthReasons: readiness.truth_reasons,
+          projection: readiness.projection.counts,
+          engagementRevision: truth.revision,
         } as any,
         envelope: makeToolResultEnvelope({
           status: "inconclusive",
@@ -163,95 +117,95 @@ export const GenerateReportTool = Tool.define("generate_report", {
             {
               type: "report_closure",
               blocked: true,
-              open_hypotheses: closure.hypothesis_open,
-              open_critical_hypotheses: closure.hypothesis_critical_open,
+              blocked_code: BLOCKED,
+              requested_mode: requested,
+              working_ready: readiness.working_ready,
+              final_ready: readiness.final_ready,
+              open_hypotheses: readiness.closure.hypothesis_open,
+              open_critical_hypotheses: readiness.closure.hypothesis_critical_open,
             },
           ],
           metrics: {
-            closure_open_hypotheses: closure.hypothesis_open,
-            closure_open_critical_hypotheses: closure.hypothesis_critical_open,
-            promotion_gaps: projection.counts.promotion_gaps,
-            provisional_reportable_findings: projection.provisional.length,
+            closure_open_hypotheses: readiness.closure.hypothesis_open,
+            closure_open_critical_hypotheses: readiness.closure.hypothesis_critical_open,
+            promotion_gaps: readiness.projection.counts.promotion_gaps,
+            provisional_reportable_findings: readiness.projection.provisional.length,
           },
         }),
         output: [
-          "Report generation blocked by closure policy.",
-          `Open hypotheses: ${closure.hypothesis_open}`,
-          `Open critical hypotheses: ${closure.hypothesis_critical_open}`,
-          `Promotion gaps: ${projection.counts.promotion_gaps}`,
-          `Provisional reportable findings: ${projection.provisional.length}`,
-          ...truthReasons.map((item) => `- ${item}`),
-          "Set allow_incomplete=true and provide incomplete_reason to override.",
+          BLOCKED,
+          "Final report generation blocked by readiness policy.",
+          "Working report generation is still available.",
+          "Do not narrate this session as a final report from memory.",
+          `Verified findings: ${readiness.projection.counts.verified}`,
+          `Provisional findings: ${readiness.projection.provisional.length}`,
+          `Promotion gaps: ${readiness.projection.counts.promotion_gaps}`,
+          `Open hypotheses: ${readiness.closure.hypothesis_open}`,
+          `Open critical hypotheses: ${readiness.closure.hypothesis_critical_open}`,
+          ...readiness.truth_reasons.map((item) => `- ${item}`),
+          "Run report_status to inspect readiness, or rerun generate_report in working mode (the interactive default).",
         ].join("\n"),
       }
     }
-    if (incomplete && params.allow_incomplete === true) {
-      const reason = (params.incomplete_reason ?? "").trim()
-      if (!reason) {
-        throw new Error("generate_report requires incomplete_reason when overriding closure policy")
-      }
-    }
 
+    const projection = readiness.projection
     const findings = projection.verified
     const chains = projection.chains
     const canonical = projection.canonical
-
-    if (projection.all.length === 0) {
-      return {
-        title: "No findings to report",
-        metadata: { count: 0 } as any,
-        envelope: makeToolResultEnvelope({
-          status: "inconclusive",
-          observations: [{ type: "report", generated: false, finding_count: 0 }],
-        }),
-        output: "No findings saved for this session. Save findings first with save_finding.",
-      }
-    }
-
     const targetUrl = params.target_url ?? chooseTargetUrl(projection.all)
     const verifiedRiskScore = calculateRiskScore(findings)
     const upperBoundRiskScore = calculateRiskScore([...findings, ...projection.provisional])
-    const reason = incomplete ? (params.incomplete_reason ?? "").trim() : ""
+    const note = reportNote(params)
+    const state = readiness.final_ready ? "final" : "working_draft"
+    const incomplete = state === "working_draft"
 
     let report: string
     switch (params.format) {
       case "sarif":
         report = generateSarif(findings, targetUrl, chains, {
           incomplete,
-          incomplete_reason: reason || undefined,
           verified_risk_score: verifiedRiskScore,
           upper_bound_risk_score: upperBoundRiskScore,
           provisional: projection.provisional,
           suppressed: projection.suppressed,
           promotion_gaps: projection.counts.promotion_gaps,
+          report_state: state,
+          requested_mode: requested,
+          note: note || undefined,
+          truth_reasons: readiness.truth_reasons,
         })
         break
       case "html":
         report = generateHtml(findings, targetUrl, chains, {
           incomplete,
-          incomplete_reason: reason || undefined,
           verified_risk_score: verifiedRiskScore,
           upper_bound_risk_score: upperBoundRiskScore,
           provisional: projection.provisional,
           suppressed: projection.suppressed,
           promotion_gaps: projection.counts.promotion_gaps,
+          report_state: state,
+          requested_mode: requested,
+          note: note || undefined,
+          truth_reasons: readiness.truth_reasons,
         })
         break
       case "markdown":
       default:
         report = generateMarkdown(findings, targetUrl, chains, {
           incomplete,
-          incomplete_reason: reason || undefined,
           verified_risk_score: verifiedRiskScore,
           upper_bound_risk_score: upperBoundRiskScore,
           provisional: projection.provisional,
           suppressed: projection.suppressed,
           promotion_gaps: projection.counts.promotion_gaps,
+          report_state: state,
+          requested_mode: requested,
+          note: note || undefined,
+          truth_reasons: readiness.truth_reasons,
         })
         break
     }
 
-    const override = incomplete && params.allow_incomplete === true
     const outputPath = (params.output_path ?? "").trim()
     let savedPath = ""
     if (outputPath) {
@@ -263,7 +217,7 @@ export const GenerateReportTool = Tool.define("generate_report", {
     }
 
     return {
-      title: `${incomplete ? "[INCOMPLETE] " : ""}Report (${params.format}): ${findings.length} verified${projection.provisional.length > 0 ? ` + ${projection.provisional.length} provisional` : ""}, risk ${verifiedRiskScore}/100${upperBoundRiskScore !== verifiedRiskScore ? ` (upper bound ${upperBoundRiskScore}/100)` : ""}`,
+      title: `${state === "working_draft" ? "[WORKING] " : ""}Report (${params.format}): ${findings.length} verified${projection.provisional.length > 0 ? ` + ${projection.provisional.length} provisional` : ""}, risk ${verifiedRiskScore}/100${upperBoundRiskScore !== verifiedRiskScore ? ` (upper bound ${upperBoundRiskScore}/100)` : ""}`,
       metadata: {
         format: params.format,
         findings: projection.all.length,
@@ -274,13 +228,22 @@ export const GenerateReportTool = Tool.define("generate_report", {
         upperBoundRiskScore,
         canonical,
         outputPath: savedPath,
-        closure,
+        closure: readiness.closure,
         incomplete,
-        override,
-        overrideReason: reason,
-        truthReasons,
+        requestedMode: requested,
+        reportState: state,
+        reportRendered: incomplete ? "working" : "final",
+        engagementRevision: truth.revision,
+        finalReady: readiness.final_ready,
+        note,
+        truthReasons: readiness.truth_reasons,
         promotionGapIds: projection.promotion_gap_ids,
         projection: projection.counts,
+        compatibility: {
+          allow_incomplete: params.allow_incomplete === true,
+          incomplete_reason: (params.incomplete_reason ?? "").trim().length > 0,
+          strict: params.strict === true,
+        },
       } as any,
       envelope: makeToolResultEnvelope({
         status: incomplete ? "inconclusive" : "ok",
@@ -290,6 +253,9 @@ export const GenerateReportTool = Tool.define("generate_report", {
             format: params.format,
             target_url: targetUrl,
             output_path: savedPath || undefined,
+            report_state: state,
+            report_rendered: incomplete ? "working" : "final",
+            requested_mode: requested,
           },
         ],
         observations: [
@@ -310,42 +276,25 @@ export const GenerateReportTool = Tool.define("generate_report", {
             type: "report_closure",
             blocked: false,
             incomplete,
-            override,
-            open_hypotheses: closure.hypothesis_open,
-            open_critical_hypotheses: closure.hypothesis_critical_open,
-            promotion_gaps: projection.counts.promotion_gaps,
-            provisional_reportable_findings: projection.provisional.length,
+            requested_mode: requested,
+            report_state: state,
+            working_ready: readiness.working_ready,
+            final_ready: readiness.final_ready,
+            open_hypotheses: readiness.closure.hypothesis_open,
+            open_critical_hypotheses: readiness.closure.hypothesis_critical_open,
           },
-          ...(reason
-            ? [
-                {
-                  type: "report_override",
-                  reason,
-                },
-              ]
-            : []),
         ],
         metrics: {
-          finding_count: projection.all.length,
-          verified_finding_count: findings.length,
-          provisional_finding_count: projection.provisional.length,
-          suppressed_finding_count: projection.suppressed.length,
-          risk_score: verifiedRiskScore,
-          upper_bound_risk_score: upperBoundRiskScore,
+          finding_count: findings.length,
+          provisional_count: projection.provisional.length,
+          suppressed_count: projection.suppressed.length,
           chain_count: chains.length,
-          canonical_input_count: canonical.input_count,
-          canonical_count: canonical.canonical_count,
-          canonical_dropped_superseded: canonical.dropped_superseded_ids.length,
-          canonical_dropped_duplicates: canonical.dropped_duplicate_ids.length,
-          closure_open_hypotheses: closure.hypothesis_open,
-          closure_open_critical_hypotheses: closure.hypothesis_critical_open,
-          closure_incomplete: incomplete ? 1 : 0,
+          verified_risk_score: verifiedRiskScore,
+          upper_bound_risk_score: upperBoundRiskScore,
           promotion_gaps: projection.counts.promotion_gaps,
         },
       }),
-      output: savedPath
-        ? `${report}\n\n---\nSaved report to: ${savedPath}`
-        : report,
+      output: report,
     }
   },
 })

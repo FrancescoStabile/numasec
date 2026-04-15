@@ -11,6 +11,51 @@ export type SecurityReadState = {
   findings?: unknown
   chains?: unknown
   coverage?: unknown
+  engagement?: unknown
+}
+
+export type SecuritySeveritySummary = {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+export type SecurityFindingSummary = {
+  total: number
+  verified: number
+  provisional: number
+  suppressed: number
+  severity: SecuritySeveritySummary
+}
+
+export type SecurityReportSummary = {
+  state: "empty" | "working_draft" | "final_ready"
+  working_ready: boolean
+  final_ready: boolean
+  final_blocked: boolean
+  truth_reasons: string[]
+  final_snapshot: {
+    state: "absent" | "current" | "reopened"
+    exported_at: number | null
+    exported_revision: number | null
+  }
+  verification_debt: {
+    promotion_gaps: number
+    open_hypotheses: number
+    open_critical_hypotheses: number
+  }
+}
+
+export type SecurityEngagement = {
+  engagement_target_url: string | null
+  current_endpoint_url: string | null
+  last_tested_url: string | null
+  findings: SecurityFindingSummary
+  report: SecurityReportSummary
+  updated_at: number | null
+  revision: number
 }
 
 export type SecurityMessage = {
@@ -71,7 +116,6 @@ const TOOL_TO_OWASP: Record<string, string[]> = {
   injection_test: ["A03", "A04", "A07"],
   xss_test: ["A03"],
   ssrf_test: ["A10"],
-  path_test: ["A03", "A10"],
   recon: ["A05", "A06", "A09"],
   crawl: ["A05"],
   js_analyze: ["A05"],
@@ -89,6 +133,22 @@ function parseJson(value: string): unknown {
   } catch {
     return
   }
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  return 0
+}
+
+function stringList(value: unknown) {
+  if (!Array.isArray(value)) return []
+  const list: string[] = []
+  for (const item of value) {
+    if (typeof item !== "string") continue
+    if (!item.trim()) continue
+    list.push(item)
+  }
+  return list
 }
 
 function normalizeSeverity(value: string): Severity {
@@ -144,7 +204,7 @@ function addFinding(list: SecurityFinding[], seen: Set<string>, raw: Record<stri
   list.push(finding)
 }
 
-function emptyCoverage(): SecurityCoverage {
+export function emptyCoverage(): SecurityCoverage {
   return {
     tested: new Set<string>(),
     vulnerable: new Set<string>(),
@@ -159,6 +219,93 @@ function coverageWithSets(tested: Set<string>, vulnerable: Set<string>): Securit
     vulnerable,
     testedCount: tested.size,
     total: OWASP_CATEGORIES.length,
+  }
+}
+
+function emptySeveritySummary(): SecuritySeveritySummary {
+  return {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  }
+}
+
+function fallbackFindingSummary(findings: SecurityFinding[]): SecurityFindingSummary {
+  return {
+    total: findings.length,
+    verified: findings.length,
+    provisional: 0,
+    suppressed: 0,
+    severity: findingCounts(findings),
+  }
+}
+
+function engagementFrom(state: SecurityReadState | undefined): SecurityEngagement | undefined {
+  if (!state) return
+  if (!asObject(state.engagement)) return
+  const raw = state.engagement
+  const finding = asObject(raw.findings) ? raw.findings : {}
+  const severity = asObject(finding.severity) ? finding.severity : {}
+  const report = asObject(raw.report) ? raw.report : {}
+  const snapshot = asObject(report.final_snapshot) ? report.final_snapshot : {}
+  const debt = asObject(report.verification_debt) ? report.verification_debt : {}
+  return {
+    engagement_target_url:
+      typeof raw.engagement_target_url === "string" && raw.engagement_target_url.startsWith("http")
+        ? raw.engagement_target_url
+        : null,
+    current_endpoint_url:
+      typeof raw.current_endpoint_url === "string" && raw.current_endpoint_url.startsWith("http")
+        ? raw.current_endpoint_url
+        : null,
+    last_tested_url:
+      typeof raw.last_tested_url === "string" && raw.last_tested_url.startsWith("http")
+        ? raw.last_tested_url
+        : null,
+    findings: {
+      total: numberValue(finding.total),
+      verified: numberValue(finding.verified),
+      provisional: numberValue(finding.provisional),
+      suppressed: numberValue(finding.suppressed),
+      severity: {
+        critical: numberValue(severity.critical),
+        high: numberValue(severity.high),
+        medium: numberValue(severity.medium),
+        low: numberValue(severity.low),
+        info: numberValue(severity.info),
+      },
+    },
+    report: {
+      state:
+        report.state === "empty" || report.state === "final_ready" || report.state === "working_draft"
+          ? report.state
+          : "empty",
+      working_ready: report.working_ready === true,
+      final_ready: report.final_ready === true,
+      final_blocked: report.final_blocked === true,
+      truth_reasons: stringList(report.truth_reasons),
+      final_snapshot: {
+        state:
+          snapshot.state === "absent" || snapshot.state === "current" || snapshot.state === "reopened"
+            ? snapshot.state
+            : "absent",
+        exported_at:
+          typeof snapshot.exported_at === "number" && Number.isFinite(snapshot.exported_at) ? snapshot.exported_at : null,
+        exported_revision:
+          typeof snapshot.exported_revision === "number" && Number.isFinite(snapshot.exported_revision)
+            ? snapshot.exported_revision
+            : null,
+      },
+      verification_debt: {
+        promotion_gaps: numberValue(debt.promotion_gaps),
+        open_hypotheses: numberValue(debt.open_hypotheses),
+        open_critical_hypotheses: numberValue(debt.open_critical_hypotheses),
+      },
+    },
+    updated_at: typeof raw.updated_at === "number" && Number.isFinite(raw.updated_at) ? raw.updated_at : null,
+    revision: numberValue(raw.revision),
   }
 }
 
@@ -420,6 +567,8 @@ export function canonicalChains(state: SecurityReadState | undefined, findings: 
 }
 
 export function canonicalTarget(state: SecurityReadState | undefined) {
+  const engagement = engagementFrom(state)
+  if (engagement?.engagement_target_url) return engagement.engagement_target_url
   if (!state) return
 
   if (Array.isArray(state.scope)) {
@@ -428,25 +577,31 @@ export function canonicalTarget(state: SecurityReadState | undefined) {
       if (item.startsWith("http")) return item
     }
   }
+}
 
-  if (Array.isArray(state.findings)) {
-    for (const finding of state.findings) {
-      if (!asObject(finding)) continue
-      const url = finding.url
-      if (typeof url !== "string") continue
-      if (url.startsWith("http")) return url
-    }
-  }
+export function canonicalCurrentEndpoint(state: SecurityReadState | undefined) {
+  const engagement = engagementFrom(state)
+  if (!engagement) return
+  return engagement.current_endpoint_url ?? engagement.last_tested_url ?? undefined
+}
 
-  if (!Array.isArray(state.chains)) return
-  for (const chain of state.chains) {
-    if (!asObject(chain)) continue
-    if (!Array.isArray(chain.urls)) continue
-    for (const url of chain.urls) {
-      if (typeof url !== "string") continue
-      if (url.startsWith("http")) return url
-    }
-  }
+export function canonicalFindingSummary(state: SecurityReadState | undefined, findings: SecurityFinding[]) {
+  const engagement = engagementFrom(state)
+  if (!engagement) return fallbackFindingSummary(findings)
+  return engagement.findings
+}
+
+export function canonicalReportSummary(state: SecurityReadState | undefined) {
+  return engagementFrom(state)?.report
+}
+
+export function reportStateLabel(summary: SecurityReportSummary | undefined) {
+  if (!summary) return
+  if (summary.final_snapshot.state === "current") return "Final snapshot exported"
+  if (summary.final_snapshot.state === "reopened") return "Reopened after final export"
+  if (summary.state === "final_ready") return "Final ready"
+  if (summary.state === "working_draft") return "Working draft"
+  return "No findings"
 }
 
 export function canonicalCoverage(state: SecurityReadState | undefined, findings: SecurityFinding[]) {
@@ -478,18 +633,9 @@ export function canonicalCoverage(state: SecurityReadState | undefined, findings
   return coverageWithSets(tested, vulnerable)
 }
 
-function hasCoverage(value: SecurityCoverage) {
-  if (value.tested.size > 0) return true
-  if (value.vulnerable.size > 0) return true
-  return false
-}
-
 export function selectFindings(state: SecurityReadState | undefined, fallback: SecurityFinding[]) {
   if (!state) return fallback
-  const canonical = canonicalFindings(state)
-  if (canonical.length > 0) return canonical
-  if (fallback.length > 0) return fallback
-  return canonical
+  return canonicalFindings(state)
 }
 
 export function selectChains(
@@ -498,17 +644,17 @@ export function selectChains(
   findings: SecurityFinding[],
 ) {
   if (!state) return fallback
-  const canonical = canonicalChains(state, findings)
-  if (canonical.length > 0) return canonical
-  if (fallback.length > 0) return fallback
-  return canonical
+  return canonicalChains(state, findings)
 }
 
 export function selectTarget(state: SecurityReadState | undefined, fallback: string | undefined) {
   if (!state) return fallback
-  const canonical = canonicalTarget(state)
-  if (canonical) return canonical
-  return fallback
+  return canonicalTarget(state)
+}
+
+export function selectCurrentEndpoint(state: SecurityReadState | undefined) {
+  if (!state) return
+  return canonicalCurrentEndpoint(state)
 }
 
 export function selectCoverage(
@@ -517,10 +663,15 @@ export function selectCoverage(
   findings: SecurityFinding[],
 ) {
   if (!state) return fallback
-  const canonical = canonicalCoverage(state, findings)
-  if (hasCoverage(canonical)) return canonical
-  if (hasCoverage(fallback)) return fallback
-  return canonical
+  return canonicalCoverage(state, findings)
+}
+
+export function selectFindingSummary(state: SecurityReadState | undefined, findings: SecurityFinding[]) {
+  return canonicalFindingSummary(state, findings)
+}
+
+export function selectReportSummary(state: SecurityReadState | undefined) {
+  return canonicalReportSummary(state)
 }
 
 export function findingCounts(findings: SecurityFinding[]) {

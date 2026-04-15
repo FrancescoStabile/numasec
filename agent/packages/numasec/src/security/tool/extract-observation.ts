@@ -5,6 +5,7 @@ import { Tool } from "../../tool/tool"
 import { Database } from "../../storage/db"
 import { EvidenceNodeTable } from "../evidence.sql"
 import { EvidenceGraphStore } from "../evidence-store"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 type EvidenceNodeID = (typeof EvidenceNodeTable)["$inferInsert"]["id"]
@@ -133,6 +134,7 @@ export const ExtractObservationTool = Tool.define("extract_observation", {
     persist: z.boolean().optional().describe("Persist extracted observations as nodes"),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const source: string[] = []
     const statusHints: string[] = []
     const urlHints: string[] = []
@@ -147,7 +149,7 @@ export const ExtractObservationTool = Tool.define("extract_observation", {
           .from(EvidenceNodeTable)
           .where(
             and(
-              eq(EvidenceNodeTable.session_id, ctx.sessionID),
+              eq(EvidenceNodeTable.session_id, sessionID),
               inArray(EvidenceNodeTable.id, refs.map(nodeID)),
             ),
           )
@@ -223,7 +225,7 @@ export const ExtractObservationTool = Tool.define("extract_observation", {
         const row = Effect.runSync(
           EvidenceGraphStore.use((store) =>
             store.upsertNode({
-              sessionID: ctx.sessionID,
+              sessionID,
               type: "observation",
               confidence: 0.7,
               status: "active",

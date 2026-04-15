@@ -20,6 +20,27 @@ import { Plugin } from "@/plugin"
 
 const MAX_METADATA_LENGTH = 30_000
 const DEFAULT_TIMEOUT = Flag.NUMASEC_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
+const FILE_MUTATION = new Set(["rm", "cp", "mv", "mkdir", "touch", "chmod", "chown"])
+const GIT_MUTATION = new Set([
+  "add",
+  "am",
+  "apply",
+  "checkout",
+  "clean",
+  "commit",
+  "merge",
+  "pull",
+  "push",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "rm",
+  "stash",
+  "switch",
+  "worktree",
+])
+const PACKAGE_MUTATION = new Set(["add", "install", "remove", "rm", "update", "upgrade"])
 
 export const log = Log.create({ service: "bash-tool" })
 
@@ -50,6 +71,18 @@ const parser = lazy(async () => {
   p.setLanguage(bashLanguage)
   return p
 })
+
+function mutates(commandText: string, command: string[]) {
+  if (commandText.includes(">") || commandText.includes(">>")) return true
+  const name = command[0] ?? ""
+  if (!name) return false
+  if (FILE_MUTATION.has(name)) return true
+  if (name === "git") return GIT_MUTATION.has(command[1] ?? "")
+  if (name === "npm" || name === "pnpm" || name === "yarn" || name === "bun") {
+    return PACKAGE_MUTATION.has(command[1] ?? "")
+  }
+  return false
+}
 
 // TODO: we may wanna rename this tool so it works better on other shells
 export const BashTool = Tool.define("bash", async () => {
@@ -86,6 +119,7 @@ export const BashTool = Tool.define("bash", async () => {
         throw new Error("Failed to parse command")
       }
       const directories = new Set<string>()
+      let mutation = false
       if (!Instance.containsPath(cwd)) directories.add(cwd)
       const patterns = new Set<string>()
       const always = new Set<string>()
@@ -111,6 +145,7 @@ export const BashTool = Tool.define("bash", async () => {
           }
           command.push(child.text)
         }
+        if (mutates(commandText, command)) mutation = true
 
         // not an exhaustive list, but covers most common cases
         if (["cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown", "cat"].includes(command[0])) {
@@ -142,12 +177,27 @@ export const BashTool = Tool.define("bash", async () => {
           if (dir.startsWith("/")) return `${dir.replace(/[\\/]+$/, "")}/*`
           return path.join(dir, "*")
         })
-        await ctx.ask({
-          permission: "external_directory",
-          patterns: globs,
-          always: globs,
-          metadata: {},
-        })
+        if (mutation) {
+          await ctx.ask({
+            permission: "external_directory_mutation",
+            patterns: globs,
+            always: [],
+            metadata: {
+              approval_risk: "high",
+              approval_scope: "none",
+              approval_reason_required: true,
+              warning: "This command can modify files outside the current workspace. Use only explicit disposable clones or workspaces.",
+            },
+          })
+        }
+        if (!mutation) {
+          await ctx.ask({
+            permission: "external_directory",
+            patterns: globs,
+            always: globs,
+            metadata: {},
+          })
+        }
       }
 
       if (patterns.size > 0) {

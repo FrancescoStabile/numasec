@@ -3,14 +3,19 @@ import { Hono } from "hono"
 import z from "zod"
 import { Flag } from "../../flag/flag"
 import { and, Database, eq } from "../../storage/db"
+import { readEngagementTruth } from "../../security/report/readiness"
 import { TargetTable, FindingTable, CoverageTable } from "../../security/security.sql"
+import { SecurityTargetProfileTable } from "../../security/runtime/runtime.sql"
+import { canonicalSecuritySessionID } from "../../security/security-session"
 import { EvidenceNodeTable, EvidenceEdgeTable } from "../../security/evidence.sql"
 import { SessionID } from "../../session/schema"
 import { lazy } from "../../util/lazy"
+import { assertCurrentProjectSession } from "../session-ownership"
 
 type TargetRow = (typeof TargetTable)["$inferSelect"]
 type FindingRow = (typeof FindingTable)["$inferSelect"]
 type CoverageRow = (typeof CoverageTable)["$inferSelect"]
+type TargetProfileRow = (typeof SecurityTargetProfileTable)["$inferSelect"]
 type EvidenceNodeRow = (typeof EvidenceNodeTable)["$inferSelect"]
 type EvidenceEdgeRow = (typeof EvidenceEdgeTable)["$inferSelect"]
 
@@ -39,6 +44,46 @@ type ChainSyncRow = {
   urls: string[]
   time_created: number
   time_updated: number
+}
+
+type SeveritySummary = {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+type EngagementStatus = {
+  engagement_target_url: string | null
+  current_endpoint_url: string | null
+  last_tested_url: string | null
+  findings: {
+    total: number
+    verified: number
+    provisional: number
+    suppressed: number
+    severity: SeveritySummary
+  }
+  report: {
+    state: "empty" | "working_draft" | "final_ready"
+    working_ready: boolean
+    final_ready: boolean
+    final_blocked: boolean
+    truth_reasons: string[]
+    final_snapshot: {
+      state: "absent" | "current" | "reopened"
+      exported_at: number | null
+      exported_revision: number | null
+    }
+    verification_debt: {
+      promotion_gaps: number
+      open_hypotheses: number
+      open_critical_hypotheses: number
+    }
+  }
+  updated_at: number | null
+  revision: number
 }
 
 const DEFAULT_SYNC_LIMIT = 100
@@ -231,11 +276,118 @@ function readScope(rows: TargetRow[]) {
   return Array.from(value)
 }
 
+function emptySeverity(): SeveritySummary {
+  return {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  }
+}
+
+function addSeverity(summary: SeveritySummary, value: string) {
+  if (value === "critical") {
+    summary.critical += 1
+    return
+  }
+  if (value === "high") {
+    summary.high += 1
+    return
+  }
+  if (value === "medium") {
+    summary.medium += 1
+    return
+  }
+  if (value === "low") {
+    summary.low += 1
+    return
+  }
+  summary.info += 1
+}
+
+function earliestTargetUrl(rows: TargetRow[]) {
+  let url = ""
+  let created = 0
+  let first = true
+  for (const row of rows) {
+    if (!row.url.startsWith("http")) continue
+    if (first) {
+      url = row.url
+      created = row.time_created
+      first = false
+      continue
+    }
+    if (row.time_created >= created) continue
+    url = row.url
+    created = row.time_created
+  }
+  if (url) return url
+}
+
+function earliestTargetOrigin(rows: TargetProfileRow[]) {
+  let url = ""
+  let created = 0
+  let first = true
+  for (const row of rows) {
+    if (!row.origin.startsWith("http")) continue
+    if (first) {
+      url = row.origin
+      created = row.time_created
+      first = false
+      continue
+    }
+    if (row.time_created >= created) continue
+    url = row.origin
+    created = row.time_created
+  }
+  if (url) return url
+}
+
+function firstHttp(values: string[]) {
+  for (const value of values) {
+    if (!value.startsWith("http")) continue
+    return value
+  }
+}
+
+function latestUrl<T extends { url: string; time_updated: number; time_created: number }>(rows: T[]) {
+  let url = ""
+  let updated = 0
+  let created = 0
+  let first = true
+  for (const row of rows) {
+    if (!row.url.startsWith("http")) continue
+    if (first) {
+      url = row.url
+      updated = row.time_updated
+      created = row.time_created
+      first = false
+      continue
+    }
+    if (row.time_updated < updated) continue
+    if (row.time_updated === updated && row.time_created <= created) continue
+    url = row.url
+    updated = row.time_updated
+    created = row.time_created
+  }
+  if (url) return url
+}
+
 function latestUpdated<T extends { time_updated: number }>(rows: T[]) {
   if (rows.length === 0) return null
   let value = rows[0].time_updated
   for (const item of rows) {
     if (item.time_updated > value) value = item.time_updated
+  }
+  return value
+}
+
+function maxUpdated(values: Array<number | null>) {
+  let value: number | null = null
+  for (const item of values) {
+    if (item === null) continue
+    if (value === null || item > value) value = item
   }
   return value
 }
@@ -246,26 +398,82 @@ function changed(latest: number | null, since: number | undefined) {
   return latest >= since
 }
 
+function buildEngagement(
+  sessionID: z.infer<typeof SessionID.zod>,
+  targets: TargetRow[],
+  profiles: TargetProfileRow[],
+  scope: string[],
+  findings: FindingRow[],
+): EngagementStatus {
+  const truth = readEngagementTruth(sessionID)
+  const readiness = truth.readiness
+  const reportable = readiness.projection.all.filter(
+    (item) => item.reportable && item.state !== "suppressed" && item.state !== "refuted",
+  )
+  const severity = emptySeverity()
+  for (const row of reportable) {
+    addSeverity(severity, row.severity)
+  }
+  const engagementTarget = earliestTargetUrl(targets) ?? earliestTargetOrigin(profiles) ?? firstHttp(scope) ?? null
+  const currentEndpoint = latestUrl(reportable) ?? null
+  const lastTested = latestUrl(findings) ?? currentEndpoint ?? engagementTarget
+  return {
+    engagement_target_url: engagementTarget,
+    current_endpoint_url: currentEndpoint,
+    last_tested_url: lastTested,
+    findings: {
+      total: readiness.projection.counts.reportable,
+      verified: readiness.projection.verified.length,
+      provisional: readiness.projection.provisional.length,
+      suppressed: readiness.projection.suppressed.length,
+      severity,
+    },
+    report: {
+      state: readiness.state,
+      working_ready: readiness.working_ready,
+      final_ready: readiness.final_ready,
+      final_blocked: readiness.final_blocked,
+      truth_reasons: readiness.truth_reasons,
+      final_snapshot: truth.final_report,
+      verification_debt: {
+        promotion_gaps: readiness.projection.counts.promotion_gaps,
+        open_hypotheses: readiness.closure.hypothesis_open,
+        open_critical_hypotheses: readiness.closure.hypothesis_critical_open,
+      },
+    },
+    updated_at: truth.revision || null,
+    revision: truth.revision,
+  }
+}
+
 function readState(sessionID: z.infer<typeof SessionID.zod>, graphEnabled: boolean) {
+  const current = canonicalSecuritySessionID(sessionID)
   const targets = Database.use((db) =>
     db
       .select()
       .from(TargetTable)
-      .where(eq(TargetTable.session_id, sessionID))
+      .where(eq(TargetTable.session_id, current))
+      .all(),
+  )
+  const profiles = Database.use((db) =>
+    db
+      .select()
+      .from(SecurityTargetProfileTable)
+      .where(eq(SecurityTargetProfileTable.session_id, current))
       .all(),
   )
   const findings = Database.use((db) =>
     db
       .select()
       .from(FindingTable)
-      .where(eq(FindingTable.session_id, sessionID))
+      .where(eq(FindingTable.session_id, current))
       .all(),
   )
   const coverage = Database.use((db) =>
     db
       .select()
       .from(CoverageTable)
-      .where(eq(CoverageTable.session_id, sessionID))
+      .where(eq(CoverageTable.session_id, current))
       .all(),
   )
   const nodes = graphEnabled
@@ -273,7 +481,7 @@ function readState(sessionID: z.infer<typeof SessionID.zod>, graphEnabled: boole
         db
           .select()
           .from(EvidenceNodeTable)
-          .where(eq(EvidenceNodeTable.session_id, sessionID))
+          .where(eq(EvidenceNodeTable.session_id, current))
           .all(),
       )
     : []
@@ -282,7 +490,7 @@ function readState(sessionID: z.infer<typeof SessionID.zod>, graphEnabled: boole
         db
           .select()
           .from(EvidenceEdgeTable)
-          .where(eq(EvidenceEdgeTable.session_id, sessionID))
+          .where(eq(EvidenceEdgeTable.session_id, current))
           .all(),
       )
     : []
@@ -290,8 +498,11 @@ function readState(sessionID: z.infer<typeof SessionID.zod>, graphEnabled: boole
   const scope = readScope(targets)
   const chains = buildChains(findings)
   const chainRows = buildChainSyncRows(findings)
+  const engagement = buildEngagement(current, targets, profiles, scope, findings)
   return {
+    sessionID: current,
     targets,
+    profiles,
     findings,
     coverage,
     nodes,
@@ -300,6 +511,7 @@ function readState(sessionID: z.infer<typeof SessionID.zod>, graphEnabled: boole
     scope,
     chains,
     chainRows,
+    engagement,
   }
 }
 
@@ -376,6 +588,7 @@ const ReadSummarySchema = z.object({
     findings: SummaryCounterSchema,
     chains: SummaryCounterSchema,
     coverage: SummaryCounterSchema,
+    engagement: SummaryCounterSchema,
     evidence_nodes: SummaryEvidenceSchema,
     evidence_edges: SummaryEvidenceSchema,
   }),
@@ -386,6 +599,18 @@ const ReadSummarySchema = z.object({
 
 export const SecurityRoutes = lazy(() =>
   new Hono()
+    .use("/:sessionID", async (c, next) => {
+      const parsed = SessionID.zod.safeParse(c.req.param("sessionID"))
+      if (!parsed.success) return next()
+      await assertCurrentProjectSession(parsed.data)
+      return next()
+    })
+    .use("/:sessionID/*", async (c, next) => {
+      const parsed = SessionID.zod.safeParse(c.req.param("sessionID"))
+      if (!parsed.success) return next()
+      await assertCurrentProjectSession(parsed.data)
+      return next()
+    })
     .get(
       "/:sessionID/read",
       describeRoute({
@@ -411,12 +636,12 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const graphEnabled = Flag.NUMASEC_SECURITY_GRAPH_READ
         const state = readState(sessionID, graphEnabled)
 
         return c.json({
-          session_id: sessionID,
+          session_id: state.sessionID,
           graph_enabled: graphEnabled,
           scope: state.scope,
           hypotheses: state.hypotheses,
@@ -427,6 +652,7 @@ export const SecurityRoutes = lazy(() =>
           findings: state.findings,
           chains: state.chains,
           coverage: state.coverage,
+          engagement: state.engagement,
           summary: {
             scope_count: state.scope.length,
             hypothesis_count: state.hypotheses.length,
@@ -470,7 +696,7 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         const graphEnabled = Flag.NUMASEC_SECURITY_GRAPH_READ
         const state = readState(sessionID, graphEnabled)
@@ -479,10 +705,11 @@ export const SecurityRoutes = lazy(() =>
         const findingUpdated = latestUpdated(state.findings)
         const chainUpdated = latestUpdated(state.chainRows)
         const coverageUpdated = latestUpdated(state.coverage)
+        const engagementUpdated = state.engagement.updated_at
         const nodeUpdated = latestUpdated(state.nodes)
         const edgeUpdated = latestUpdated(state.edges)
         return c.json({
-          session_id: sessionID,
+          session_id: state.sessionID,
           graph_enabled: graphEnabled,
           generated_at: Date.now(),
           summary: {
@@ -519,6 +746,11 @@ export const SecurityRoutes = lazy(() =>
               count: state.coverage.length,
               latest_time_updated: coverageUpdated,
               changed: changed(coverageUpdated, query.since),
+            },
+            engagement: {
+              count: state.engagement.updated_at === null ? 0 : 1,
+              latest_time_updated: engagementUpdated,
+              changed: changed(engagementUpdated, query.since),
             },
             evidence_nodes: {
               enabled: graphEnabled,
@@ -570,7 +802,7 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         const conditions = [eq(FindingTable.session_id, sessionID)]
         if (query.severity) conditions.push(eq(FindingTable.severity, query.severity))
@@ -617,7 +849,7 @@ export const SecurityRoutes = lazy(() =>
       ),
       validator("query", FindingsSyncQuerySchema),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         const conditions = [eq(FindingTable.session_id, sessionID)]
         if (query.severity) conditions.push(eq(FindingTable.severity, query.severity))
@@ -658,7 +890,7 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const findings = Database.use((db) =>
           db
             .select()
@@ -699,7 +931,7 @@ export const SecurityRoutes = lazy(() =>
       ),
       validator("query", SyncQuerySchema),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         const findings = Database.use((db) =>
           db
@@ -761,7 +993,7 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         if (!Flag.NUMASEC_SECURITY_GRAPH_READ) {
           return c.json({
             enabled: false,
@@ -812,7 +1044,7 @@ export const SecurityRoutes = lazy(() =>
       ),
       validator("query", SyncQuerySchema),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         if (!Flag.NUMASEC_SECURITY_GRAPH_READ) {
           return c.json({
@@ -861,7 +1093,7 @@ export const SecurityRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         if (!Flag.NUMASEC_SECURITY_GRAPH_READ) {
           return c.json({
             enabled: false,
@@ -912,7 +1144,7 @@ export const SecurityRoutes = lazy(() =>
       ),
       validator("query", SyncQuerySchema),
       async (c) => {
-        const sessionID = c.req.valid("param").sessionID
+        const sessionID = canonicalSecuritySessionID(c.req.valid("param").sessionID)
         const query = c.req.valid("query")
         if (!Flag.NUMASEC_SECURITY_GRAPH_READ) {
           return c.json({

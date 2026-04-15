@@ -83,6 +83,11 @@ import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
+import {
+  showDetailedToolView,
+  TRANSCRIPT_VISIBILITY_DEFAULTS,
+  TRANSCRIPT_VISIBILITY_KEYS,
+} from "../../transcript-visibility"
 
 addDefaultParsers(parsers.parsers)
 
@@ -154,10 +159,19 @@ export function Session() {
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const [conceal, setConceal] = createSignal(true)
-  const [showThinking, setShowThinking] = kv.signal("thinking_visibility", true)
+  const [showThinking, setShowThinking] = kv.signal(
+    TRANSCRIPT_VISIBILITY_KEYS.thinking,
+    TRANSCRIPT_VISIBILITY_DEFAULTS.thinking,
+  )
   const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
-  const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
-  const [showAssistantMetadata, setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
+  const [showDetails, setShowDetails] = kv.signal(
+    TRANSCRIPT_VISIBILITY_KEYS.tool_details,
+    TRANSCRIPT_VISIBILITY_DEFAULTS.tool_details,
+  )
+  const [showAssistantMetadata, setShowAssistantMetadata] = kv.signal(
+    TRANSCRIPT_VISIBILITY_KEYS.assistant_metadata,
+    TRANSCRIPT_VISIBILITY_DEFAULTS.assistant_metadata,
+  )
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", true)
   const [showHeader, setShowHeader] = kv.signal("header_visible", true)
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
@@ -376,41 +390,6 @@ export function Session() {
   const command = useCommandDialog()
   command.register(() => [
     {
-      title: session()?.share?.url ? "Copy share link" : "Share session",
-      value: "session.share",
-      suggested: route.type === "session",
-      keybind: "session_share",
-      category: "Session",
-      enabled: sync.data.config.share !== "disabled",
-      slash: {
-        name: "share",
-      },
-      onSelect: async (dialog) => {
-        const copy = (url: string) =>
-          Clipboard.copy(url)
-            .then(() => toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
-            .catch(() => toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
-        const url = session()?.share?.url
-        if (url) {
-          await copy(url)
-          dialog.clear()
-          return
-        }
-        await sdk.client.session
-          .share({
-            sessionID: route.sessionID,
-          })
-          .then((res) => copy(res.data!.share!.url))
-          .catch((error) => {
-            toast.show({
-              message: error instanceof Error ? error.message : "Failed to share session",
-              variant: "error",
-            })
-          })
-        dialog.clear()
-      },
-    },
-    {
       title: "Rename session",
       value: "session.rename",
       keybind: "session_rename",
@@ -491,30 +470,6 @@ export function Session() {
           modelID: selectedModel.modelID,
           providerID: selectedModel.providerID,
         })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Unshare session",
-      value: "session.unshare",
-      keybind: "session_unshare",
-      category: "Session",
-      enabled: !!session()?.share?.url,
-      slash: {
-        name: "unshare",
-      },
-      onSelect: async (dialog) => {
-        await sdk.client.session
-          .unshare({
-            sessionID: route.sessionID,
-          })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch((error) => {
-            toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
-              variant: "error",
-            })
-          })
         dialog.clear()
       },
     },
@@ -1552,15 +1507,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 // Pending messages moved to individual tool pending functions
 
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
-  const ctx = use()
   const sync = useSync()
-
-  // Hide tool if showDetails is false and tool completed successfully
-  const shouldHide = createMemo(() => {
-    if (ctx.showDetails()) return false
-    if (props.part.state.status !== "completed") return false
-    return true
-  })
 
   const toolprops = {
     get metadata() {
@@ -1586,88 +1533,86 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   }
 
   return (
-    <Show when={!shouldHide()}>
-      <Switch>
-        <Match when={props.part.tool === "bash"}>
-          <Bash {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "glob"}>
-          <Glob {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "read"}>
-          <Read {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "grep"}>
-          <Grep {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "list"}>
-          <List {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "webfetch"}>
-          <WebFetch {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "codesearch"}>
-          <CodeSearch {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "websearch"}>
-          <WebSearch {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "write"}>
-          <Write {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "edit"}>
-          <Edit {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "task"}>
-          <Task {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "apply_patch"}>
-          <ApplyPatch {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "todowrite"}>
-          <TodoWrite {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "question"}>
-          <Question {...toolprops} />
-        </Match>
-        <Match when={props.part.tool === "skill"}>
-          <Skill {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("save_finding")}>
-          <SaveFindingTool {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("get_findings")}>
-          <GetFindingsTool {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("recon")}>
-          <SecurityScanTool icon="🔍" label="Recon" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("injection_test")}>
-          <SecurityScanTool icon="💉" label="Injection Test" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("xss_test")}>
-          <SecurityScanTool icon="⚡" label="XSS Test" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("ssrf_test")}>
-          <SecurityScanTool icon="🌐" label="SSRF Test" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("auth_test")}>
-          <SecurityScanTool icon="🔐" label="Auth Test" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("access_control")}>
-          <SecurityScanTool icon="🛡" label="Access Control" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("crawl")}>
-          <SecurityScanTool icon="🕷" label="Crawl" {...toolprops} />
-        </Match>
-        <Match when={props.part.tool.includes("dir_fuzz")}>
-          <SecurityScanTool icon="📂" label="Dir Fuzz" {...toolprops} />
-        </Match>
-        <Match when={true}>
-          <GenericTool {...toolprops} />
-        </Match>
-      </Switch>
-    </Show>
+    <Switch>
+      <Match when={props.part.tool === "bash"}>
+        <Bash {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "glob"}>
+        <Glob {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "read"}>
+        <Read {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "grep"}>
+        <Grep {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "list"}>
+        <List {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "webfetch"}>
+        <WebFetch {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "codesearch"}>
+        <CodeSearch {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "websearch"}>
+        <WebSearch {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "write"}>
+        <Write {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "edit"}>
+        <Edit {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "task"}>
+        <Task {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "apply_patch"}>
+        <ApplyPatch {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "todowrite"}>
+        <TodoWrite {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "question"}>
+        <Question {...toolprops} />
+      </Match>
+      <Match when={props.part.tool === "skill"}>
+        <Skill {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("save_finding")}>
+        <SaveFindingTool {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("get_findings")}>
+        <GetFindingsTool {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("recon")}>
+        <SecurityScanTool icon="🔍" label="Recon" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("injection_test")}>
+        <SecurityScanTool icon="💉" label="Injection Test" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("xss_test")}>
+        <SecurityScanTool icon="⚡" label="XSS Test" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("ssrf_test")}>
+        <SecurityScanTool icon="🌐" label="SSRF Test" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("auth_test")}>
+        <SecurityScanTool icon="🔐" label="Auth Test" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("access_control")}>
+        <SecurityScanTool icon="🛡" label="Access Control" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("crawl")}>
+        <SecurityScanTool icon="🕷" label="Crawl" {...toolprops} />
+      </Match>
+      <Match when={props.part.tool.includes("dir_fuzz")}>
+        <SecurityScanTool icon="📂" label="Dir Fuzz" {...toolprops} />
+      </Match>
+      <Match when={true}>
+        <GenericTool {...toolprops} />
+      </Match>
+    </Switch>
   )
 }
 
@@ -1717,6 +1662,7 @@ function SaveFindingTool(props: ToolProps<any>) {
 }
 
 function GetFindingsTool(props: ToolProps<any>) {
+  const ctx = use()
   const { theme } = useTheme()
   const [expanded, setExpanded] = createSignal(false)
   const output = createMemo(() => props.output?.trim() ?? "")
@@ -1724,10 +1670,10 @@ function GetFindingsTool(props: ToolProps<any>) {
 
   return (
     <Show
-      when={props.output}
+      when={props.output && ctx.showDetails()}
       fallback={
-        <InlineTool icon="📋" pending="Fetching findings..." complete={false} part={props.part}>
-          get_findings {input(props.input)}
+        <InlineTool icon="📋" pending="Fetching findings..." complete={!!props.output} part={props.part}>
+          Findings {props.output ? "ready" : "loading"} {input(props.input)}
         </InlineTool>
       }
     >
@@ -1974,9 +1920,11 @@ function BlockTool(props: {
 }
 
 function Bash(props: ToolProps<typeof BashTool>) {
+  const ctx = use()
   const { theme } = useTheme()
   const sync = useSync()
   const isRunning = createMemo(() => props.part.state.status === "running")
+  const details = createMemo(() => showDetailedToolView(props.part.state.status, ctx.showDetails()))
   const output = createMemo(() => stripAnsi(props.metadata.output?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
   const lines = createMemo(() => output().split("\n"))
@@ -2013,7 +1961,7 @@ function Bash(props: ToolProps<typeof BashTool>) {
 
   return (
     <Switch>
-      <Match when={props.metadata.output !== undefined}>
+      <Match when={props.metadata.output !== undefined && details()}>
         <BlockTool
           title={title()}
           part={props.part}
@@ -2041,6 +1989,7 @@ function Bash(props: ToolProps<typeof BashTool>) {
 }
 
 function Write(props: ToolProps<Tool.Info<any>>) {
+  const ctx = use()
   const { theme, syntax } = useTheme()
   const code = createMemo(() => {
     if (!props.input.content) return ""
@@ -2049,7 +1998,7 @@ function Write(props: ToolProps<Tool.Info<any>>) {
 
   return (
     <Switch>
-      <Match when={props.metadata.diagnostics !== undefined}>
+      <Match when={props.metadata.diagnostics !== undefined && ctx.showDetails()}>
         <BlockTool title={"# Wrote " + normalizePath(props.input.filePath!)} part={props.part}>
           <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
             <code
@@ -2255,7 +2204,7 @@ function Edit(props: ToolProps<Tool.Info<any>>) {
 
   return (
     <Switch>
-      <Match when={props.metadata.diff !== undefined}>
+      <Match when={props.metadata.diff !== undefined && ctx.showDetails()}>
         <BlockTool title={"← Edit " + normalizePath(props.input.filePath!)} part={props.part}>
           <box paddingLeft={1}>
             <diff
@@ -2337,7 +2286,7 @@ function ApplyPatch(props: ToolProps<Tool.Info<any>>) {
 
   return (
     <Switch>
-      <Match when={files().length > 0}>
+      <Match when={files().length > 0 && ctx.showDetails()}>
         <For each={files()}>
           {(file) => (
             <BlockTool title={title(file)} part={props.part}>
@@ -2366,9 +2315,10 @@ function ApplyPatch(props: ToolProps<Tool.Info<any>>) {
 }
 
 function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
+  const ctx = use()
   return (
     <Switch>
-      <Match when={props.metadata.todos?.length}>
+      <Match when={props.metadata.todos?.length && ctx.showDetails()}>
         <BlockTool title="# Todos" part={props.part}>
           <box>
             <For each={props.input.todos ?? []}>
@@ -2378,8 +2328,8 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="⚙" pending="Updating todos..." complete={false} part={props.part}>
-          Updating todos...
+        <InlineTool icon="⚙" pending="Updating todos..." complete={props.input.todos?.length ?? 0} part={props.part}>
+          Updated {props.input.todos?.length ?? 0} todo{(props.input.todos?.length ?? 0) !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
     </Switch>
@@ -2387,6 +2337,7 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
 }
 
 function Question(props: ToolProps<typeof QuestionTool>) {
+  const ctx = use()
   const { theme } = useTheme()
   const count = createMemo(() => props.input.questions?.length ?? 0)
 
@@ -2397,7 +2348,7 @@ function Question(props: ToolProps<typeof QuestionTool>) {
 
   return (
     <Switch>
-      <Match when={props.metadata.answers}>
+      <Match when={props.metadata.answers && ctx.showDetails()}>
         <BlockTool title="# Questions" part={props.part}>
           <box gap={1}>
             <For each={props.input.questions ?? []}>
@@ -2412,8 +2363,8 @@ function Question(props: ToolProps<typeof QuestionTool>) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="→" pending="Asking questions..." complete={count()} part={props.part}>
-          Asked {count()} question{count() !== 1 ? "s" : ""}
+        <InlineTool icon="→" pending="Asking questions..." complete={props.metadata.answers ?? count()} part={props.part}>
+          {props.metadata.answers ? "Answered" : "Asked"} {count()} question{count() !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
     </Switch>

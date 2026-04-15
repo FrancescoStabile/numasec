@@ -5,6 +5,7 @@ import { Tool } from "../../tool/tool"
 import { Database } from "../../storage/db"
 import { EvidenceNodeTable } from "../evidence.sql"
 import { EvidenceGraphStore } from "../evidence-store"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 type EvidenceNodeID = (typeof EvidenceNodeTable)["$inferInsert"]["id"]
@@ -211,6 +212,7 @@ export const VerifyAssertionTool = Tool.define("verify_assertion", {
     typed: TypedAssertion.optional().describe("Structured assertion mode for HTTP status, headers, JSON paths, and JWT claims"),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const predicate = (params.predicate ?? "").trim()
     const typed = params.typed
     if (!typed && !predicate) {
@@ -223,7 +225,7 @@ export const VerifyAssertionTool = Tool.define("verify_assertion", {
         .from(EvidenceNodeTable)
         .where(
           and(
-            eq(EvidenceNodeTable.session_id, ctx.sessionID),
+            eq(EvidenceNodeTable.session_id, sessionID),
             inArray(EvidenceNodeTable.id, params.evidence_refs.map(nodeID)),
           ),
         )
@@ -264,7 +266,7 @@ export const VerifyAssertionTool = Tool.define("verify_assertion", {
       const row = Effect.runSync(
         EvidenceGraphStore.use((store) =>
           store.upsertNode({
-            sessionID: ctx.sessionID,
+            sessionID,
             type: "verification",
             confidence,
             status: passed ? "confirmed" : "open",
@@ -287,7 +289,7 @@ export const VerifyAssertionTool = Tool.define("verify_assertion", {
         Effect.runSync(
           EvidenceGraphStore.use((store) =>
             store.upsertEdge({
-              sessionID: ctx.sessionID,
+              sessionID,
               fromNodeID: ref,
               toNodeID: row.id,
               relation: "supports",
@@ -304,7 +306,7 @@ export const VerifyAssertionTool = Tool.define("verify_assertion", {
         Effect.runSync(
           EvidenceGraphStore.use((store) =>
             store.upsertEdge({
-              sessionID: ctx.sessionID,
+              sessionID,
               fromNodeID: hypothesisID,
               toNodeID: row.id,
               relation: "verifies",

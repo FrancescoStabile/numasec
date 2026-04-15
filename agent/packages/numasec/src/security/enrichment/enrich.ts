@@ -22,6 +22,7 @@ import { createHash } from "crypto"
 export type Severity = "critical" | "high" | "medium" | "low" | "info"
 
 export interface FindingInput {
+  sessionID?: string
   title: string
   severity: Severity
   description?: string
@@ -68,9 +69,9 @@ export function normalizeSeverity(raw: string): Severity {
   return "info"
 }
 
-/** Generate deterministic finding ID: SSEC-{SHA256(method:url:parameter:title)[:12]}. */
+/** Generate deterministic session-scoped finding ID: SSEC-{SHA256(session:method:url:parameter:title)[:12]}. */
 export function generateFindingId(finding: FindingInput): FindingID {
-  const key = `${finding.method ?? ""}:${finding.url ?? ""}:${finding.parameter ?? ""}:${finding.title}`
+  const key = `${finding.sessionID ?? ""}:${finding.method ?? ""}:${finding.url ?? ""}:${finding.parameter ?? ""}:${finding.title}`
   const hash = createHash("sha256").update(key).digest("hex").slice(0, 12).toUpperCase()
   return `SSEC-${hash}` as FindingID
 }

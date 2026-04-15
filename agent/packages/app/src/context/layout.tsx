@@ -284,10 +284,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
         for (const entry of SESSION_STATE_KEYS) {
           const target = session ? Persist.session(dir, session, entry.key) : Persist.workspace(dir, entry.key)
-          void removePersisted(target, platform)
+          void removePersisted(target)
 
           const legacyKey = `${dir}/${entry.legacy}${session ? "/" + session : ""}.${entry.version}`
-          void removePersisted({ key: legacyKey }, platform)
+          void removePersisted({ key: legacyKey })
         }
       }
     }

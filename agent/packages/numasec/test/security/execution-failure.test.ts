@@ -5,6 +5,7 @@ import {
   classifyHttpFailure,
 } from "../../src/security/runtime/execution-failure"
 import { executeHttpWithRecovery } from "../../src/security/runtime/http-execution"
+import { Scope } from "../../src/security/scope"
 
 describe("execution failure taxonomy", () => {
   test("classifies browser origin initialization failures as recoverable", () => {
@@ -110,5 +111,29 @@ describe("execution failure taxonomy", () => {
     expect(result.failure?.code).toBe("transient_network")
     expect(result.recovery?.attempts).toBe(2)
     expect(result.recovery?.recovered).toBe(false)
+  })
+
+  test("blocks out-of-scope HTTP execution without retrying", async () => {
+    const sessionID = "sess-execution-scope" as SessionID
+    Scope.set(sessionID, {
+      allowedPatterns: ["example.com"],
+      blockedPatterns: [],
+      allowInternal: false,
+    })
+
+    const result = await executeHttpWithRecovery({
+      sessionID,
+      toolName: "test",
+      action: "scope",
+      url: "https://evil.com/api",
+      attemptBudget: 1,
+      request: {
+        method: "GET",
+      },
+    })
+
+    expect(result.failure?.code).toBe("out_of_scope")
+    expect(result.recovery).toBeUndefined()
+    expect(result.response.statusText).toContain("not in scope")
   })
 })

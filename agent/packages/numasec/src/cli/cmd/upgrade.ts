@@ -16,7 +16,7 @@ export const UpgradeCommand = {
         alias: "m",
         describe: "installation method to use",
         type: "string",
-        choices: ["curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"],
+        choices: ["curl", "source", "npm", "pnpm", "bun"],
       })
   },
   handler: async (args: { target?: string; method?: string }) => {
@@ -26,6 +26,12 @@ export const UpgradeCommand = {
     prompts.intro("Upgrade")
     const detectedMethod = await Installation.method()
     const method = (args.method as Installation.Method) ?? detectedMethod
+    if (method === "source" && !args.target) {
+      prompts.log.info("Source installs are managed from the checked-out repository.")
+      prompts.log.info("Pull the desired revision and rerun `bash install.sh` from the repo root.")
+      prompts.outro("Done")
+      return
+    }
     if (method === "unknown") {
       prompts.log.error(`numasec is installed to ${process.execPath} and may be managed by a package manager`)
       const install = await prompts.select({
@@ -57,12 +63,7 @@ export const UpgradeCommand = {
     if (err) {
       spinner.stop("Upgrade failed", 1)
       if (err instanceof Installation.UpgradeFailedError) {
-        // necessary because choco only allows install/upgrade in elevated terminals
-        if (method === "choco" && err.stderr.includes("not running from an elevated command shell")) {
-          prompts.log.error("Please run the terminal as Administrator and try again")
-        } else {
-          prompts.log.error(err.stderr)
-        }
+        prompts.log.error(err.stderr)
       } else if (err instanceof Error) prompts.log.error(err.message)
       prompts.outro("Done")
       return

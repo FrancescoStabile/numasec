@@ -49,6 +49,8 @@ import { Shell } from "@/shell/shell"
 import { Truncate } from "@/tool/truncate"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
+import { ingestToolEnvelope } from "../security/envelope-ingestor"
+import { readReportReadiness, type OperationalPhase } from "../security/report/readiness"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -62,9 +64,120 @@ IMPORTANT:
 - This tool provides your final answer - no further actions are taken after calling it`
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+const EXECUTION_ONLY_SYSTEM_PROMPT = `EXECUTION-ONLY RETRY:
+- The previous turn stopped before making the required tool call.
+- Do not narrate, recap, or restate the plan.
+- Call exactly one appropriate tool now.
+- If the task is truly complete, only stop after the required closure or report tool has been called in this turn.`
 
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
+  export type ExecutionLane = "acquire" | "close" | "report"
+  const CLOSE_MODE_BLOCKED_TOOLS = new Set([
+    "observe_surface",
+    "recon",
+    "crawl",
+    "dir_fuzz",
+    "js_analyze",
+    "injection_test",
+    "xss_test",
+    "ssrf_test",
+    "auth_test",
+    "access_control_test",
+    "upload_test",
+    "race_test",
+    "graphql_test",
+    "exec_command",
+    "security_shell",
+  ])
+  const REPORT_MODE_BLOCKED_TOOLS = new Set([
+    ...CLOSE_MODE_BLOCKED_TOOLS,
+    "http_request",
+    "browser",
+    "batch_replay",
+    "verify_assertion",
+    "create_control_case",
+    "record_evidence",
+    "link_evidence",
+    "upsert_hypothesis",
+    "plan_next",
+    "query_resource_inventory",
+  ])
+  const CLOSE_LANE_COMMANDS = new Set<string>([
+    Command.Default.VERIFY_NEXT,
+    Command.Default.FINDING_FINALIZE,
+    Command.Default.RETEST_RUN,
+  ])
+  const REPORT_LANE_COMMANDS = new Set<string>([
+    Command.Default.REPORT,
+    Command.Default.REPORT_STATUS,
+    Command.Default.REPORT_GENERATE,
+    Command.Default.REPORT_FINALIZE,
+  ])
+
+  export function toolAllowedForOperationalPhase(phase: OperationalPhase, tool: string) {
+    if (phase === "close") return !CLOSE_MODE_BLOCKED_TOOLS.has(tool)
+    if (phase === "report") return !REPORT_MODE_BLOCKED_TOOLS.has(tool)
+    return true
+  }
+
+  export function executionLane(input: {
+    agent: string
+    command?: string
+  }): ExecutionLane {
+    if (input.agent === "report") return "report"
+    if (!input.command) return "acquire"
+    if (REPORT_LANE_COMMANDS.has(input.command)) return "report"
+    if (CLOSE_LANE_COMMANDS.has(input.command)) return "close"
+    return "acquire"
+  }
+
+  export function toolAllowedForExecutionLane(lane: ExecutionLane, tool: string) {
+    if (lane === "close") return !CLOSE_MODE_BLOCKED_TOOLS.has(tool)
+    if (lane === "report") return !REPORT_MODE_BLOCKED_TOOLS.has(tool)
+    return true
+  }
+
+  export function shouldExecutionRetry(input: {
+    lane: ExecutionLane
+    finishReason?: string
+    toolCalls: number
+    executionRetryCount: number
+    hasStructuredOutput: boolean
+    commandDriven: boolean
+    toolCount: number
+  }) {
+    if (!input.commandDriven) return false
+    if (!["close", "report"].includes(input.lane)) return false
+    if (input.executionRetryCount > 0) return false
+    if (input.hasStructuredOutput) return false
+    if (input.toolCount === 0) return false
+    if (input.toolCalls > 0) return false
+    if (!input.finishReason || ["tool-calls", "unknown"].includes(input.finishReason)) return false
+    return true
+  }
+
+  function executionLanePrompt(lane: ExecutionLane, sessionID: SessionID) {
+    const readiness = readReportReadiness(sessionID)
+    if (lane === "close") {
+      return [
+        "CLOSURE MODE ACTIVE:",
+        "- Canonical state already has reportable findings, but final readiness is still blocked.",
+        "- Do NOT widen scope with new broad recon or generic scanner sweeps.",
+        "- Only resolve blocker debt, run targeted verification/control-case retests, finalize findings, and finalize the report.",
+        `- Remaining debt: ${readiness.truth_reasons.join("; ") || "none"}`,
+      ].join("\n")
+    }
+    if (lane === "report") {
+      return [
+        "REPORT MODE ACTIVE:",
+        "- Final readiness is satisfied or the session is already in report-only flow.",
+        "- Do NOT reopen scanning.",
+        "- Stay on report review, attack-path derivation, readiness inspection, or final report generation.",
+      ].join("\n")
+    }
+    return ""
+  }
 
   const state = Instance.state(
     () => {
@@ -292,6 +405,8 @@ export namespace SessionPrompt {
     // Note: On session resumption, state is reset but outputFormat is preserved
     // on the user message and will be retrieved from lastUser below
     let structuredOutput: unknown | undefined
+    let executionRetryCount = 0
+    let executionRetryPending = false
 
     let step = 0
     const session = await Session.get(sessionID)
@@ -623,6 +738,13 @@ export namespace SessionPrompt {
       // Check if user explicitly invoked an agent via @ in this turn
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+      const lastSubtask = lastUserMsg?.parts.findLast((part) => part.type === "subtask") as
+        | MessageV2.SubtaskPart
+        | undefined
+      const currentExecutionLane = executionLane({
+        agent: agent.name,
+        command: lastSubtask?.command,
+      })
 
       const tools = await resolveTools({
         agent,
@@ -632,6 +754,7 @@ export namespace SessionPrompt {
         processor,
         bypassAgentCheck,
         messages: msgs,
+        executionLane: currentExecutionLane,
       })
 
       // Inject StructuredOutput tool if JSON schema mode enabled
@@ -679,6 +802,9 @@ export namespace SessionPrompt {
         ...(skills ? [skills] : []),
         ...(await InstructionPrompt.system()),
       ]
+      const phasePrompt = executionLanePrompt(currentExecutionLane, sessionID)
+      if (phasePrompt) system.push(phasePrompt)
+      if (executionRetryPending) system.push(EXECUTION_ONLY_SYSTEM_PROMPT)
       const constraints = await Permission.constraints(sessionID)
       const guidance = Permission.formatConstraints(constraints.slice(-4))
       if (guidance) system.push(guidance)
@@ -707,8 +833,9 @@ export namespace SessionPrompt {
         ],
         tools,
         model,
-        toolChoice: format.type === "json_schema" ? "required" : undefined,
+        toolChoice: format.type === "json_schema" || (executionRetryPending && Object.keys(tools).length > 0) ? "required" : undefined,
       })
+      executionRetryPending = false
 
       // If structured output was captured, save it and exit immediately
       // This takes priority because the StructuredOutput tool was called successfully
@@ -732,6 +859,22 @@ export namespace SessionPrompt {
           await Session.updateMessage(processor.message)
           break
         }
+      }
+      const commandDriven = lastUserMsg?.parts.some((part) => part.type === "subtask") ?? false
+      if (
+        shouldExecutionRetry({
+          lane: currentExecutionLane,
+          finishReason: processor.message.finish,
+          toolCalls: processor.runSummary.toolCalls,
+          executionRetryCount,
+          hasStructuredOutput: structuredOutput !== undefined,
+          commandDriven,
+          toolCount: Object.keys(tools).length,
+        })
+      ) {
+        executionRetryCount += 1
+        executionRetryPending = true
+        continue
       }
 
       if (result === "stop") break
@@ -774,6 +917,7 @@ export namespace SessionPrompt {
     processor: SessionProcessor.Info
     bypassAgentCheck: boolean
     messages: MessageV2.WithParts[]
+    executionLane: ExecutionLane
   }) {
     using _ = log.time("resolveTools")
     const tools: Record<string, AITool> = {}
@@ -817,6 +961,7 @@ export namespace SessionPrompt {
       { modelID: ModelID.make(input.model.api.id), providerID: input.model.providerID },
       input.agent,
     )) {
+      if (!toolAllowedForExecutionLane(input.executionLane, item.id)) continue
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
       tools[item.id] = tool({
         id: item.id as any,
@@ -824,6 +969,11 @@ export namespace SessionPrompt {
         inputSchema: jsonSchema(schema as any),
         async execute(args, options) {
           const ctx = context(args, options)
+          if (!toolAllowedForExecutionLane(input.executionLane, item.id)) {
+            throw new Error(
+              `Execution lane ${input.executionLane} blocks ${item.id}. Stay on blocker resolution or reporting until the current closure task is finished.`,
+            )
+          }
           await Plugin.trigger(
             "tool.execute.before",
             {
@@ -836,7 +986,7 @@ export namespace SessionPrompt {
             },
           )
           const result = await item.execute(args, ctx)
-          const output = {
+          let output = {
             ...result,
             attachments: result.attachments?.map((attachment) => ({
               ...attachment,
@@ -844,6 +994,33 @@ export namespace SessionPrompt {
               sessionID: ctx.sessionID,
               messageID: input.processor.message.id,
             })),
+          }
+          if (output.envelope) {
+            const ingested = await ingestToolEnvelope({
+              sessionID: ctx.sessionID,
+              tool: item.id,
+              title: output.title,
+              metadata: output.metadata,
+              envelope: output.envelope as never,
+            }).catch((error) => {
+              log.warn("failed to ingest tool envelope before return", {
+                tool: item.id,
+                error,
+              })
+              return undefined
+            })
+            if (ingested) {
+              const merged = SessionProcessor.applyIngestedToolEvidence({
+                output: output.output,
+                metadata: output.metadata,
+                ingested,
+              })
+              output = {
+                ...output,
+                output: merged.output,
+                metadata: merged.metadata,
+              }
+            }
           }
           await Plugin.trigger(
             "tool.execute.after",
@@ -1188,13 +1365,13 @@ export namespace SessionPrompt {
 
                 await ReadTool.init()
                   .then(async (t) => {
-                    const model = await Provider.getModel(info.model.providerID, info.model.modelID)
+                    const model = await Provider.getModel(info.model.providerID, info.model.modelID).catch(() => undefined)
                     const readCtx: Tool.Context = {
                       sessionID: input.sessionID,
                       abort: new AbortController().signal,
                       agent: input.agent!,
                       messageID: info.id,
-                      extra: { bypassCwdCheck: true, model },
+                      extra: model ? { bypassCwdCheck: true, model } : { bypassCwdCheck: true },
                       messages: [],
                       metadata: async () => {},
                       ask: async () => {},

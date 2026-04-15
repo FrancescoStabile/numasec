@@ -9,10 +9,10 @@ import { Config } from "@/config/config"
 import { Bus } from "@/bus"
 import { GlobalBus } from "@/bus/global"
 import type { Event } from "@numasec/sdk/v2"
-import { Flag } from "@/flag/flag"
 import { setTimeout as sleep } from "node:timers/promises"
 import { writeHeapSnapshot } from "node:v8"
 import { WorkspaceID } from "@/control-plane/schema"
+import { serverAuthorizationHeader } from "@/server/auth"
 
 await Log.init({
   print: process.argv.includes("--print-logs"),
@@ -190,8 +190,5 @@ export const rpc = {
 Rpc.listen(rpc)
 
 function getAuthorizationHeader(): string | undefined {
-  const password = Flag.NUMASEC_SERVER_PASSWORD
-  if (!password) return undefined
-  const username = Flag.NUMASEC_SERVER_USERNAME ?? "numasec"
-  return `Basic ${btoa(`${username}:${password}`)}`
+  return serverAuthorizationHeader()
 }

@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises"
 import path from "path"
 import { Global } from "../global"
 import type { SessionID } from "../session/schema"
+import { canonicalSecuritySessionID } from "./security-session"
 
 export const DEFAULT_INLINE_BYTES = 8 * 1024
 export const DEFAULT_PREVIEW_BYTES = 1024
@@ -34,7 +35,7 @@ function artifactID(value: string): string {
 }
 
 function root(sessionID: SessionID): string {
-  return path.join(Global.Path.data, "evidence-artifact", sessionID)
+  return path.join(Global.Path.data, "evidence-artifact", canonicalSecuritySessionID(sessionID))
 }
 
 export function encodeArtifactPayload(input: unknown): string {

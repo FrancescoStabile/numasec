@@ -36,7 +36,11 @@ export function EvidenceBrowser(props: { sessionID: string; findingID?: string }
 
   const messages = createMemo(() => sync.data.message[props.sessionID] ?? [])
   const security = createMemo(() => sync.session.security(props.sessionID))
-  const fallbackFindingList = createMemo(() => fallbackFindings(messages(), sync.data.part))
+  const legacy = createMemo(() => security() === undefined)
+  const fallbackFindingList = createMemo(() => {
+    if (!legacy()) return []
+    return fallbackFindings(messages(), sync.data.part)
+  })
   const allFindings = createMemo(() => selectFindings(security(), fallbackFindingList()))
 
   const initial = createMemo(() => {

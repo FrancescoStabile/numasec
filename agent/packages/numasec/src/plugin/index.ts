@@ -68,7 +68,7 @@ export namespace Plugin {
                     Authorization: `Basic ${Buffer.from(`${Flag.NUMASEC_SERVER_USERNAME ?? "numasec"}:${Flag.NUMASEC_SERVER_PASSWORD}`).toString("base64")}`,
                   }
                 : undefined,
-              fetch: async (...args) => Server.Default().fetch(...args),
+              fetch: ((input, init) => Server.Default().fetch(new Request(input, init))) as typeof fetch,
             })
             const cfg = await Config.get()
             const input: PluginInput = {

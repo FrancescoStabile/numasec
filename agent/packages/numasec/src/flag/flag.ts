@@ -11,7 +11,6 @@ function falsy(key: string) {
 }
 
 export namespace Flag {
-  export const NUMASEC_AUTO_SHARE = truthy("NUMASEC_AUTO_SHARE")
   export const NUMASEC_GIT_BASH_PATH = process.env["NUMASEC_GIT_BASH_PATH"]
   export const NUMASEC_CONFIG = process.env["NUMASEC_CONFIG"]
   export declare const NUMASEC_TUI_CONFIG: string | undefined
@@ -34,6 +33,7 @@ export namespace Flag {
   export const NUMASEC_SERVER_PASSWORD = process.env["NUMASEC_SERVER_PASSWORD"]
   export const NUMASEC_SERVER_USERNAME = process.env["NUMASEC_SERVER_USERNAME"]
   export const NUMASEC_ENABLE_QUESTION_TOOL = truthy("NUMASEC_ENABLE_QUESTION_TOOL")
+  export declare const NUMASEC_ENABLE_PUBLIC_PROVIDER: boolean
 
   // Experimental
   export const NUMASEC_EXPERIMENTAL = truthy("NUMASEC_EXPERIMENTAL")
@@ -73,6 +73,8 @@ export namespace Flag {
   export declare const NUMASEC_SECURITY_GRAPH_READ: boolean
   export declare const NUMASEC_SECURITY_V2_PLANNER: boolean
   export declare const NUMASEC_SECURITY_V2_TUI: boolean
+  export declare const NUMASEC_SECURITY_INSECURE_TLS: boolean
+  export declare const NUMASEC_SECURITY_BROWSER_NO_SANDBOX: boolean
 
   function number(key: string) {
     const value = process.env[key]
@@ -126,6 +128,14 @@ Object.defineProperty(Flag, "NUMASEC_CLIENT", {
   configurable: false,
 })
 
+Object.defineProperty(Flag, "NUMASEC_ENABLE_PUBLIC_PROVIDER", {
+  get() {
+    return truthy("NUMASEC_ENABLE_PUBLIC_PROVIDER")
+  },
+  enumerable: true,
+  configurable: false,
+})
+
 Object.defineProperty(Flag, "NUMASEC_SECURITY_GRAPH_WRITE", {
   get() {
     return truthy("NUMASEC_SECURITY_GRAPH_WRITE")
@@ -153,6 +163,22 @@ Object.defineProperty(Flag, "NUMASEC_SECURITY_V2_PLANNER", {
 Object.defineProperty(Flag, "NUMASEC_SECURITY_V2_TUI", {
   get() {
     return truthy("NUMASEC_SECURITY_V2_TUI")
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "NUMASEC_SECURITY_INSECURE_TLS", {
+  get() {
+    return truthy("NUMASEC_SECURITY_INSECURE_TLS")
+  },
+  enumerable: true,
+  configurable: false,
+})
+
+Object.defineProperty(Flag, "NUMASEC_SECURITY_BROWSER_NO_SANDBOX", {
+  get() {
+    return truthy("NUMASEC_SECURITY_BROWSER_NO_SANDBOX")
   },
   enumerable: true,
   configurable: false,

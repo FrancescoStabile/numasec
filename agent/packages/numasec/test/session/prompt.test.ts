@@ -135,6 +135,10 @@ describe("session.prompt special characters", () => {
 
         const message = await SessionPrompt.prompt({
           sessionID: session.id,
+          model: {
+            providerID: ProviderID.make("test"),
+            modelID: ModelID.make("test-model"),
+          },
           parts,
           noReply: true,
         })
@@ -285,4 +289,81 @@ describe("session.agent-resolution", () => {
       },
     })
   }, 30000)
+})
+
+describe("session.prompt operational helpers", () => {
+  test("blocks broad scanners in close and report phase while keeping closure tools available", () => {
+    expect(SessionPrompt.toolAllowedForOperationalPhase("close", "recon")).toBe(false)
+    expect(SessionPrompt.toolAllowedForOperationalPhase("close", "finalize_finding")).toBe(true)
+    expect(SessionPrompt.toolAllowedForOperationalPhase("report", "http_request")).toBe(false)
+    expect(SessionPrompt.toolAllowedForOperationalPhase("report", "finalize_report")).toBe(true)
+    expect(SessionPrompt.toolAllowedForOperationalPhase("explore", "recon")).toBe(true)
+  })
+
+  test("derives execution lane from explicit closure and report commands instead of readiness alone", () => {
+    expect(
+      SessionPrompt.executionLane({
+        agent: "pentest",
+        command: "report generate",
+      }),
+    ).toBe("report")
+    expect(
+      SessionPrompt.executionLane({
+        agent: "pentest",
+        command: "finding finalize",
+      }),
+    ).toBe("close")
+    expect(
+      SessionPrompt.executionLane({
+        agent: "pentest",
+      }),
+    ).toBe("acquire")
+    expect(
+      SessionPrompt.executionLane({
+        agent: "report",
+      }),
+    ).toBe("report")
+  })
+
+  test("keeps acquisition tools available during acquire lane even when closure phases would block them", () => {
+    expect(SessionPrompt.toolAllowedForExecutionLane("acquire", "injection_test")).toBe(true)
+    expect(SessionPrompt.toolAllowedForExecutionLane("acquire", "http_request")).toBe(true)
+    expect(SessionPrompt.toolAllowedForExecutionLane("report", "http_request")).toBe(false)
+  })
+
+  test("requests a single execution-only retry for command-driven closure turns that stop before a tool call", () => {
+    expect(
+      SessionPrompt.shouldExecutionRetry({
+        lane: "close",
+        finishReason: "stop",
+        toolCalls: 0,
+        executionRetryCount: 0,
+        hasStructuredOutput: false,
+        commandDriven: true,
+        toolCount: 3,
+      }),
+    ).toBe(true)
+    expect(
+      SessionPrompt.shouldExecutionRetry({
+        lane: "close",
+        finishReason: "stop",
+        toolCalls: 1,
+        executionRetryCount: 0,
+        hasStructuredOutput: false,
+        commandDriven: true,
+        toolCount: 3,
+      }),
+    ).toBe(false)
+    expect(
+      SessionPrompt.shouldExecutionRetry({
+        lane: "acquire",
+        finishReason: "stop",
+        toolCalls: 0,
+        executionRetryCount: 0,
+        hasStructuredOutput: false,
+        commandDriven: true,
+        toolCount: 3,
+      }),
+    ).toBe(false)
+  })
 })

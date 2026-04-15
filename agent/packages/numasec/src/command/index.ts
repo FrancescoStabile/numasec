@@ -18,9 +18,12 @@ import PROMPT_EVIDENCE_LIST from "./template/evidence-list.txt"
 import PROMPT_EVIDENCE_SHOW from "./template/evidence.txt"
 import PROMPT_CHAINS_LIST from "./template/chains-list.txt"
 import PROMPT_FINDING_LIST from "./template/findings.txt"
+import PROMPT_FINDING_FINALIZE from "./template/finding-finalize.txt"
 import PROMPT_REMEDIATION_PLAN from "./template/remediation-plan.txt"
 import PROMPT_RETEST_RUN from "./template/retest-run.txt"
 import PROMPT_REPORT_GENERATE from "./template/report.txt"
+import PROMPT_REPORT_FINALIZE from "./template/report-finalize.txt"
+import PROMPT_REPORT_STATUS from "./template/report-status.txt"
 import PROMPT_COVERAGE from "./template/coverage.txt"
 import PROMPT_CREDS from "./template/creds.txt"
 import PROMPT_EVIDENCE_LEGACY from "./template/evidence-legacy.txt"
@@ -85,9 +88,12 @@ export namespace Command {
     EVIDENCE_SHOW: "evidence show",
     CHAINS_LIST: "chains list",
     FINDING_LIST: "finding list",
+    FINDING_FINALIZE: "finding finalize",
     REMEDIATION_PLAN: "remediation plan",
     RETEST_RUN: "retest run",
+    REPORT_STATUS: "report status",
     REPORT_GENERATE: "report generate",
+    REPORT_FINALIZE: "report finalize",
     TARGET: "target",
     FINDINGS: "findings",
     REPORT: "report",
@@ -196,6 +202,11 @@ export namespace Command {
           template: PROMPT_FINDING_LIST,
           subtask: true,
         })
+        register(Default.FINDING_FINALIZE, {
+          description: "finalize a finding through the closure path",
+          template: PROMPT_FINDING_FINALIZE,
+          agent: "pentest",
+        })
         register(Default.REMEDIATION_PLAN, {
           description: "produce a prioritized remediation plan",
           template: PROMPT_REMEDIATION_PLAN,
@@ -206,9 +217,19 @@ export namespace Command {
           template: PROMPT_RETEST_RUN,
           subtask: true,
         })
+        register(Default.REPORT_STATUS, {
+          description: "show report readiness and blockers",
+          template: PROMPT_REPORT_STATUS,
+          subtask: true,
+        })
         register(Default.REPORT_GENERATE, {
           description: "generate pentest report [markdown|html|sarif]",
           template: PROMPT_REPORT_GENERATE,
+          agent: "pentest",
+        })
+        register(Default.REPORT_FINALIZE, {
+          description: "finalize pentest report with closure gating",
+          template: PROMPT_REPORT_FINALIZE,
           agent: "pentest",
         })
 

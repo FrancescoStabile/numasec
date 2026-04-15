@@ -33,7 +33,7 @@ export const RaceTestTool = Tool.define("race_test", {
     await ctx.ask({
       permission: "race_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, concurrency: params.concurrency ?? 10 } as Record<string, any>,
     })
 
@@ -44,6 +44,7 @@ export const RaceTestTool = Tool.define("race_test", {
       headers: params.headers,
       cookies: params.cookies,
       count: params.concurrency,
+      sessionID: ctx.sessionID,
     })
 
     const parts: string[] = [`── Race Condition Test (${result.responses.length} requests, ${result.elapsed}ms) ──`]

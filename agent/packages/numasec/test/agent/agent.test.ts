@@ -202,7 +202,6 @@ test("review agent denies scanner tools and bash", async () => {
       expect(evalPerm(review, "ssrf_test")).toBe("deny")
       expect(evalPerm(review, "auth_test")).toBe("deny")
       expect(evalPerm(review, "access_control_test")).toBe("deny")
-      expect(evalPerm(review, "path_test")).toBe("deny")
       expect(evalPerm(review, "observe_surface")).toBe("deny")
       expect(evalPerm(review, "plan_next")).toBe("deny")
       expect(evalPerm(review, "upsert_finding")).toBe("deny")

@@ -83,10 +83,6 @@ export const dict = {
   "command.session.compact.description": "Opsummer sessionen for at reducere kontekststørrelsen",
   "command.session.fork": "Forgren fra besked",
   "command.session.fork.description": "Opret en ny session fra en tidligere besked",
-  "command.session.share": "Del session",
-  "command.session.share.description": "Del denne session og kopier URL'en til udklipsholderen",
-  "command.session.unshare": "Stop deling af session",
-  "command.session.unshare.description": "Stop med at dele denne session",
 
   "palette.search.placeholder": "Søg i filer, kommandoer og sessioner",
   "palette.empty": "Ingen resultater fundet",
@@ -424,16 +420,7 @@ export const dict = {
   "toast.file.listFailed.title": "Kunne ikke liste filer",
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Vælg først et linjeinterval i en filfane.",
-  "toast.session.share.copyFailed.title": "Kunne ikke kopiere URL til udklipsholder",
-  "toast.session.share.success.title": "Session delt",
-  "toast.session.share.success.description": "Delings-URL kopieret til udklipsholder!",
-  "toast.session.share.failed.title": "Kunne ikke dele session",
-  "toast.session.share.failed.description": "Der opstod en fejl under deling af sessionen",
 
-  "toast.session.unshare.success.title": "Deling af session stoppet",
-  "toast.session.unshare.success.description": "Deling af session blev stoppet!",
-  "toast.session.unshare.failed.title": "Kunne ikke stoppe deling af session",
-  "toast.session.unshare.failed.description": "Der opstod en fejl under stop af sessionsdeling",
 
   "toast.session.listFailed.title": "Kunne ikke indlæse sessioner for {{project}}",
 
@@ -551,26 +538,10 @@ export const dict = {
   "status.popover.ariaLabel": "Serverkonfigurationer",
   "status.popover.tab.servers": "Servere",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrer servere",
 
-  "session.share.popover.title": "Udgiv på nettet",
-  "session.share.popover.description.shared":
-    "Denne session er offentlig på nettet. Den er tilgængelig for alle med linket.",
-  "session.share.popover.description.unshared":
-    "Del session offentligt på nettet. Den vil være tilgængelig for alle med linket.",
-  "session.share.action.share": "Del",
-  "session.share.action.publish": "Udgiv",
-  "session.share.action.publishing": "Udgiver...",
-  "session.share.action.unpublish": "Afpublicer",
-  "session.share.action.unpublishing": "Afpublicerer...",
-  "session.share.action.view": "Vis",
-  "session.share.copy.copied": "Kopieret",
-  "session.share.copy.copyLink": "Kopier link",
 
-  "lsp.tooltip.none": "Ingen LSP-servere",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Indlæser prompt...",
   "terminal.loading": "Indlæser terminal...",
@@ -607,14 +578,11 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Vis alle sessioner",
   "sidebar.project.clearNotifications": "Ryd notifikationer",
 
-  "app.name.desktop": "Numasec Desktop",
-  "settings.section.desktop": "Desktop",
+  "app.name": "Numasec",
+  "settings.section.application": "Desktop",
   "settings.section.server": "Server",
   "settings.tab.general": "Generelt",
   "settings.tab.shortcuts": "Genveje",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL integration",
-  "settings.desktop.wsl.description": "Kør Numasec-serveren inde i WSL på Windows.",
 
   "settings.general.section.appearance": "Udseende",
   "settings.general.section.notifications": "Systemmeddelelser",
@@ -807,7 +775,6 @@ export const dict = {
   "session.delete.confirm": 'Slet session "{{name}}"?',
   "session.delete.button": "Slet session",
 
-  "workspace.new": "Nyt arbejdsområde",
   "workspace.type.local": "lokal",
   "workspace.type.sandbox": "sandkasse",
   "workspace.create.failed.title": "Kunne ikke oprette arbejdsområde",

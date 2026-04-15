@@ -216,8 +216,6 @@ export async function bootstrapDirectory(input: {
   }
   input.setStore("mcp_ready", false)
   input.setStore("mcp", {})
-  input.setStore("lsp_ready", false)
-  input.setStore("lsp", [])
   if (loading) input.setStore("status", "partial")
 
   const fast = [

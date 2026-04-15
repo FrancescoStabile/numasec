@@ -1,12 +1,16 @@
 import { createHash } from "crypto"
-import { Effect, Layer, Schema, ServiceMap } from "effect"
+import { Cause, Duration, Effect, Layer, Schedule, Schema, ServiceMap } from "effect"
 import type { Browser, BrowserContext, Page, Request as PlaywrightRequest } from "playwright"
 import { ulid } from "ulid"
 import { InstanceState } from "../../effect/instance-state"
 import { makeRuntime } from "../../effect/run-service"
+import { Flag } from "../../flag/flag"
 import type { SessionID } from "../../session/schema"
-import { Database } from "../../storage/db"
+import { SessionTable } from "../../session/session.sql"
+import { Database, inArray } from "../../storage/db"
 import { Log } from "../../util/log"
+import { Scope } from "../scope"
+import { canonicalSecuritySessionID } from "../security-session"
 import {
   SecurityActorSessionTable,
   SecurityBrowserPageTable,
@@ -19,7 +23,7 @@ import {
 } from "./runtime.sql"
 
 const log = Log.create({ service: "security.browser.runtime" })
-const ACTIVE_TTL_MS = 15 * 60 * 1000
+export const ACTIVE_TTL_MS = 15 * 60 * 1000
 const NETWORK_LIMIT = 64
 const PAGE_ROLE = "primary"
 const USER_AGENT = "Mozilla/5.0 (compatible; numasec/4.2)"
@@ -65,7 +69,7 @@ function hash(input: string) {
 }
 
 function key(sessionID: SessionID, actorSessionID: string) {
-  return `${sessionID}:${actorSessionID}`
+  return `${canonicalSecuritySessionID(sessionID)}:${actorSessionID}`
 }
 
 function value(input: unknown) {
@@ -80,6 +84,24 @@ function origin(input: string) {
     return url.origin
   } catch {
     return ""
+  }
+}
+
+export function browserLaunchArgs() {
+  const args: string[] = []
+  if (Flag.NUMASEC_SECURITY_BROWSER_NO_SANDBOX) {
+    args.push("--no-sandbox", "--disable-setuid-sandbox")
+  }
+  if (Flag.NUMASEC_SECURITY_INSECURE_TLS) {
+    args.push("--ignore-certificate-errors")
+  }
+  return args
+}
+
+export function browserContextConfig() {
+  return {
+    ignoreHTTPSErrors: Flag.NUMASEC_SECURITY_INSECURE_TLS,
+    userAgent: USER_AGENT,
   }
 }
 
@@ -144,6 +166,22 @@ function bindNetwork(active: Active) {
     current.timeCaptured = Date.now()
     active.pending.delete(request)
     pushNetwork(active, current)
+  })
+}
+
+async function bindScope(context: BrowserContext, sessionID: SessionID) {
+  await context.route("**/*", async (route) => {
+    const current = Scope.get(sessionID)
+    if (!current) {
+      await route.continue()
+      return
+    }
+    const result = Scope.check(sessionID, route.request().url())
+    if (result.allowed) {
+      await route.continue()
+      return
+    }
+    await route.abort("blockedbyclient")
   })
 }
 
@@ -264,10 +302,45 @@ function attemptID() {
   return `EATT-${ulid()}` as SecurityExecutionAttemptID
 }
 
-async function closeActive(state: State, active: Active, status: string, errorCode = "") {
+function liveSessions(input: Active[]) {
+  const ids: SessionID[] = []
+  const seen = new Set<string>()
+  for (const item of input) {
+    if (seen.has(item.sessionID)) continue
+    seen.add(item.sessionID)
+    ids.push(item.sessionID)
+  }
+  if (ids.length === 0) return new Set<string>()
+  return new Set(
+    Database.use((db) =>
+      db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(inArray(SessionTable.id, ids))
+        .all()
+        .map((item) => item.id),
+    ),
+  )
+}
+
+async function closeActive(state: Pick<State, "sessions">, active: Active, status: string, errorCode = "", persist = true) {
   state.sessions.delete(key(active.sessionID, active.actorSessionID))
-  syncRows(active, status, errorCode)
-  await active.context.close().catch(() => undefined)
+  try {
+    if (persist) syncRows(active, status, errorCode)
+  } finally {
+    await active.context.close().catch(() => undefined)
+  }
+}
+
+export async function cleanupBrowserSessions(state: Pick<State, "sessions">, now = Date.now()) {
+  const sessions = Array.from(state.sessions.values())
+  const live = liveSessions(sessions)
+  for (const active of sessions) {
+    const missing = !live.has(active.sessionID)
+    if (!missing && !stale(active, now) && !active.page.isClosed() && !broken(active)) continue
+    const status = stale(active, now) ? "expired" : "closed"
+    await closeActive(state, active, status, "", !missing)
+  }
 }
 
 async function closeBrowser(state: State) {
@@ -280,8 +353,8 @@ async function closeBrowser(state: State) {
   state.browser = undefined
 }
 
-function stale(active: Active) {
-  return Date.now() - active.timeUpdated > ACTIVE_TTL_MS
+function stale(active: Active, now = Date.now()) {
+  return now - active.timeUpdated > ACTIVE_TTL_MS
 }
 
 function broken(active: Active) {
@@ -354,15 +427,15 @@ export interface BrowserNetworkSnapshotInput {
 
 export function browserActorSessionID(sessionID: SessionID, actorLabel?: string, explicit?: string) {
   if (explicit) return explicit as SecurityActorSessionID
-  return `ASES-${hash(`${sessionID}:${actorLabel || "default"}`)}` as SecurityActorSessionID
+  return `ASES-${hash(`${canonicalSecuritySessionID(sessionID)}:${actorLabel || "default"}`)}` as SecurityActorSessionID
 }
 
 export function browserSessionID(sessionID: SessionID, actorSessionID: string) {
-  return `BSES-${hash(`${sessionID}:${actorSessionID}`)}` as SecurityBrowserSessionID
+  return `BSES-${hash(`${canonicalSecuritySessionID(sessionID)}:${actorSessionID}`)}` as SecurityBrowserSessionID
 }
 
 export function browserPageID(sessionID: SessionID, actorSessionID: string) {
-  return `BPAG-${hash(`${sessionID}:${actorSessionID}:${PAGE_ROLE}`)}` as SecurityBrowserPageID
+  return `BPAG-${hash(`${canonicalSecuritySessionID(sessionID)}:${actorSessionID}:${PAGE_ROLE}`)}` as SecurityBrowserPageID
 }
 
 namespace BrowserRuntimeStore {
@@ -389,17 +462,21 @@ const layer = Layer.effect(
         } satisfies State
 
         yield* Effect.addFinalizer(() => Effect.promise(() => closeBrowser(next)))
+        yield* Effect.promise(() => cleanupBrowserSessions(next)).pipe(
+          Effect.catchCause((cause) => {
+            log.error("cleanup loop failed", { cause: Cause.pretty(cause) })
+            return Effect.void
+          }),
+          Effect.repeat(Schedule.spaced(Duration.minutes(1))),
+          Effect.delay(Duration.minutes(1)),
+          Effect.forkScoped,
+        )
         return next
       }),
     )
 
     const cleanup = Effect.fn("BrowserRuntime.cleanup")(function* (cache: State) {
-      const sessions = Array.from(cache.sessions.values())
-      for (const active of sessions) {
-        if (!stale(active) && !active.page.isClosed() && !broken(active)) continue
-        const status = stale(active) ? "expired" : "closed"
-        yield* Effect.promise(() => closeActive(cache, active, status))
-      }
+      yield* Effect.promise(() => cleanupBrowserSessions(cache))
     })
 
     const playwright = Effect.fn("BrowserRuntime.playwright")(function* (cache: State) {
@@ -424,7 +501,7 @@ const layer = Layer.effect(
         try: async () =>
           await mod.chromium.launch({
             headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--ignore-certificate-errors"],
+            args: browserLaunchArgs(),
           }),
         catch: (cause) =>
           new BrowserRuntimeError({
@@ -441,14 +518,15 @@ const layer = Layer.effect(
       const cache = yield* InstanceState.get(state)
       yield* cleanup(cache)
 
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
       const actorLabel = input.actorLabel || "browser"
-      const actorSessionID = browserActorSessionID(input.sessionID, actorLabel, input.actorSessionID)
-      const current = cache.sessions.get(key(input.sessionID, actorSessionID))
+      const actorSessionID = browserActorSessionID(sessionID, actorLabel, input.actorSessionID)
+      const current = cache.sessions.get(key(sessionID, actorSessionID))
       if (current && input.reset) {
         yield* Effect.promise(() => closeActive(cache, current, "reset"))
       }
 
-      const existing = cache.sessions.get(key(input.sessionID, actorSessionID))
+      const existing = cache.sessions.get(key(sessionID, actorSessionID))
       if (existing) {
         existing.timeUpdated = Date.now()
         syncRows(existing, "active")
@@ -466,15 +544,20 @@ const layer = Layer.effect(
 
       const activeBrowser = yield* browser(cache)
       const context = yield* Effect.tryPromise({
-        try: async () =>
-          await activeBrowser.newContext({
-            ignoreHTTPSErrors: true,
-            userAgent: USER_AGENT,
-          }),
+        try: async () => await activeBrowser.newContext(browserContextConfig()),
         catch: (cause) =>
           new BrowserRuntimeError({
             code: "browser_context_failed",
             message: `Failed to create browser context: ${message(cause)}`,
+            cause,
+          }),
+      })
+      yield* Effect.tryPromise({
+        try: async () => await bindScope(context, sessionID),
+        catch: (cause) =>
+          new BrowserRuntimeError({
+            code: "browser_context_failed",
+            message: `Failed to bind browser scope enforcement: ${message(cause)}`,
             cause,
           }),
       })
@@ -489,10 +572,10 @@ const layer = Layer.effect(
       })
 
       const active = {
-        sessionID: input.sessionID,
+        sessionID,
         actorSessionID,
-        browserSessionID: browserSessionID(input.sessionID, actorSessionID),
-        pageID: browserPageID(input.sessionID, actorSessionID),
+        browserSessionID: browserSessionID(sessionID, actorSessionID),
+        pageID: browserPageID(sessionID, actorSessionID),
         actorLabel,
         context,
         page,
@@ -505,7 +588,7 @@ const layer = Layer.effect(
       } satisfies Active
 
       bindNetwork(active)
-      cache.sessions.set(key(input.sessionID, actorSessionID), active)
+      cache.sessions.set(key(sessionID, actorSessionID), active)
       syncRows(active, "active")
       log.info("prepared browser actor session", {
         actorSessionID: active.actorSessionID,
@@ -527,8 +610,9 @@ const layer = Layer.effect(
 
     const sync = Effect.fn("BrowserRuntime.sync")(function* (input: SyncBrowserSessionInput) {
       const cache = yield* InstanceState.get(state)
-      const actorSessionID = browserActorSessionID(input.sessionID, undefined, input.actorSessionID)
-      const active = cache.sessions.get(key(input.sessionID, actorSessionID))
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
+      const actorSessionID = browserActorSessionID(sessionID, undefined, input.actorSessionID)
+      const active = cache.sessions.get(key(sessionID, actorSessionID))
       if (!active) {
         return yield* Effect.fail(
           new BrowserRuntimeError({
@@ -558,6 +642,7 @@ const layer = Layer.effect(
     })
 
     const recordAttempt = Effect.fn("BrowserRuntime.recordAttempt")(function* (input: BrowserExecutionAttemptInput) {
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
       yield* Effect.try({
         try: () =>
           Database.use((db) =>
@@ -565,7 +650,7 @@ const layer = Layer.effect(
               .insert(SecurityExecutionAttemptTable)
               .values({
                 id: attemptID(),
-                session_id: input.sessionID,
+                session_id: sessionID,
                 actor_session_id: input.actorSessionID as SecurityActorSessionID | undefined,
                 browser_session_id: input.browserSessionID as SecurityBrowserSessionID | undefined,
                 page_id: input.pageID as SecurityBrowserPageID | undefined,
@@ -588,8 +673,9 @@ const layer = Layer.effect(
 
     const network = Effect.fn("BrowserRuntime.network")(function* (input: BrowserNetworkSnapshotInput) {
       const cache = yield* InstanceState.get(state)
-      const actorSessionID = browserActorSessionID(input.sessionID, undefined, input.actorSessionID)
-      const active = cache.sessions.get(key(input.sessionID, actorSessionID))
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
+      const actorSessionID = browserActorSessionID(sessionID, undefined, input.actorSessionID)
+      const active = cache.sessions.get(key(sessionID, actorSessionID))
       if (!active) {
         return yield* Effect.fail(
           new BrowserRuntimeError({
@@ -605,7 +691,7 @@ const layer = Layer.effect(
 
     const reset = Effect.fn("BrowserRuntime.reset")(function* (input: ResetBrowserSessionInput) {
       const cache = yield* InstanceState.get(state)
-      const active = cache.sessions.get(key(input.sessionID, input.actorSessionID))
+      const active = cache.sessions.get(key(canonicalSecuritySessionID(input.sessionID), input.actorSessionID))
       if (!active) return
       yield* Effect.promise(() => closeActive(cache, active, input.status ?? "reset", input.errorCode ?? ""))
     })

@@ -14,13 +14,34 @@ import { useKeyboard } from "@opentui/solid"
 import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 
-const PROVIDER_PRIORITY: Record<string, number> = {
-  numasec: 0,
-  "numasec-go": 1,
-  openai: 2,
-  "github-copilot": 3,
-  anthropic: 4,
-  google: 5,
+function authSummary(methods: ProviderAuthMethod[] | undefined) {
+  const unique = Array.from(
+    new Set((methods ?? [{ type: "api", label: "API key" }]).map((item) => (item.type === "oauth" ? "OAuth" : "API key"))),
+  )
+  return unique.join(" or ")
+}
+
+function providerHelp(providerID: string, theme: ReturnType<typeof useTheme>["theme"]) {
+  if (providerID === "numasec") {
+    return (
+      <box gap={1}>
+        <text fg={theme.textMuted}>Enter a Numasec API key.</text>
+        <text fg={theme.text}>
+          Manage keys at <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span>
+        </text>
+      </box>
+    )
+  }
+  if (providerID === "numasec-go") {
+    return (
+      <box gap={1}>
+        <text fg={theme.textMuted}>Enter the API key linked to your Numasec Go access.</text>
+        <text fg={theme.text}>
+          Manage access at <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span>
+        </text>
+      </box>
+    )
+  }
 }
 
 export function createDialogProviderOptions() {
@@ -31,24 +52,19 @@ export function createDialogProviderOptions() {
   const options = createMemo(() => {
     return pipe(
       sync.data.provider_next.all,
-      sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
-      map((provider) => ({
-        title: provider.name,
-        value: provider.id,
-        description: {
-          numasec: "(Recommended)",
-          anthropic: "(API key)",
-          openai: "(ChatGPT Plus/Pro or API key)",
-          "numasec-go": "Low cost subscription for everyone",
-        }[provider.id],
-        category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
-        async onSelect() {
-          const methods = sync.data.provider_auth[provider.id] ?? [
-            {
-              type: "api",
-              label: "API key",
-            },
-          ]
+      sortBy((provider) => provider.name.toLowerCase()),
+      map((provider) => {
+        const methods = sync.data.provider_auth[provider.id] ?? [
+          {
+            type: "api",
+            label: "API key",
+          },
+        ]
+        return {
+          title: provider.name,
+          value: provider.id,
+          description: authSummary(methods),
+          async onSelect() {
           let index: number | null = 0
           if (methods.length > 1) {
             index = await new Promise<number | null>((resolve) => {
@@ -107,8 +123,9 @@ export function createDialogProviderOptions() {
           if (method.type === "api") {
             return dialog.replace(() => <ApiMethod providerID={provider.id} title={method.label} />)
           }
-        },
-      })),
+          },
+        }
+      }),
     )
   })
   return options
@@ -235,31 +252,7 @@ function ApiMethod(props: ApiMethodProps) {
     <DialogPrompt
       title={props.title}
       placeholder="API key"
-      description={
-        {
-          numasec: (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                Numasec Zen gives you access to the best AI models at the cheapest prices with a single API key.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span> to get a key
-              </text>
-            </box>
-          ),
-          "numasec-go": (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                Numasec Go is a $10 per month subscription that provides reliable access to popular open AI models with
-                generous usage limits.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://numasec.ai/zen</span> and enable Numasec Go
-              </text>
-            </box>
-          ),
-        }[props.providerID] ?? undefined
-      }
+      description={providerHelp(props.providerID, theme)}
       onConfirm={async (value) => {
         if (!value) return
         await sdk.client.auth.set({

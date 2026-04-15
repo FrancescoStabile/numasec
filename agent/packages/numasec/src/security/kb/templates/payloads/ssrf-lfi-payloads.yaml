@@ -18,7 +18,7 @@ description: >
   bypasses, scheme-based techniques, and all major cloud metadata endpoints.
   LFI section covers traversal depth variants, encoding bypasses, null-byte tricks,
   PHP stream wrappers, and log/proc file targets for RCE escalation.
-  Use with ssrf_test, path_test, or http_request for manual testing.
+  Use with ssrf_test, injection_test, or http_request for manual testing.
 
 # -----------------------------------------------------------------------
 # SSRF PAYLOADS

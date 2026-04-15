@@ -13,7 +13,7 @@ import { UpsertFindingTool } from "./upsert-finding"
 const DESCRIPTION = `Save a security finding. Auto-enriches with CWE, CVSS 3.1, OWASP category, and MITRE ATT&CK.
 Call this IMMEDIATELY when you discover a vulnerability — don't wait until the end.
 
-The finding gets a deterministic ID based on method+url+parameter+title (dedup-safe).
+The finding gets a deterministic per-session ID based on method+url+parameter+title (dedup-safe within a run).
 Enrichment is automatic: you provide title/severity/description, the system adds CWE/CVSS/OWASP.
 
 IMPORTANT: Always provide evidence (HTTP requests/responses, payloads that worked).

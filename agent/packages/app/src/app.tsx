@@ -63,18 +63,6 @@ function UiI18nBridge(props: ParentProps) {
   return <I18nProvider value={{ locale: language.intl, t: language.t }}>{props.children}</I18nProvider>
 }
 
-declare global {
-  interface Window {
-    __NUMASEC__?: {
-      updaterEnabled?: boolean
-      deepLinks?: string[]
-      wsl?: boolean
-    }
-    api?: {
-      setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
-    }
-  }
-}
 
 function QueryProvider(props: ParentProps) {
   const client = new QueryClient()
@@ -128,11 +116,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
   return (
     <MetaProvider>
       <Font />
-      <ThemeProvider
-        onThemeApplied={(_, mode) => {
-          void window.api?.setTitlebar?.({ mode })
-        }}
-      >
+      <ThemeProvider>
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
             <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>

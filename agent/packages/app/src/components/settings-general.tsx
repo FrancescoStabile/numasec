@@ -1,15 +1,9 @@
-import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Button } from "@numasec/ui/button"
-import { Icon } from "@numasec/ui/icon"
+import { Component, createMemo, onMount, type JSX } from "solid-js"
 import { Select } from "@numasec/ui/select"
 import { Switch } from "@numasec/ui/switch"
 import { TextField } from "@numasec/ui/text-field"
-import { Tooltip } from "@numasec/ui/tooltip"
 import { useTheme, type ColorScheme } from "@numasec/ui/theme/context"
-import { showToast } from "@numasec/ui/toast"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import {
   monoDefault,
   monoFontFamily,
@@ -64,72 +58,11 @@ const playDemoSound = (id: string | undefined) => {
 export const SettingsGeneral: Component = () => {
   const theme = useTheme()
   const language = useLanguage()
-  const platform = usePlatform()
   const settings = useSettings()
 
   onMount(() => {
     void theme.loadThemes()
   })
-
-  const [store, setStore] = createStore({
-    checking: false,
-  })
-
-  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-
-  const check = () => {
-    if (!platform.checkUpdate) return
-    setStore("checking", true)
-
-    void platform
-      .checkUpdate()
-      .then((result) => {
-        if (!result.updateAvailable) {
-          showToast({
-            variant: "success",
-            icon: "circle-check",
-            title: language.t("settings.updates.toast.latest.title"),
-            description: language.t("settings.updates.toast.latest.description", { version: platform.version ?? "" }),
-          })
-          return
-        }
-
-        const actions =
-          platform.update && platform.restart
-            ? [
-                {
-                  label: language.t("toast.update.action.installRestart"),
-                  onClick: async () => {
-                    await platform.update!()
-                    await platform.restart!()
-                  },
-                },
-                {
-                  label: language.t("toast.update.action.notYet"),
-                  onClick: "dismiss" as const,
-                },
-              ]
-            : [
-                {
-                  label: language.t("toast.update.action.notYet"),
-                  onClick: "dismiss" as const,
-                },
-              ]
-
-        showToast({
-          persistent: true,
-          icon: "download",
-          title: language.t("toast.update.title"),
-          description: language.t("toast.update.description", { version: result.version ?? "" }),
-          actions,
-        })
-      })
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      })
-      .finally(() => setStore("checking", false))
-  }
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
 
@@ -473,19 +406,6 @@ export const SettingsGeneral: Component = () => {
 
       <SettingsList>
         <SettingsRow
-          title={language.t("settings.updates.row.startup.title")}
-          description={language.t("settings.updates.row.startup.description")}
-        >
-          <div data-action="settings-updates-startup">
-            <Switch
-              checked={settings.updates.startup()}
-              disabled={!platform.checkUpdate}
-              onChange={(checked) => settings.updates.setStartup(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.general.row.releaseNotes.title")}
           description={language.t("settings.general.row.releaseNotes.description")}
         >
@@ -495,17 +415,6 @@ export const SettingsGeneral: Component = () => {
               onChange={(checked) => settings.general.setReleaseNotes(checked)}
             />
           </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.updates.row.check.title")}
-          description={language.t("settings.updates.row.check.description")}
-        >
-          <Button size="small" variant="secondary" disabled={store.checking || !platform.checkUpdate} onClick={check}>
-            {store.checking
-              ? language.t("settings.updates.action.checking")
-              : language.t("settings.updates.action.checkNow")}
-          </Button>
         </SettingsRow>
       </SettingsList>
     </div>
@@ -528,71 +437,7 @@ export const SettingsGeneral: Component = () => {
 
         <SoundsSection />
 
-        {/*<Show when={platform.platform === "desktop" && platform.os === "windows" && platform.getWslEnabled}>
-          {(_) => {
-            const [enabledResource, actions] = createResource(() => platform.getWslEnabled?.())
-            const enabled = () => (enabledResource.state === "pending" ? undefined : enabledResource.latest)
-
-            return (
-              <div class="flex flex-col gap-1">
-                <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.desktop.section.wsl")}</h3>
-
-                <SettingsList>
-                  <SettingsRow
-                    title={language.t("settings.desktop.wsl.title")}
-                    description={language.t("settings.desktop.wsl.description")}
-                  >
-                    <div data-action="settings-wsl">
-                      <Switch
-                        checked={enabled() ?? false}
-                        disabled={enabledResource.state === "pending"}
-                        onChange={(checked) => platform.setWslEnabled?.(checked)?.finally(() => actions.refetch())}
-                      />
-                    </div>
-                  </SettingsRow>
-                </SettingsList>
-              </div>
-            )
-          }}
-        </Show>*/}
-
         <UpdatesSection />
-
-        <Show when={linux()}>
-          {(_) => {
-            const [valueResource, actions] = createResource(() => platform.getDisplayBackend?.())
-            const value = () => (valueResource.state === "pending" ? undefined : valueResource.latest)
-
-            const onChange = (checked: boolean) =>
-              platform.setDisplayBackend?.(checked ? "wayland" : "auto").finally(() => actions.refetch())
-
-            return (
-              <div class="flex flex-col gap-1">
-                <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
-
-                <SettingsList>
-                  <SettingsRow
-                    title={
-                      <div class="flex items-center gap-2">
-                        <span>{language.t("settings.general.row.wayland.title")}</span>
-                        <Tooltip value={language.t("settings.general.row.wayland.tooltip")} placement="top">
-                          <span class="text-text-weak">
-                            <Icon name="help" size="small" />
-                          </span>
-                        </Tooltip>
-                      </div>
-                    }
-                    description={language.t("settings.general.row.wayland.description")}
-                  >
-                    <div data-action="settings-wayland">
-                      <Switch checked={value() === "wayland"} onChange={onChange} />
-                    </div>
-                  </SettingsRow>
-                </SettingsList>
-              </div>
-            )
-          }}
-        </Show>
       </div>
     </div>
   )

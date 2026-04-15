@@ -15,7 +15,7 @@ This extension requires the [numasec CLI](https://numasec.ai) to be installed on
 
 ## Support
 
-This is an early release. If you encounter issues or have feedback, please create an issue at https://github.com/anomalyco/numasec/issues.
+This is an early release. If you encounter issues or have feedback, please create an issue at https://github.com/FrancescoStabile/numasec/issues.
 
 ## Development
 

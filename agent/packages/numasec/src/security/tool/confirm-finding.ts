@@ -3,6 +3,7 @@ import { desc, eq } from "../../storage/db"
 import { Tool } from "../../tool/tool"
 import { Database } from "../../storage/db"
 import { EvidenceEdgeTable, EvidenceNodeTable } from "../evidence.sql"
+import { canonicalSecuritySessionID } from "../security-session"
 import { UpsertFindingTool } from "./upsert-finding"
 
 function readPayload(input: unknown): Record<string, unknown> {
@@ -92,15 +93,23 @@ function narrow(
   },
 ) {
   if (list.length <= 1) return list
-  if (!target.url && !target.method) return list
+  if (!target.url && !target.method) return []
   const out = list.filter((item) => {
     const text = targetText(item, map, edges)
     if (target.url && !text.includes(target.url)) return false
     if (target.method && !text.includes(target.method)) return false
     return true
   })
-  if (out.length > 0) return out
-  return list
+  return out
+}
+
+function appendUnique(out: string[], list: string[]) {
+  const known = new Set(out)
+  for (const item of list) {
+    if (known.has(item)) continue
+    known.add(item)
+    out.push(item)
+  }
 }
 
 const DESCRIPTION = `Confirm a finding in one shot from recent evidence.
@@ -119,6 +128,8 @@ export const ConfirmFindingTool = Tool.define("confirm_finding", {
     lookback_limit: z.number().int().min(20).max(500).optional().describe("Recent evidence window for auto-suggestions"),
     confidence: z.number().min(0).max(1).optional(),
     status: z.string().optional(),
+    target_finding_id: z.string().optional().describe("Optional existing finding id to update in place"),
+    root_cause_key: z.string().optional().describe("Optional stable root cause key for update and dedup semantics"),
     strict_assertion: z.boolean().optional(),
     url: z.string().optional(),
     method: z.string().optional(),
@@ -129,11 +140,12 @@ export const ConfirmFindingTool = Tool.define("confirm_finding", {
     taxonomy_tags: z.array(z.string()).optional(),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const rows = Database.use((db) =>
       db
         .select()
         .from(EvidenceNodeTable)
-        .where(eq(EvidenceNodeTable.session_id, ctx.sessionID))
+        .where(eq(EvidenceNodeTable.session_id, sessionID))
         .orderBy(desc(EvidenceNodeTable.time_updated))
         .all(),
     )
@@ -141,7 +153,7 @@ export const ConfirmFindingTool = Tool.define("confirm_finding", {
       db
         .select()
         .from(EvidenceEdgeTable)
-        .where(eq(EvidenceEdgeTable.session_id, ctx.sessionID))
+        .where(eq(EvidenceEdgeTable.session_id, sessionID))
         .all(),
     )
     const map = new Map<string, (typeof EvidenceNodeTable)["$inferSelect"]>(rows.map((item) => [item.id, item]))
@@ -178,50 +190,44 @@ export const ConfirmFindingTool = Tool.define("confirm_finding", {
     const impact = Array.from(new Set(params.impact_refs ?? []))
 
     if (evidence.length === 0) {
-      const candidates = narrow(
-        scopedVerified.filter((item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) !== "negative"),
-        map,
-        edges,
-        target,
+      const candidates = scopedVerified.filter(
+        (item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) !== "negative",
       )
-      if (candidates.length === 1) evidence.push(candidates[0]!.id)
-      if (candidates.length > 1) {
-        throw new Error(`confirm_finding found multiple positive verification candidates in hypothesis scope: ${candidates.map((item) => item.id).join(", ")}. Pass evidence_refs explicitly.`)
-      }
-      if (candidates.length === 0) {
-        const fallback = narrow(
-          verified.filter((item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) !== "negative"),
-          map,
-          edges,
-          target,
+      const scoped = narrow(candidates, map, edges, target)
+      const picked = scoped.length > 0 ? scoped : candidates
+      if (picked.length > 0) appendUnique(evidence, picked.map((item) => item.id))
+      if (picked.length === 0) {
+        const fallback = verified.filter(
+          (item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) !== "negative",
         )
-        if (fallback.length === 1) evidence.push(fallback[0]!.id)
-        if (fallback.length > 1) {
-          throw new Error(`confirm_finding found multiple positive verification candidates in session scope: ${fallback.map((item) => item.id).join(", ")}. Pass evidence_refs explicitly.`)
+        const narrowed = narrow(fallback, map, edges, target)
+        if (narrowed.length > 0) appendUnique(evidence, narrowed.map((item) => item.id))
+        if (narrowed.length === 0 && fallback.length === 1) evidence.push(fallback[0]!.id)
+        if (narrowed.length === 0 && fallback.length > 1) {
+          throw new Error(
+            `confirm_finding found multiple positive verification candidates in session scope: ${fallback.map((item) => item.id).join(", ")}. Pass evidence_refs explicitly or provide url/method to narrow the target.`,
+          )
         }
       }
     }
     if (negative.length === 0) {
-      const candidates = narrow(
-        scopedVerified.filter((item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) === "negative"),
-        map,
-        edges,
-        target,
+      const candidates = scopedVerified.filter(
+        (item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) === "negative",
       )
-      if (candidates.length === 1) negative.push(candidates[0]!.id)
-      if (candidates.length > 1) {
-        throw new Error(`confirm_finding found multiple negative control candidates in hypothesis scope: ${candidates.map((item) => item.id).join(", ")}. Pass negative_control_refs explicitly.`)
-      }
-      if (candidates.length === 0) {
-        const fallback = narrow(
-          verified.filter((item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) === "negative"),
-          map,
-          edges,
-          target,
+      const scoped = narrow(candidates, map, edges, target)
+      const picked = scoped.length > 0 ? scoped : candidates
+      if (picked.length > 0) appendUnique(negative, picked.map((item) => item.id))
+      if (picked.length === 0) {
+        const fallback = verified.filter(
+          (item) => item.type === "verification" && verificationPassed(item) && verificationControl(item) === "negative",
         )
-        if (fallback.length === 1) negative.push(fallback[0]!.id)
-        if (fallback.length > 1) {
-          throw new Error(`confirm_finding found multiple negative control candidates in session scope: ${fallback.map((item) => item.id).join(", ")}. Pass negative_control_refs explicitly.`)
+        const narrowed = narrow(fallback, map, edges, target)
+        if (narrowed.length > 0) appendUnique(negative, narrowed.map((item) => item.id))
+        if (narrowed.length === 0 && fallback.length === 1) negative.push(fallback[0]!.id)
+        if (narrowed.length === 0 && fallback.length > 1) {
+          throw new Error(
+            `confirm_finding found multiple negative control candidates in session scope: ${fallback.map((item) => item.id).join(", ")}. Pass negative_control_refs explicitly or provide url/method to narrow the target.`,
+          )
         }
       }
     }
@@ -271,6 +277,8 @@ export const ConfirmFindingTool = Tool.define("confirm_finding", {
         taxonomy_tags: params.taxonomy_tags,
         confidence: params.confidence,
         status: params.status,
+        target_finding_id: params.target_finding_id,
+        root_cause_key: params.root_cause_key,
         strict_assertion: params.strict_assertion,
         url: params.url,
         method: params.method,

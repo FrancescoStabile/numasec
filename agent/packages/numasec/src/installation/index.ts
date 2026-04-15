@@ -22,7 +22,7 @@ import semver from "semver"
 export namespace Installation {
   const log = Log.create({ service: "installation" })
 
-  export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
+  export type Method = "curl" | "source" | "npm" | "pnpm" | "bun" | "unknown"
 
   export type ReleaseType = "patch" | "minor" | "major"
 
@@ -81,14 +81,30 @@ export namespace Installation {
   // Response schemas for external version APIs
   const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
   const NpmPackage = Schema.Struct({ version: Schema.String })
-  const BrewFormula = Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })
-  const BrewInfoV2 = Schema.Struct({
-    formulae: Schema.Array(Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })),
-  })
-  const ChocoPackage = Schema.Struct({
-    d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
-  })
-  const ScoopManifest = NpmPackage
+  function root(file: string) {
+    let dir = file
+    try {
+      const stat = require("fs").statSync(file, { throwIfNoEntry: false })
+      if (stat?.isFile()) dir = path.dirname(file)
+    } catch {}
+    while (true) {
+      if (require("fs").existsSync(path.join(dir, "install.sh")) && require("fs").existsSync(path.join(dir, "agent", "package.json"))) {
+        return dir
+      }
+      const parent = path.dirname(dir)
+      if (parent === dir) return
+      dir = parent
+    }
+  }
+
+  function source(file: string) {
+    if (file.includes(path.join(".numasec", "bin"))) return false
+    const fsSync = require("fs")
+    const stat = fsSync.lstatSync(file, { throwIfNoEntry: false })
+    if (!stat) return false
+    const next = stat.isSymbolicLink() ? fsSync.realpathSync(file) : file
+    return !!root(next)
+  }
 
   export interface Interface {
     readonly info: () => Effect.Effect<Info>
@@ -142,14 +158,6 @@ export namespace Installation {
           Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
         )
 
-        const getBrewFormula = Effect.fnUntraced(function* () {
-          const tapFormula = yield* text(["brew", "list", "--formula", "anomalyco/tap/numasec"])
-          if (tapFormula.includes("numasec")) return "anomalyco/tap/numasec"
-          const coreFormula = yield* text(["brew", "list", "--formula", "numasec"])
-          if (coreFormula.includes("numasec")) return "numasec"
-          return "numasec"
-        })
-
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
             const response = yield* httpOk.execute(HttpClientRequest.get("https://numasec.ai/install"))
@@ -181,8 +189,9 @@ export namespace Installation {
               const selfExe = fsSync.readlinkSync("/proc/self/exe")
               if (selfExe !== process.execPath) execPaths.push(selfExe)
             } catch {}
-            const home = os.homedir()
+            const home = process.env.NUMASEC_TEST_HOME || os.homedir()
             for (const candidate of [
+              path.join(home, ".bun", "bin", "numasec"),
               path.join(home, ".local", "bin", "numasec"),
               path.join(home, ".numasec", "bin", "numasec"),
             ]) {
@@ -196,18 +205,14 @@ export namespace Installation {
 
           for (const ep of execPaths) {
             if (ep.includes(path.join(".numasec", "bin"))) return "curl" as Method
-            if (ep.includes(path.join(".local", "bin"))) return "curl" as Method
+            if (source(ep)) return "source" as Method
           }
           const exec = process.execPath.toLowerCase()
 
           const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
             { name: "npm", command: () => text(["npm", "list", "-g", "--depth=0"]) },
-            { name: "yarn", command: () => text(["yarn", "global", "list"]) },
             { name: "pnpm", command: () => text(["pnpm", "list", "-g", "--depth=0"]) },
             { name: "bun", command: () => text(["bun", "pm", "ls", "-g"]) },
-            { name: "brew", command: () => text(["brew", "list", "--formula", "numasec"]) },
-            { name: "scoop", command: () => text(["scoop", "list", "numasec"]) },
-            { name: "choco", command: () => text(["choco", "list", "--limit-output", "numasec"]) },
           ]
 
           checks.sort((a, b) => {
@@ -220,9 +225,7 @@ export namespace Installation {
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName =
-              check.name === "brew" || check.name === "choco" || check.name === "scoop" ? "numasec" : "numasec"
-            if (output.includes(installedName)) {
+            if (output.includes("numasec")) {
               return check.name
             }
           }
@@ -232,22 +235,6 @@ export namespace Installation {
 
         const latestImpl = Effect.fn("Installation.latest")(function* (installMethod?: Method) {
           const detectedMethod = installMethod || (yield* methodImpl())
-
-          if (detectedMethod === "brew") {
-            const formula = yield* getBrewFormula()
-            if (formula.includes("/")) {
-              const infoJson = yield* text(["brew", "info", "--json=v2", formula])
-              const info = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(BrewInfoV2))(infoJson)
-              return info.formulae[0].versions.stable
-            }
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get("https://formulae.brew.sh/api/formula/numasec.json").pipe(
-                HttpClientRequest.acceptJson,
-              ),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(BrewFormula)(response)
-            return data.versions.stable
-          }
 
           if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
             const r = (yield* text(["npm", "config", "get", "registry"])).trim()
@@ -261,28 +248,12 @@ export namespace Installation {
             return data.version
           }
 
-          if (detectedMethod === "choco") {
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(
-                "https://community.chocolatey.org/api/v2/Packages?$filter=Id%20eq%20%27numasec%27%20and%20IsLatestVersion&$select=Version",
-              ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json;odata=verbose" })),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(ChocoPackage)(response)
-            return data.d.results[0].Version
-          }
-
-          if (detectedMethod === "scoop") {
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(
-                "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/numasec.json",
-              ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json" })),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(ScoopManifest)(response)
-            return data.version
+          if (detectedMethod === "source") {
+            return VERSION
           }
 
           const response = yield* httpOk.execute(
-            HttpClientRequest.get("https://api.github.com/repos/anomalyco/numasec/releases/latest").pipe(
+            HttpClientRequest.get("https://api.github.com/repos/FrancescoStabile/numasec/releases/latest").pipe(
               HttpClientRequest.acceptJson,
             ),
           )
@@ -296,6 +267,10 @@ export namespace Installation {
             case "curl":
               result = yield* upgradeCurl(target)
               break
+            case "source":
+              return yield* new UpgradeFailedError({
+                stderr: "Source installs are managed from the repository checkout. Pull the desired revision and rerun `bash install.sh`.",
+              })
             case "npm":
               result = yield* run(["npm", "install", "-g", `numasec@${target}`])
               break
@@ -305,39 +280,11 @@ export namespace Installation {
             case "bun":
               result = yield* run(["bun", "install", "-g", `numasec@${target}`])
               break
-            case "brew": {
-              const formula = yield* getBrewFormula()
-              const env = { HOMEBREW_NO_AUTO_UPDATE: "1" }
-              if (formula.includes("/")) {
-                const tap = yield* run(["brew", "tap", "anomalyco/tap"], { env })
-                if (tap.code !== 0) {
-                  result = tap
-                  break
-                }
-                const repo = yield* text(["brew", "--repo", "anomalyco/tap"])
-                const dir = repo.trim()
-                if (dir) {
-                  const pull = yield* run(["git", "pull", "--ff-only"], { cwd: dir, env })
-                  if (pull.code !== 0) {
-                    result = pull
-                    break
-                  }
-                }
-              }
-              result = yield* run(["brew", "upgrade", formula], { env })
-              break
-            }
-            case "choco":
-              result = yield* run(["choco", "upgrade", "numasec", `--version=${target}`, "-y"])
-              break
-            case "scoop":
-              result = yield* run(["scoop", "install", `numasec@${target}`])
-              break
             default:
               return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
           }
           if (!result || result.code !== 0) {
-            const stderr = m === "choco" ? "not running from an elevated command shell" : result?.stderr || ""
+            const stderr = result?.stderr || ""
             return yield* new UpgradeFailedError({ stderr })
           }
           log.info("upgraded", {

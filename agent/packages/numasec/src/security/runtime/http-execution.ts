@@ -1,7 +1,9 @@
 import type { SessionID } from "../../session/schema"
 import { httpRequest, type HttpRequestOptions } from "../http-client"
+import { Scope } from "../scope"
 import {
   classifyHttpFailure,
+  type ExecutionFailureCode,
   type ExecutionFailure,
   type RecoveryTelemetry,
 } from "./execution-failure"
@@ -29,11 +31,51 @@ export interface HttpExecutionResult {
   profile?: TargetExecutionProfile
 }
 
+function failureResponse(url: string, code: ExecutionFailureCode, message: string) {
+  return {
+    status: 0,
+    statusText: code === "out_of_scope" ? `Out of scope: ${message}` : message,
+    headers: {},
+    setCookies: [],
+    body: "",
+    url,
+    redirectChain: [],
+    elapsed: 0,
+  } satisfies Awaited<ReturnType<typeof httpRequest>>
+}
+
+function scopeFailure(error: Scope.ScopeViolationError): ExecutionFailure {
+  return {
+    code: "out_of_scope",
+    message: error.message,
+    retryable: false,
+    strategy: "none",
+    status: 0,
+  }
+}
+
+async function sendRequest(input: HttpExecutionInput) {
+  try {
+    const response = await httpRequest(input.url, {
+      ...input.request,
+      sessionID: input.sessionID,
+    })
+    return { response }
+  } catch (error) {
+    if (!(error instanceof Scope.ScopeViolationError)) throw error
+    return {
+      response: failureResponse(input.url, "out_of_scope", error.message),
+      failure: scopeFailure(error),
+    }
+  }
+}
+
 export async function executeHttpWithRecovery(input: HttpExecutionInput): Promise<HttpExecutionResult> {
   const profile = await applyTargetProfile(input.sessionID, input.url)
   const budget = Math.max(0, input.attemptBudget ?? profile?.retry_budget ?? 1)
-  const first = await httpRequest(input.url, input.request)
-  const initial = classifyHttpFailure({
+  const firstRequest = await sendRequest(input)
+  const first = firstRequest.response
+  const initial = firstRequest.failure ?? classifyHttpFailure({
     response: first,
     actorSessionID: input.actorSessionID,
   })
@@ -71,8 +113,9 @@ export async function executeHttpWithRecovery(input: HttpExecutionInput): Promis
   let response = first
   while (count <= budget && failure.retryable && failure.strategy === "retry_same_request") {
     count += 1
-    response = await httpRequest(input.url, input.request)
-    const next = classifyHttpFailure({
+    const nextRequest = await sendRequest(input)
+    response = nextRequest.response
+    const next = nextRequest.failure ?? classifyHttpFailure({
       response,
       actorSessionID: input.actorSessionID,
     })

@@ -12,6 +12,7 @@ import {
   SecurityActorSessionTable,
   SecurityTargetProfileTable,
 } from "../runtime/runtime.sql"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Advance the deterministic planner kernel and return the next primitive action.
@@ -294,8 +295,9 @@ export const PlanNextTool = Tool.define("plan_next", {
   description: DESCRIPTION,
   parameters: PlanNextParameters,
   async execute(params, ctx) {
-    const stored = readStoredKernel(ctx.sessionID)
-    const runtime = readRuntimeContext(ctx.sessionID)
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
+    const stored = readStoredKernel(sessionID)
+    const runtime = readRuntimeContext(sessionID)
     const current = mergeNotes(
       mergeSignals(readKernel(params, stored.kernel), runtime.signals),
       runtime.notes,
@@ -316,8 +318,8 @@ export const PlanNextTool = Tool.define("plan_next", {
     const run = Effect.runSync(
       EvidenceGraphStore.use((store) =>
         store.upsertRun({
-          id: plannerRunID(ctx.sessionID),
-          sessionID: ctx.sessionID,
+          id: plannerRunID(sessionID),
+          sessionID,
           plannerState: next.state,
           hypothesisID: next.hypothesis_id,
           status: next.state,

@@ -4,13 +4,51 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Release bump
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
 
+env:
+  HUSKY: "0"
+
 jobs:
+  version:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+      - run: bun install --frozen-lockfile
+        working-directory: agent
+      - id: meta
+        env:
+          GH_REPO: ${{ github.repository }}
+          NUMASEC_BUMP: ${{ inputs.bump }}
+          NUMASEC_VERSION: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: bun run script/version.ts
+        working-directory: agent
+
   validate:
     name: Pre-release Validation
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,13 +58,42 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: agent
       - run: bun run typecheck
+        working-directory: agent
+      - run: bun run build
         working-directory: agent/packages/numasec
       - run: bun test --timeout 30000
+        working-directory: agent/packages/numasec
+      - run: bun run test:release-proof
+        working-directory: agent/packages/numasec
+
+  startup-smoke:
+    name: Platform Startup Smoke
+    needs: [version, validate]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+      - run: bun install --frozen-lockfile
+        working-directory: agent
+      - run: bun run build --single
+        working-directory: agent/packages/numasec
+        env:
+          NUMASEC_VERSION: ${{ needs.version.outputs.version }}
+          NUMASEC_CHANNEL: latest
+      - run: bun run script/release-proof.ts --startup-only
         working-directory: agent/packages/numasec
 
   build-agent:
     name: Build Agent Binary
-    needs: validate
+    needs: [version, validate, startup-smoke]
     timeout-minutes: 20
     runs-on: ${{ matrix.os }}
     strategy:
@@ -50,7 +117,7 @@ jobs:
         working-directory: agent/packages/numasec
         env:
           NUMASEC_BUILD_OS: ${{ matrix.build_targets }}
-          NUMASEC_VERSION: ${{ github.ref_name }}
+          NUMASEC_VERSION: ${{ needs.version.outputs.version }}
           NUMASEC_CHANNEL: latest
       - name: Create release archives
         shell: bash
@@ -61,9 +128,13 @@ jobs:
             name=$(basename "$dir")
 
             case "$name" in
-              *linux*|*darwin*)
+              *linux*)
                 [ -f "$dir/bin/numasec" ] || continue
                 tar -czf "agent/packages/numasec/release/${name}.tar.gz" -C "$dir/bin" numasec
+                ;;
+              *darwin*)
+                [ -f "$dir/bin/numasec" ] || continue
+                (cd "$dir/bin" && zip -r "../../../release/${name}.zip" numasec)
                 ;;
               *windows*)
                 [ -f "$dir/bin/numasec.exe" ] || continue
@@ -83,7 +154,7 @@ jobs:
 
   github-release:
     name: Create GitHub Release
-    needs: [build-agent]
+    needs: [version, build-agent]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -93,12 +164,13 @@ jobs:
           path: artifacts/
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          tag_name: ${{ needs.version.outputs.tag }}
+          draft: false
           files: artifacts/**/*
 
   publish-npm:
     name: Publish to npm
-    needs: [build-agent]
+    needs: [version, build-agent]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-node@v4
@@ -113,6 +185,22 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set -euo pipefail
+
+          spec() {
+            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync(process.argv[1] + '/package.json', 'utf8')); console.log(pkg.name + '@' + pkg.version)" "$1"
+          }
+
+          publish_dir() {
+            dir="$1"
+            pkg=$(spec "$dir")
+            if npm view "$pkg" version >/dev/null 2>&1; then
+              echo "Skipping existing $pkg"
+              return 0
+            fi
+            npm publish "$dir" --access public
+          }
+
           # Merge platform packages from all build runners
           mkdir -p packages
           for src in npm-artifacts/npm-packages-*/numasec-*/; do
@@ -151,6 +239,11 @@ jobs:
             "
           fi
 
+          if [ ! -d "packages/numasec" ]; then
+            echo "Missing main numasec package artifact"
+            exit 1
+          fi
+
           # Restore executable permissions (GitHub Actions artifacts strip them)
           for dir in packages/numasec-*/; do
             [ -d "$dir" ] || continue
@@ -160,22 +253,23 @@ jobs:
           # Publish platform binary packages first
           for dir in packages/numasec-*/; do
             [ -d "$dir" ] || continue
-            name=$(basename "$dir")
-            echo "Publishing $name..."
-            npm publish "$dir" --access public || echo "Failed to publish $name (may already exist)"
+            publish_dir "$dir"
           done
 
           # Publish main package last (use tarball to avoid path/name confusion)
-          if [ -d "packages/numasec" ]; then
-            echo "Publishing numasec..."
+          pkg=$(spec "packages/numasec")
+          if npm view "$pkg" version >/dev/null 2>&1; then
+            echo "Skipping existing $pkg"
+          else
             cd packages/numasec
             npm pack
-            npm publish *.tgz --access public
+            tarball=$(ls -1 *.tgz | head -n 1)
+            npm publish "$tarball" --access public
           fi
 
   publish-docker:
     name: Publish Docker Image
-    needs: validate
+    needs: [version, validate]
     timeout-minutes: 30
     runs-on: ubuntu-latest
     permissions:
@@ -191,7 +285,7 @@ jobs:
         working-directory: agent/packages/numasec
         env:
           NUMASEC_BUILD_OS: linux
-          NUMASEC_VERSION: ${{ github.ref_name }}
+          NUMASEC_VERSION: ${{ needs.version.outputs.version }}
           NUMASEC_CHANNEL: latest
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -211,7 +305,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            francescosta/numasec:${{ github.ref_name }}
-            francescosta/numasec:latest
-            ghcr.io/francescostabile/numasec:${{ github.ref_name }}
-            ghcr.io/francescostabile/numasec:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/numasec:${{ needs.version.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/numasec:latest
+            ghcr.io/${{ github.repository_owner }}/numasec:${{ needs.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/numasec:latest

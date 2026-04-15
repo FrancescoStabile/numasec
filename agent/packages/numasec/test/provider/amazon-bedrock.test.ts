@@ -87,6 +87,8 @@ test("Bedrock: loads when bearer token from auth.json is present", async () => {
   })
 
   const authPath = path.join(Global.Path.data, "auth.json")
+  const originalBearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK
 
   // Save original auth.json if it exists
   let originalAuth: string | undefined
@@ -119,9 +121,13 @@ test("Bedrock: loads when bearer token from auth.json is present", async () => {
         const providers = await Provider.list()
         expect(providers[ProviderID.amazonBedrock]).toBeDefined()
         expect(providers[ProviderID.amazonBedrock].options?.region).toBe("eu-west-1")
+        expect(providers[ProviderID.amazonBedrock].options?.apiKey).toBe("test-bearer-token")
+        expect(process.env.AWS_BEARER_TOKEN_BEDROCK).toBeUndefined()
       },
     })
   } finally {
+    if (originalBearerToken === undefined) delete process.env.AWS_BEARER_TOKEN_BEDROCK
+    if (originalBearerToken !== undefined) process.env.AWS_BEARER_TOKEN_BEDROCK = originalBearerToken
     // Restore original or delete
     if (originalAuth !== undefined) {
       await Filesystem.write(authPath, originalAuth)

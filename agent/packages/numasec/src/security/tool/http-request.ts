@@ -19,6 +19,8 @@ import {
   recoveryObservation,
 } from "../runtime/execution-failure"
 import { executeHttpWithRecovery } from "../runtime/http-execution"
+import { persistEngagementTarget } from "../target-store"
+import { hasAuthSuccessSignal, hasSqliPayloadSignal, hasVerboseErrorSignal } from "../http-signals"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 function shell(value: string) {
@@ -52,21 +54,6 @@ function replay(input: {
   return parts.join(" ")
 }
 
-function hasSqliPayloadSignal(value: string) {
-  return /('(?:\s*--|\s+or\s+|%27)|union\s+select|sleep\s*\(|waitfor\s+delay|\)\)\s*or\s*\()/i.test(value)
-}
-
-function hasAuthSuccessSignal(value: string) {
-  return /"authentication"\s*:|"token"\s*:|"session"\s*:|welcome|login succeeded|auth/i.test(value)
-}
-
-function hasVerboseErrorSignal(value: string) {
-  if (/\n\s*at\s+[^\n]+/i.test(value)) return true
-  if (/sequelizedatabaseerror|sqlite_error|postgreserror|mysql/i.test(value)) return true
-  if (/<pre>[\s\S]*error[\s\S]*<\/pre>/i.test(value)) return true
-  return false
-}
-
 const DESCRIPTION = `Make an HTTP request to a target URL. Use for:
 - Sending crafted requests during security testing
 - Testing specific endpoints with custom headers/body
@@ -95,8 +82,13 @@ export const HttpRequestTool = Tool.define("http_request", {
     await ctx.ask({
       permission: "http_request",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, method: params.method } as Record<string, any>,
+    })
+    persistEngagementTarget({
+      sessionID: ctx.sessionID,
+      url: params.url,
+      source: "http_request",
     })
 
     const seeded = await mergeActorSession({

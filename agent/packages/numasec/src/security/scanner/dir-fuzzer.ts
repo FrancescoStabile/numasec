@@ -6,6 +6,7 @@
  */
 
 import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface DirFuzzResult {
   found: FoundPath[]
@@ -56,6 +57,7 @@ export async function dirFuzz(
     concurrency?: number
     timeout?: number
     filterStatus?: number[]
+    sessionID?: SessionID | string
   } = {},
 ): Promise<DirFuzzResult> {
   const {
@@ -64,6 +66,7 @@ export async function dirFuzz(
     concurrency = 10,
     timeout = 10_000,
     filterStatus,
+    sessionID,
   } = options
 
   const start = Date.now()
@@ -80,7 +83,7 @@ export async function dirFuzz(
   }
 
   // Baseline: request a definitely-not-found path
-  const notFound = await httpRequest(`${base}/numasec_404_check_${Date.now()}`, { timeout })
+  const notFound = await httpRequest(`${base}/numasec_404_check_${Date.now()}`, { timeout, sessionID })
   const notFoundStatus = notFound.status
   const notFoundLength = notFound.body.length
 
@@ -92,7 +95,7 @@ export async function dirFuzz(
       batch.map(async (path) => {
         testedCount++
         const url = `${base}/${path}`
-        const resp = await httpRequest(url, { timeout, followRedirects: false })
+        const resp = await httpRequest(url, { timeout, followRedirects: false, sessionID })
 
         // Filter: skip if same as 404 baseline (custom 404 pages)
         if (resp.status === notFoundStatus && Math.abs(resp.body.length - notFoundLength) < 50) {

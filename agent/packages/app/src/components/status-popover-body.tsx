@@ -165,8 +165,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const sdk = useSDK()
 
   const [load, setLoad] = createStore({
-    lspDone: false,
-    lspLoading: false,
     mcpDone: false,
     mcpLoading: false,
   })
@@ -199,22 +197,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
         })
     }
 
-    if (!sync.data.lsp_ready && !load.lspDone && !load.lspLoading) {
-      setLoad("lspLoading", true)
-      void sdk.client.lsp
-        .status()
-        .then((result) => {
-          sync.set("lsp", result.data ?? [])
-          sync.set("lsp_ready", true)
-        })
-        .catch((err) => {
-          setLoad("lspDone", true)
-          fail(err)
-        })
-        .finally(() => {
-          setLoad("lspLoading", false)
-        })
-    }
   })
 
   let dialogRun = 0
@@ -237,8 +219,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const mcpNames = createMemo(() => Object.keys(sync.data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
   const mcpStatus = (name: string) => sync.data.mcp?.[name]?.status
   const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
-  const lspItems = createMemo(() => sync.data.lsp ?? [])
-  const lspCount = createMemo(() => lspItems().length)
   const plugins = createMemo(() => sync.data.config.plugin ?? [])
   const pluginCount = createMemo(() => plugins().length)
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "numasec.json"))
@@ -261,10 +241,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           <Tabs.Trigger value="mcp" data-slot="tab" class="text-12-regular">
             {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
             {language.t("status.popover.tab.mcp")}
-          </Tabs.Trigger>
-          <Tabs.Trigger value="lsp" data-slot="tab" class="text-12-regular">
-            {lspCount() > 0 ? `${lspCount()} ` : ""}
-            {language.t("status.popover.tab.lsp")}
           </Tabs.Trigger>
           <Tabs.Trigger value="plugins" data-slot="tab" class="text-12-regular">
             {pluginCount() > 0 ? `${pluginCount()} ` : ""}
@@ -384,34 +360,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                       </button>
                     )
                   }}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </Tabs.Content>
-
-        <Tabs.Content value="lsp">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={lspItems().length > 0}
-                fallback={
-                  <div class="text-14-regular text-text-base text-center my-auto">{language.t("dialog.lsp.empty")}</div>
-                }
-              >
-                <For each={lspItems()}>
-                  {(item) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div
-                        classList={{
-                          "size-1.5 rounded-full shrink-0": true,
-                          "bg-icon-success-base": item.status === "connected",
-                          "bg-icon-critical-base": item.status === "error",
-                        }}
-                      />
-                      <span class="text-14-regular text-text-base truncate">{item.name || item.id}</span>
-                    </div>
-                  )}
                 </For>
               </Show>
             </div>

@@ -1,13 +1,14 @@
 import z from "zod"
 import { Tool } from "../../tool/tool"
 import { projectFindings } from "../finding-projector"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 export const ProjectFindingsTool = Tool.define("project_findings", {
   description: "Project deterministic findings from graph evidence and manual overrides.",
   parameters: z.object({}),
   async execute(_, ctx) {
-    const result = projectFindings(ctx.sessionID)
+    const result = projectFindings(canonicalSecuritySessionID(ctx.sessionID))
     return {
       title: `Projected findings: ${result.counts.raw}`,
       metadata: result.counts as any,

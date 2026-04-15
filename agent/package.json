@@ -9,8 +9,6 @@
     "build": "bun run --cwd packages/numasec build",
     "dev": "bun run --cwd packages/numasec --conditions=browser src/index.ts",
     "dev:web": "bun --cwd packages/app dev",
-    "dev:console": "ulimit -n 10240 2>/dev/null; bun run --cwd packages/console/app dev",
-    "dev:storybook": "bun --cwd packages/storybook storybook",
     "typecheck": "bun turbo typecheck",
     "prepare": "husky",
     "random": "echo 'Random script'",
@@ -20,7 +18,6 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/console/*",
       "packages/sdk/js"
     ],
     "catalog": {
@@ -91,7 +88,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/anomalyco/numasec"
+    "url": "https://github.com/FrancescoStabile/numasec"
   },
   "license": "MIT",
   "prettier": {

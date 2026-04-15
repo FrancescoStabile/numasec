@@ -1,11 +1,14 @@
 import { test, expect } from "bun:test"
 import path from "path"
+import { unlink } from "fs/promises"
 
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { Provider } from "../../src/provider/provider"
 import { ProviderID, ModelID } from "../../src/provider/schema"
 import { Env } from "../../src/env"
+import { Filesystem } from "../../src/util/filesystem"
+import { Global } from "../../src/global"
 
 test("provider loaded from env variable", async () => {
   await using tmp = await tmpdir({
@@ -109,6 +112,129 @@ test("enabled_providers restricts to only listed providers", async () => {
       expect(providers[ProviderID.openai]).toBeUndefined()
     },
   })
+})
+
+test("numasec public models do not autoload without explicit opt-in", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "numasec.json"),
+        JSON.stringify({
+          $schema: "https://numasec.ai/config.json",
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await Provider.list()
+      expect(providers[ProviderID.numasec]).toBeUndefined()
+    },
+  })
+})
+
+test("numasec public models require explicit opt-in and stay limited to free models", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "numasec.json"),
+        JSON.stringify({
+          $schema: "https://numasec.ai/config.json",
+          provider: {
+            numasec: {
+              options: {
+                publicAccess: true,
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await Provider.list()
+      const provider = providers[ProviderID.numasec]
+      expect(provider).toBeDefined()
+      expect(provider.options.apiKey).toBe("public")
+      expect(Object.keys(provider.models).length).toBeGreaterThan(0)
+      expect(Object.values(provider.models).every((model) => model.cost.input === 0)).toBe(true)
+    },
+  })
+})
+
+test("sap-ai-core auth service key uses destination options without mutating process.env", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "numasec.json"),
+        JSON.stringify({
+          $schema: "https://numasec.ai/config.json",
+        }),
+      )
+    },
+  })
+
+  const authPath = path.join(Global.Path.data, "auth.json")
+  const originalAuth = await Filesystem.readText(authPath).catch(() => undefined)
+  const originalServiceKey = process.env.AICORE_SERVICE_KEY
+  delete process.env.AICORE_SERVICE_KEY
+
+  try {
+    await Filesystem.write(
+      authPath,
+      JSON.stringify({
+        "sap-ai-core": {
+          type: "api",
+          key: JSON.stringify({
+            clientid: "sap-client-id",
+            clientsecret: "sap-client-secret",
+            url: "https://tenant.authentication.example.sap",
+            serviceurls: {
+              AI_API_URL: "https://api.ai.example.sap",
+            },
+          }),
+        },
+      }),
+      0o600,
+    )
+
+    await Instance.provide({
+      directory: tmp.path,
+      init: async () => {
+        Env.set("AICORE_DEPLOYMENT_ID", "deployment-1")
+        Env.set("AICORE_RESOURCE_GROUP", "rg-1")
+      },
+      fn: async () => {
+        const providers = await Provider.list()
+        const provider = providers[ProviderID.make("sap-ai-core")]
+        expect(provider).toBeDefined()
+        expect(provider.options.deploymentId).toBe("deployment-1")
+        expect(provider.options.resourceGroup).toBe("rg-1")
+        expect(provider.options.destination).toEqual({
+          url: "https://api.ai.example.sap",
+          authentication: "OAuth2ClientCredentials",
+          clientId: "sap-client-id",
+          clientSecret: "sap-client-secret",
+          tokenServiceUrl: "https://tenant.authentication.example.sap/oauth/token",
+        })
+        expect(process.env.AICORE_SERVICE_KEY).toBeUndefined()
+      },
+    })
+  } finally {
+    if (originalAuth === undefined) {
+      await unlink(authPath).catch(() => undefined)
+    }
+    if (originalAuth !== undefined) {
+      await Filesystem.write(authPath, originalAuth, 0o600)
+    }
+    if (originalServiceKey === undefined) delete process.env.AICORE_SERVICE_KEY
+    if (originalServiceKey !== undefined) process.env.AICORE_SERVICE_KEY = originalServiceKey
+  }
 })
 
 test("model whitelist filters models for provider", async () => {

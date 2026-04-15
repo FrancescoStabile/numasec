@@ -6,6 +6,7 @@
  */
 
 import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface JsAnalysisResult {
   endpoints: string[]
@@ -136,13 +137,13 @@ function findChatbotIndicators(text: string): string[] {
  */
 export async function analyzeJs(
   targetUrl: string,
-  options: { maxFiles?: number; timeout?: number } = {},
+  options: { maxFiles?: number; timeout?: number; sessionID?: SessionID | string } = {},
 ): Promise<JsAnalysisResult> {
-  const { maxFiles = 20, timeout = 10_000 } = options
+  const { maxFiles = 20, timeout = 10_000, sessionID } = options
   const start = Date.now()
 
   // Fetch the main page
-  const page = await httpRequest(targetUrl, { timeout })
+  const page = await httpRequest(targetUrl, { timeout, sessionID })
   const jsFiles = extractJsFiles(page.body, targetUrl).slice(0, maxFiles)
   const allEndpoints = new Set<string>()
   const allSecrets: SecretMatch[] = []
@@ -160,7 +161,7 @@ export async function analyzeJs(
   const jsResults = await Promise.all(
     jsFiles.map(async (file) => {
       try {
-        const resp = await httpRequest(file, { timeout })
+        const resp = await httpRequest(file, { timeout, sessionID })
         if (resp.status !== 200) return null
         return { file, body: resp.body }
       } catch {

@@ -317,30 +317,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let client = sdk.client
 
     if (isNewSession) {
-      if (worktreeSelection === "create") {
-        const createdWorktree = await client.worktree
-          .create({ directory: projectDirectory })
-          .then((x) => x.data)
-          .catch((err) => {
-            showToast({
-              title: language.t("prompt.toast.worktreeCreateFailed.title"),
-              description: errorMessage(err),
-            })
-            return undefined
-          })
-
-        if (!createdWorktree?.directory) {
-          showToast({
-            title: language.t("prompt.toast.worktreeCreateFailed.title"),
-            description: language.t("common.requestFailed"),
-          })
-          return
-        }
-        WorktreeState.pending(createdWorktree.directory)
-        sessionDirectory = createdWorktree.directory
-      }
-
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+      if (worktreeSelection !== "main") {
         sessionDirectory = worktreeSelection
       }
 

@@ -51,8 +51,6 @@ export type WorkspaceSidebarContext = {
   isBusy: (directory: string) => boolean
   workspaceExpanded: (directory: string, local: boolean) => boolean
   setWorkspaceExpanded: (directory: string, value: boolean) => void
-  showResetWorkspaceDialog: (root: string, directory: string) => void
-  showDeleteWorkspaceDialog: (root: string, directory: string) => void
   setScrollContainerRef: (el: HTMLDivElement | undefined, mobile?: boolean) => void
 }
 
@@ -149,8 +147,6 @@ const WorkspaceActions = (props: {
   language: ReturnType<typeof useLanguage>
   workspaceValue: Accessor<string>
   openEditor: WorkspaceSidebarContext["openEditor"]
-  showResetWorkspaceDialog: WorkspaceSidebarContext["showResetWorkspaceDialog"]
-  showDeleteWorkspaceDialog: WorkspaceSidebarContext["showDeleteWorkspaceDialog"]
   root: string
   setHoverSession: WorkspaceSidebarContext["setHoverSession"]
   clearHoverProjectSoon: WorkspaceSidebarContext["clearHoverProjectSoon"]
@@ -198,18 +194,6 @@ const WorkspaceActions = (props: {
             }}
           >
             <DropdownMenu.ItemLabel>{props.language.t("common.rename")}</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            disabled={props.local() || props.busy()}
-            onSelect={() => props.showResetWorkspaceDialog(props.root, props.directory)}
-          >
-            <DropdownMenu.ItemLabel>{props.language.t("common.reset")}</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            disabled={props.local() || props.busy()}
-            onSelect={() => props.showDeleteWorkspaceDialog(props.root, props.directory)}
-          >
-            <DropdownMenu.ItemLabel>{props.language.t("common.delete")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -425,8 +409,6 @@ export const SortableWorkspace = (props: {
                 language={language}
                 workspaceValue={workspaceValue}
                 openEditor={props.ctx.openEditor}
-                showResetWorkspaceDialog={props.ctx.showResetWorkspaceDialog}
-                showDeleteWorkspaceDialog={props.ctx.showDeleteWorkspaceDialog}
                 root={props.project.worktree}
                 setHoverSession={props.ctx.setHoverSession}
                 clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}

@@ -8,7 +8,7 @@ import { makeToolResultEnvelope } from "./result-envelope"
 const DESCRIPTION = `Replay a batch of HTTP requests for deterministic retest.
 Useful for rerunning prior evidence steps and collecting reproducibility metrics.`
 
-const ReplayRequest = z.object({
+export const ReplayRequest = z.object({
   url: z.string(),
   method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]).optional(),
   headers: z.record(z.string(), z.string()).optional(),
@@ -37,7 +37,7 @@ export const BatchReplayTool = Tool.define("batch_replay", {
     await ctx.ask({
       permission: "batch_replay",
       patterns: urls,
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: {
         count: params.requests.length,
         urls,
@@ -74,6 +74,7 @@ export const BatchReplayTool = Tool.define("batch_replay", {
           body: request.body,
           cookies: request.cookies,
           timeout,
+          sessionID: ctx.sessionID,
         })
         status = response.status
         elapsed = response.elapsed

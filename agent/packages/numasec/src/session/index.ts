@@ -5,7 +5,6 @@ import { Bus } from "@/bus"
 import { Decimal } from "decimal.js"
 import z from "zod"
 import { type ProviderMetadata } from "ai"
-import { Config } from "../config/config"
 import { Flag } from "../flag/flag"
 import { Installation } from "../installation"
 
@@ -328,13 +327,6 @@ export namespace Session {
 
     SyncEvent.run(Event.Created, { sessionID: result.id, info: result })
 
-    const cfg = await Config.get()
-    if (!result.parentID && (Flag.NUMASEC_AUTO_SHARE || cfg.share === "auto")) {
-      share(result.id).catch(() => {
-        // Silently ignore sharing errors during session creation
-      })
-    }
-
     if (!Flag.NUMASEC_EXPERIMENTAL_WORKSPACES) {
       // This only exist for backwards compatibility. We should not be
       // manually publishing this event; it is a sync event now
@@ -358,27 +350,6 @@ export namespace Session {
     const row = Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, id)).get())
     if (!row) throw new NotFoundError({ message: `Session not found: ${id}` })
     return fromRow(row)
-  })
-
-  export const share = fn(SessionID.zod, async (id) => {
-    const cfg = await Config.get()
-    if (cfg.share === "disabled") {
-      throw new Error("Sharing is disabled in configuration")
-    }
-    const { ShareNext } = await import("@/share/share-next")
-    const share = await ShareNext.create(id)
-
-    SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: share.url } } })
-
-    return share
-  })
-
-  export const unshare = fn(SessionID.zod, async (id) => {
-    // Use ShareNext to remove the share (same as share function uses ShareNext to create)
-    const { ShareNext } = await import("@/share/share-next")
-    await ShareNext.remove(id)
-
-    SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: null } } })
   })
 
   export const setTitle = fn(
@@ -612,7 +583,6 @@ export namespace Session {
       for (const child of await children(sessionID)) {
         await remove(child.id)
       }
-      await unshare(sessionID).catch(() => {})
 
       SyncEvent.run(Event.Deleted, { sessionID, info: session })
 

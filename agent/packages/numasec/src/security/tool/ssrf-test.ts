@@ -52,6 +52,16 @@ const SSRF_SUCCESS = [
   "redis_version",
 ]
 
+const SSRF_FAILURE = [
+  "unrecognized target url",
+  "invalid url",
+  "unsupported protocol",
+  "url not allowed",
+  "blocked url",
+  "could not resolve",
+  "name or service not known",
+]
+
 export const SsrfTestTool = Tool.define("ssrf_test", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -69,7 +79,7 @@ export const SsrfTestTool = Tool.define("ssrf_test", {
     await ctx.ask({
       permission: "ssrf_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, parameter: params.parameter } as Record<string, any>,
     })
 
@@ -77,11 +87,13 @@ export const SsrfTestTool = Tool.define("ssrf_test", {
 
     const result = await testPayloads({
       url: params.url,
+      sessionID: ctx.sessionID,
       method: params.method,
       parameter: params.parameter,
       position: params.position as PayloadPosition,
       payloads: SSRF_PAYLOADS,
       successIndicators: SSRF_SUCCESS,
+      failureIndicators: SSRF_FAILURE,
       headers: params.headers,
       cookies: params.cookies,
       concurrency: 3,

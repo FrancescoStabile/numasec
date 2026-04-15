@@ -14,6 +14,7 @@
 import z from "zod"
 import { Tool } from "../../tool/tool"
 import { executeExecCommand } from "./exec-command"
+import { manualCommandEnvelope } from "../manual-http-proof"
 
 const DEFAULT_TIMEOUT = 120_000
 
@@ -36,6 +37,10 @@ export const ShellTool = Tool.define("security_shell", {
     command: z.string().describe("The shell command to execute"),
     timeout: z.number().optional().describe("Timeout in milliseconds (default 120000)"),
     description: z.string().describe("Short description of what this command does (5-10 words)"),
+    scope_targets: z
+      .array(z.string())
+      .optional()
+      .describe("Explicit target URLs/hosts when the command target is not a literal http(s) URL"),
   }),
   async execute(params, ctx) {
     const timeout = params.timeout ?? DEFAULT_TIMEOUT
@@ -47,6 +52,8 @@ export const ShellTool = Tool.define("security_shell", {
         argv: [shell, ...shellArgs],
         timeout,
         description: params.description,
+        scope_targets: params.scope_targets,
+        raw_command: params.command,
       },
       ctx,
       {
@@ -77,6 +84,12 @@ export const ShellTool = Tool.define("security_shell", {
         stdoutLength: result.stdout.length,
         stderrLength: result.stderr.length,
       },
+      envelope: manualCommandEnvelope({
+        tool: "security_shell",
+        command: params.command,
+        output: `${result.stdout}\n${result.stderr}`.trim(),
+        exitCode: result.exitCode,
+      }),
       output: parts.join("\n"),
     }
   },

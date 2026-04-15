@@ -40,7 +40,8 @@ Canonical workflow commands:
 - `/finding list` — List findings
 - `/remediation plan` — Prioritized remediation guidance
 - `/retest run [filter]` — Deterministic retest replay
-- `/report generate [markdown|html|sarif] [--out <path>]` — Final report output (optional file export)
+- `/report status` — Report readiness and remaining closure debt
+- `/report generate [markdown|html|sarif] [--out <path>] [--final] [--note <text>]` — Working report by default, or closure-gated final export with `--final`
 
 Additional commands:
 - `/coverage` — OWASP Top 10 coverage status

@@ -10,11 +10,14 @@
  */
 
 import { httpRequest, type HttpResponse, type HttpRequestOptions } from "../http-client"
+import type { SessionID } from "../../session/schema"
+import { assignJsonValue } from "./json-path"
 
 export type PayloadPosition = "query" | "body" | "header" | "path" | "cookie" | "json"
 
 export interface PayloadConfig {
   url: string
+  sessionID?: SessionID | string
   method?: string
   parameter: string
   position: PayloadPosition
@@ -27,6 +30,7 @@ export interface PayloadConfig {
   timeout?: number
   concurrency?: number
   timingThresholdMs?: number
+  matchOn5xx?: boolean
 }
 
 export interface PayloadResult {
@@ -81,8 +85,7 @@ function buildRequest(
 
     case "json": {
       const json = baseBody ? JSON.parse(baseBody) : {}
-      json[parameter] = payload
-      options.body = JSON.stringify(json)
+      options.body = JSON.stringify(assignJsonValue(json, parameter, payload))
       options.method = method === "GET" ? "POST" : method
       options.headers = { ...options.headers, "Content-Type": "application/json" }
       return { url, options }
@@ -156,8 +159,9 @@ function checkIndicators(
     }
   }
 
-  // Status-based detection (5xx suggests error injection worked)
-  if (response.status >= 500) {
+  // Status-based detection is opt-in because generic 5xx handling is too noisy
+  // for families like XSS or SSRF that often trigger validation errors.
+  if (config.matchOn5xx === true && response.status >= 500) {
     return {
       matched: true,
       matchType: "status",
@@ -176,7 +180,10 @@ export async function testPayloads(config: PayloadConfig): Promise<ScanResult> {
 
   // Baseline request with benign value
   const baseline = buildRequest({ ...config, payloads: [] }, "test123")
-  const baselineResponse = await httpRequest(baseline.url, baseline.options)
+  const baselineResponse = await httpRequest(baseline.url, {
+    ...baseline.options,
+    sessionID: config.sessionID,
+  })
   const baselineElapsed = baselineResponse.elapsed
 
   const results: PayloadResult[] = []
@@ -189,7 +196,10 @@ export async function testPayloads(config: PayloadConfig): Promise<ScanResult> {
     const batchResults = await Promise.all(
       batch.map(async (payload) => {
         const req = buildRequest(config, payload)
-        const response = await httpRequest(req.url, req.options)
+        const response = await httpRequest(req.url, {
+          ...req.options,
+          sessionID: config.sessionID,
+        })
         const check = checkIndicators(response, config, baselineElapsed)
 
         const result: PayloadResult = {

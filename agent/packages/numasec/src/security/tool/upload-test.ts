@@ -31,7 +31,7 @@ export const UploadTestTool = Tool.define("upload_test", {
     await ctx.ask({
       permission: "upload_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, field: params.field } as Record<string, any>,
     })
 
@@ -40,6 +40,7 @@ export const UploadTestTool = Tool.define("upload_test", {
       fieldName: params.field,
       headers: params.headers,
       cookies: params.cookies,
+      sessionID: ctx.sessionID,
     })
 
     const parts: string[] = []

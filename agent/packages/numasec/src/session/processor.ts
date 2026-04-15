@@ -17,10 +17,93 @@ import { Question } from "@/question"
 import { PartID } from "./schema"
 import type { SessionID, MessageID } from "./schema"
 import { ingestToolEnvelope } from "@/security/envelope-ingestor"
+import type { IngestedToolEnvelope } from "@/security/envelope-ingestor"
+import { manualCommandEnvelope } from "@/security/manual-http-proof"
+import { reportGuardSummary, reportGuardTurnParts } from "./report-closure-guard"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
   const log = Log.create({ service: "session.processor" })
+  export type RunSummary = {
+    toolCalls: number
+    toolResults: number
+    text: string
+    finishReason: string
+  }
+
+  function canonicalNodeSummary(input: IngestedToolEnvelope) {
+    const summary: Record<string, unknown> = {}
+    if (input.artifactNodeIDs.length === 1) summary.artifact_node_id = input.artifactNodeIDs[0]
+    if (input.artifactNodeIDs.length > 0) summary.artifact_node_ids = input.artifactNodeIDs
+    if (input.observationNodeIDs.length === 1) summary.observation_node_id = input.observationNodeIDs[0]
+    if (input.observationNodeIDs.length > 0) summary.observation_node_ids = input.observationNodeIDs
+    if (input.verificationNodeIDs.length === 1) summary.verification_node_id = input.verificationNodeIDs[0]
+    if (input.verificationNodeIDs.length > 0) summary.verification_node_ids = input.verificationNodeIDs
+    if (Object.keys(input.nodeIDsByKey).length > 0) summary.node_ids_by_key = input.nodeIDsByKey
+    return summary
+  }
+
+  function manualCommand(input: {
+    tool: string
+    payload: unknown
+  }) {
+    if (!input.payload || typeof input.payload !== "object" || Array.isArray(input.payload)) return ""
+    const value = input.payload as Record<string, unknown>
+    if ((input.tool === "bash" || input.tool === "security_shell") && typeof value.command === "string") {
+      return value.command
+    }
+    return ""
+  }
+
+  export function applyIngestedToolEvidence(input: {
+    output: string
+    metadata?: Record<string, unknown>
+    ingested: IngestedToolEnvelope
+  }) {
+    const summary = canonicalNodeSummary(input.ingested)
+    const metadata = {
+      ...(input.metadata ?? {}),
+      artifactNodeIDs: input.ingested.artifactNodeIDs,
+      observationNodeIDs: input.ingested.observationNodeIDs,
+      verificationNodeIDs: input.ingested.verificationNodeIDs,
+      nodeIDsByKey: input.ingested.nodeIDsByKey,
+      ingestedEvidence: {
+        artifacts: input.ingested.artifacts,
+        observations: input.ingested.observations,
+        verifications: input.ingested.verifications,
+        external: input.ingested.external,
+      },
+    } as Record<string, unknown>
+    if (!("artifactNodeID" in metadata) && input.ingested.artifactNodeIDs.length === 1) metadata.artifactNodeID = input.ingested.artifactNodeIDs[0]
+    if (!("observationNodeID" in metadata) && input.ingested.observationNodeIDs.length === 1) metadata.observationNodeID = input.ingested.observationNodeIDs[0]
+    if (!("verificationNodeID" in metadata) && input.ingested.verificationNodeIDs.length === 1) metadata.verificationNodeID = input.ingested.verificationNodeIDs[0]
+    if (Object.keys(summary).length === 0) {
+      return {
+        output: input.output,
+        metadata,
+      }
+    }
+    try {
+      const parsed = JSON.parse(input.output)
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return {
+          output: JSON.stringify(
+            {
+              ...parsed,
+              canonical_node_ids: summary,
+            },
+            null,
+            2,
+          ),
+          metadata,
+        }
+      }
+    } catch {}
+    return {
+      output: `${input.output}\n\nCanonical node ids:\n${JSON.stringify(summary, null, 2)}`,
+      metadata,
+    }
+  }
 
   export type Info = Awaited<ReturnType<typeof create>>
   export type Result = Awaited<ReturnType<Info["process"]>>
@@ -36,10 +119,19 @@ export namespace SessionProcessor {
     let blocked = false
     let attempt = 0
     let needsCompaction = false
+    let runSummary: RunSummary = {
+      toolCalls: 0,
+      toolResults: 0,
+      text: "",
+      finishReason: "",
+    }
 
     const result = {
       get message() {
         return input.assistantMessage
+      },
+      get runSummary() {
+        return runSummary
       },
       partFromToolCall(toolCallID: string) {
         return toolcalls[toolCallID]
@@ -47,6 +139,12 @@ export namespace SessionProcessor {
       async process(streamInput: LLM.StreamInput) {
         log.info("process")
         needsCompaction = false
+        runSummary = {
+          toolCalls: 0,
+          toolResults: 0,
+          text: "",
+          finishReason: "",
+        }
         const shouldBreak = (await Config.get()).experimental?.continue_loop_on_deny !== true
         while (true) {
           try {
@@ -111,6 +209,7 @@ export namespace SessionProcessor {
                   break
 
                 case "tool-input-start":
+                  runSummary.toolCalls += 1
                   const part = await Session.updatePart({
                     id: toolcalls[value.id]?.id ?? PartID.ascending(),
                     messageID: input.assistantMessage.id,
@@ -182,26 +281,32 @@ export namespace SessionProcessor {
                 case "tool-result": {
                   const match = toolcalls[value.toolCallId]
                   if (match && match.state.status === "running") {
-                    await Session.updatePart({
-                      ...match,
-                      state: {
-                        status: "completed",
-                        input: value.input ?? match.state.input,
-                        output: value.output.output,
-                        output_v2: value.output.envelope,
-                        metadata: value.output.metadata,
-                        title: value.output.title,
-                        time: {
-                          start: match.state.time.start,
-                          end: Date.now(),
-                        },
-                        attachments: value.output.attachments,
-                      },
-                    })
-                    const envelope = value.output.envelope
+                    runSummary.toolResults += 1
                     const tool = match.tool
-                    if (envelope && tool) {
-                      await ingestToolEnvelope({
+                    const manualEnvelope = manualCommandEnvelope({
+                      tool: tool ?? "",
+                      command: manualCommand({
+                        tool: tool ?? "",
+                        payload: value.input ?? match.state.input,
+                      }),
+                      output: value.output.output,
+                      exitCode:
+                        typeof value.output.metadata?.exit === "number"
+                          ? value.output.metadata.exit
+                          : typeof value.output.metadata?.exitCode === "number"
+                            ? value.output.metadata.exitCode
+                            : undefined,
+                    })
+                    const envelope = value.output.envelope ?? manualEnvelope
+                    let output = value.output.output
+                    let metadata = value.output.metadata
+                    const alreadyIngested =
+                      typeof metadata === "object" &&
+                      metadata !== null &&
+                      !Array.isArray(metadata) &&
+                      "ingestedEvidence" in metadata
+                    if (envelope && tool && !alreadyIngested) {
+                      const ingested = await ingestToolEnvelope({
                         sessionID: input.assistantMessage.sessionID,
                         tool,
                         title: value.output.title,
@@ -212,8 +317,34 @@ export namespace SessionProcessor {
                           tool,
                           error,
                         })
+                        return undefined
                       })
+                      if (ingested) {
+                        const merged = applyIngestedToolEvidence({
+                          output,
+                          metadata,
+                          ingested,
+                        })
+                        output = merged.output
+                        metadata = merged.metadata
+                      }
                     }
+                    await Session.updatePart({
+                      ...match,
+                      state: {
+                        status: "completed",
+                        input: value.input ?? match.state.input,
+                        output,
+                        output_v2: value.output.envelope,
+                        metadata,
+                        title: value.output.title,
+                        time: {
+                          start: match.state.time.start,
+                          end: Date.now(),
+                        },
+                        attachments: value.output.attachments,
+                      },
+                    })
 
                     delete toolcalls[value.toolCallId]
                   }
@@ -267,6 +398,7 @@ export namespace SessionProcessor {
                     metadata: value.providerMetadata,
                   })
                   const finish = value.finishReason ?? "unknown"
+                  runSummary.finishReason = finish
                   input.assistantMessage.finish = finish
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
@@ -349,6 +481,22 @@ export namespace SessionProcessor {
                       { text: currentText.text },
                     )
                     currentText.text = textOutput.text
+                    const messages = await MessageV2.filterCompacted(MessageV2.stream(input.sessionID))
+                    const parts = reportGuardTurnParts({
+                      messages,
+                      parentID: input.assistantMessage.parentID,
+                      messageID: input.assistantMessage.id,
+                    })
+                    const reportGuard = reportGuardSummary(
+                      parts,
+                      currentText.text,
+                      input.assistantMessage.agent,
+                      input.sessionID,
+                    )
+                    if (reportGuard) {
+                      currentText.text = reportGuard
+                    }
+                    runSummary.text = currentText.text
                     currentText.time = {
                       start: Date.now(),
                       end: Date.now(),

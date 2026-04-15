@@ -61,6 +61,49 @@ export namespace Provider {
     return Number(match[1]) >= 5 && !modelID.startsWith("gpt-5-mini")
   }
 
+  type SapDestination = {
+    url: string
+    authentication: "OAuth2ClientCredentials"
+    clientId: string
+    clientSecret: string
+    tokenServiceUrl: string
+  }
+
+  function sapDestination(input: string | undefined): SapDestination | undefined {
+    if (!input) return
+
+    const data = iife(() => {
+      try {
+        return JSON.parse(input)
+      } catch {
+        return undefined
+      }
+    })
+    if (!data || typeof data !== "object" || Array.isArray(data)) return
+    const item = data as Record<string, unknown>
+
+    const serviceurls =
+      "serviceurls" in item &&
+      item.serviceurls &&
+      typeof item.serviceurls === "object" &&
+      !Array.isArray(item.serviceurls)
+        ? (item.serviceurls as Record<string, unknown>)
+        : undefined
+    const baseURL = typeof serviceurls?.["AI_API_URL"] === "string" ? serviceurls["AI_API_URL"] : undefined
+    const authURL = typeof item["url"] === "string" ? item["url"] : undefined
+    const clientId = typeof item["clientid"] === "string" ? item["clientid"] : undefined
+    const clientSecret = typeof item["clientsecret"] === "string" ? item["clientsecret"] : undefined
+    if (!baseURL || !authURL || !clientId || !clientSecret) return
+
+    return {
+      url: baseURL.replace(/\/+$/, ""),
+      authentication: "OAuth2ClientCredentials",
+      clientId,
+      clientSecret,
+      tokenServiceUrl: authURL.replace(/\/+$/, "") + "/oauth/token",
+    }
+  }
+
   function wrapSSE(res: Response, ms: number, ctl: AbortController) {
     if (typeof ms !== "number" || ms <= 0) return res
     if (!res.body) return res
@@ -161,14 +204,23 @@ export namespace Provider {
       }
     },
     async numasec(input) {
+      const config = await Config.get()
+      const allowPublic =
+        Flag.NUMASEC_ENABLE_PUBLIC_PROVIDER || config.provider?.["numasec"]?.options?.["publicAccess"] === true
       const hasKey = await (async () => {
         const env = Env.all()
         if (input.env.some((item) => env[item])) return true
         if (await Auth.get(input.id)) return true
-        const config = await Config.get()
         if (config.provider?.["numasec"]?.options?.apiKey) return true
         return false
       })()
+
+      if (!hasKey && !allowPublic) {
+        return {
+          autoload: false,
+          options: {},
+        }
+      }
 
       if (!hasKey) {
         for (const [key, value] of Object.entries(input.models)) {
@@ -270,22 +322,17 @@ export namespace Provider {
 
       const awsAccessKeyId = Env.get("AWS_ACCESS_KEY_ID")
 
-      // TODO: Using process.env directly because Env.set only updates a process.env shallow copy,
-      // until the scope of the Env API is clarified (test only or runtime?)
       const awsBearerToken = iife(() => {
-        const envToken = process.env.AWS_BEARER_TOKEN_BEDROCK
+        const envToken = Env.get("AWS_BEARER_TOKEN_BEDROCK")
         if (envToken) return envToken
-        if (auth?.type === "api") {
-          process.env.AWS_BEARER_TOKEN_BEDROCK = auth.key
-          return auth.key
-        }
+        if (auth?.type === "api") return auth.key
         return undefined
       })
 
       const awsWebIdentityTokenFile = Env.get("AWS_WEB_IDENTITY_TOKEN_FILE")
 
       const containerCreds = Boolean(
-        process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI,
+        Env.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") || Env.get("AWS_CONTAINER_CREDENTIALS_FULL_URI"),
       )
 
       if (!profile && !awsAccessKeyId && !awsBearerToken && !awsWebIdentityTokenFile && !containerCreds)
@@ -294,6 +341,8 @@ export namespace Provider {
       const providerOptions: AmazonBedrockProviderSettings = {
         region: defaultRegion,
       }
+
+      if (awsBearerToken) providerOptions.apiKey = awsBearerToken
 
       // Only use credential chain if no bearer token exists
       // Bearer token takes precedence over credential chain (profiles, access keys, IAM roles, web identity tokens)
@@ -488,23 +537,29 @@ export namespace Provider {
     },
     "sap-ai-core": async () => {
       const auth = await Auth.get("sap-ai-core")
-      // TODO: Using process.env directly because Env.set only updates a shallow copy (not process.env),
-      // until the scope of the Env API is clarified (test only or runtime?)
-      const envServiceKey = iife(() => {
-        const envAICoreServiceKey = process.env.AICORE_SERVICE_KEY
-        if (envAICoreServiceKey) return envAICoreServiceKey
-        if (auth?.type === "api") {
-          process.env.AICORE_SERVICE_KEY = auth.key
-          return auth.key
-        }
-        return undefined
-      })
-      const deploymentId = process.env.AICORE_DEPLOYMENT_ID
-      const resourceGroup = process.env.AICORE_RESOURCE_GROUP
+      const envServiceKey = Env.get("AICORE_SERVICE_KEY")
+      const authServiceKey = auth?.type === "api" ? auth.key : undefined
+      const serviceKey = envServiceKey ?? authServiceKey
+      const destination = sapDestination(serviceKey)
+      const deploymentId = Env.get("AICORE_DEPLOYMENT_ID")
+      const resourceGroup = Env.get("AICORE_RESOURCE_GROUP")
+
+      if (!envServiceKey && authServiceKey && !destination) {
+        log.warn("sap-ai-core auth key fell back to legacy env bridge", {
+          reason: "unsupported_service_key_shape",
+        })
+        process.env.AICORE_SERVICE_KEY = authServiceKey
+      }
 
       return {
-        autoload: !!envServiceKey,
-        options: envServiceKey ? { deploymentId, resourceGroup } : {},
+        autoload: !!serviceKey,
+        options: serviceKey
+          ? {
+              deploymentId,
+              resourceGroup,
+              destination,
+            }
+          : {},
         async getModel(sdk: any, modelID: string) {
           return sdk(modelID)
         },
@@ -1470,7 +1525,7 @@ export namespace Provider {
     }
 
     const provider = Object.values(providers).find((p) => !cfg.provider || Object.keys(cfg.provider).includes(p.id))
-    if (!provider) throw new Error("no providers found")
+    if (!provider) throw new Error("no providers found: connect a provider or explicitly enable numasec public access")
     const [model] = sort(Object.values(provider.models))
     if (!model) throw new Error("no models found")
     return {

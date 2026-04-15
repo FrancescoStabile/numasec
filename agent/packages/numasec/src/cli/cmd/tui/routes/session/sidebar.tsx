@@ -11,10 +11,13 @@ import {
   fallbackChains,
   fallbackFindings,
   fallbackTarget,
-  findingCounts,
+  selectCurrentEndpoint,
+  selectFindingSummary,
   selectChains,
   selectFindings,
+  selectReportSummary,
   selectTarget,
+  reportStateLabel,
 } from "../../security-view-model"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
@@ -67,13 +70,30 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     }
   })
 
-  const fallbackFindingList = createMemo(() => fallbackFindings(messages(), sync.data.part))
+  const legacy = createMemo(() => security() === undefined)
+  const fallbackFindingList = createMemo(() => {
+    if (!legacy()) return []
+    return fallbackFindings(messages(), sync.data.part)
+  })
   const findingList = createMemo(() => selectFindings(security(), fallbackFindingList()))
-  const findings = createMemo(() => findingCounts(findingList()))
-  const totalFindings = createMemo(() => findingList().length)
-  const fallbackChainList = createMemo(() => fallbackChains(messages(), sync.data.part, fallbackFindingList()))
+  const findingSummary = createMemo(() => selectFindingSummary(security(), findingList()))
+  const findings = createMemo(() => findingSummary().severity)
+  const totalFindings = createMemo(() => findingSummary().total)
+  const fallbackChainList = createMemo(() => {
+    if (!legacy()) return []
+    return fallbackChains(messages(), sync.data.part, fallbackFindingList())
+  })
   const attackChains = createMemo(() => selectChains(security(), fallbackChainList(), findingList()))
-  const targetUrl = createMemo(() => selectTarget(security(), fallbackTarget(messages(), sync.data.part)))
+  const fallbackTargetUrl = createMemo(() => {
+    if (!legacy()) return
+    return fallbackTarget(messages(), sync.data.part)
+  })
+  const targetUrl = createMemo(() => selectTarget(security(), fallbackTargetUrl()))
+  const currentEndpointUrl = createMemo(() => selectCurrentEndpoint(security()))
+  const reportSummary = createMemo(() => selectReportSummary(security()))
+  const reportState = createMemo(() => {
+    return reportStateLabel(reportSummary())
+  })
 
   const directory = useDirectory()
   const kv = useKV()
@@ -109,9 +129,6 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               <text fg={theme.text}>
                 <b>{session().title}</b>
               </text>
-              <Show when={session().share?.url}>
-                <text fg={theme.textMuted}>{session().share!.url}</text>
-              </Show>
             </box>
             <box>
               <text fg={theme.text}>
@@ -185,9 +202,17 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             <Show when={targetUrl()}>
               <box>
                 <text fg={theme.text}>
-                  <b>Target</b>
+                  <b>Engagement Target</b>
                 </text>
                 <text fg={theme.textMuted}>{targetUrl()}</text>
+              </box>
+            </Show>
+            <Show when={currentEndpointUrl() && currentEndpointUrl() !== targetUrl()}>
+              <box>
+                <text fg={theme.text}>
+                  <b>Current Endpoint</b>
+                </text>
+                <text fg={theme.textMuted}>{currentEndpointUrl()}</text>
               </box>
             </Show>
             <box>
@@ -249,6 +274,40 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 </Show>
               </Show>
             </box>
+            <Show when={reportSummary()}>
+              <box>
+                <text fg={theme.text}>
+                  <b>Readiness</b>
+                </text>
+                <text fg={theme.textMuted}>{reportState()}</text>
+                <text fg={theme.textMuted}>
+                  Verified {findingSummary().verified}
+                  {findingSummary().provisional > 0 ? ` · Provisional ${findingSummary().provisional}` : ""}
+                  {findingSummary().suppressed > 0 ? ` · Suppressed ${findingSummary().suppressed}` : ""}
+                </text>
+                <Show when={reportSummary()!.verification_debt.promotion_gaps > 0}>
+                  <text fg={theme.textMuted}>
+                    Promotion gaps {reportSummary()!.verification_debt.promotion_gaps}
+                  </text>
+                </Show>
+                <Show when={reportSummary()!.verification_debt.open_critical_hypotheses > 0}>
+                  <text fg={theme.textMuted}>
+                    Open critical hypotheses {reportSummary()!.verification_debt.open_critical_hypotheses}
+                  </text>
+                </Show>
+                <Show
+                  when={
+                    reportSummary()!.verification_debt.open_hypotheses > 0 &&
+                    reportSummary()!.verification_debt.open_hypotheses !==
+                      reportSummary()!.verification_debt.open_critical_hypotheses
+                  }
+                >
+                  <text fg={theme.textMuted}>
+                    Open hypotheses {reportSummary()!.verification_debt.open_hypotheses}
+                  </text>
+                </Show>
+              </box>
+            </Show>
             <Show when={attackChains().length > 0}>
               <box>
                 <box
@@ -295,7 +354,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                     <text fg={theme.text}>{expanded.todo ? "▼" : "▶"}</text>
                   </Show>
                   <text fg={theme.text}>
-                    <b>Todo</b>
+                    <b>Operator Checklist</b>
                   </text>
                 </box>
                 <Show when={todo().length <= 2 || expanded.todo}>
@@ -366,7 +425,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                     ✕
                   </text>
                 </box>
-                <text fg={theme.textMuted}>Numasec includes free models so you can start immediately.</text>
+                <text fg={theme.textMuted}>
+                  Connect a provider to get started, or explicitly enable Numasec public free models.
+                </text>
                 <text fg={theme.textMuted}>
                   Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
                 </text>

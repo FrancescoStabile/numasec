@@ -6,6 +6,7 @@
  */
 
 import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface UploadResult {
   vulnerable: boolean
@@ -138,9 +139,10 @@ export async function testUpload(
     headers?: Record<string, string>
     cookies?: string
     timeout?: number
+    sessionID?: SessionID | string
   } = {},
 ): Promise<UploadResult> {
-  const { fieldName = "file", method = "POST", headers = {}, cookies, timeout = 15_000 } = options
+  const { fieldName = "file", method = "POST", headers = {}, cookies, timeout = 15_000, sessionID } = options
   const findings: UploadFinding[] = []
 
   for (const test of UPLOAD_TESTS) {
@@ -155,6 +157,7 @@ export async function testUpload(
       body,
       cookies,
       timeout,
+      sessionID,
     })
 
     // Check for accepted upload (200/201/204 without error indicators)

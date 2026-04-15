@@ -3,6 +3,7 @@ import { and, eq, inArray } from "../../storage/db"
 import { Tool } from "../../tool/tool"
 import { EvidenceEdgeTable, EvidenceNodeTable } from "../evidence.sql"
 import { Database } from "../../storage/db"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Query the canonical evidence graph for nodes, edges, and aggregates.
@@ -56,7 +57,8 @@ export const QueryGraphTool = Tool.define("query_graph", {
   description: DESCRIPTION,
   parameters: QueryGraphParameters,
   async execute(params, ctx) {
-    const nodeConditions = [eq(EvidenceNodeTable.session_id, ctx.sessionID)]
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
+    const nodeConditions = [eq(EvidenceNodeTable.session_id, sessionID)]
     if (params.node_types && params.node_types.length > 0) {
       nodeConditions.push(inArray(EvidenceNodeTable.type, params.node_types))
     }
@@ -64,7 +66,7 @@ export const QueryGraphTool = Tool.define("query_graph", {
       nodeConditions.push(inArray(EvidenceNodeTable.status, params.statuses))
     }
 
-    const edgeConditions = [eq(EvidenceEdgeTable.session_id, ctx.sessionID)]
+    const edgeConditions = [eq(EvidenceEdgeTable.session_id, sessionID)]
     if (params.relations && params.relations.length > 0) {
       edgeConditions.push(inArray(EvidenceEdgeTable.relation, params.relations))
     }

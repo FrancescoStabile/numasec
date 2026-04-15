@@ -152,6 +152,41 @@ describe("tool.bash permissions", () => {
     })
   })
 
+  test("asks for external_directory_mutation when mutating a repo outside project", async () => {
+    await using outerTmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "tracked.txt"), "x")
+      },
+    })
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await BashTool.init()
+        const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        const testCtx = {
+          ...ctx,
+          ask: async (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) => {
+            requests.push(req)
+          },
+        }
+        await bash.execute(
+          {
+            command: "git add tracked.txt",
+            workdir: outerTmp.path,
+            description: "Stage external repo file",
+          },
+          testCtx,
+        )
+        const req = requests.find((item) => item.permission === "external_directory_mutation")
+        expect(req).toBeDefined()
+        expect(req!.patterns).toContain(path.join(outerTmp.path, "*"))
+        expect(req!.always).toEqual([])
+      },
+    })
+  })
+
   test("asks for external_directory permission when file arg is outside project", async () => {
     await using outerTmp = await tmpdir({
       init: async (dir) => {

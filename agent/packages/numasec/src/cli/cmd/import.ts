@@ -7,78 +7,15 @@ import { bootstrap } from "../bootstrap"
 import { Database } from "../../storage/db"
 import { SessionTable, MessageTable, PartTable } from "../../session/session.sql"
 import { Instance } from "../../project/instance"
-import { ShareNext } from "../../share/share-next"
 import { EOL } from "os"
 import { Filesystem } from "../../util/filesystem"
 
-/** Discriminated union returned by the ShareNext API (GET /api/shares/:id/data) */
-export type ShareData =
-  | { type: "session"; data: SDKSession }
-  | { type: "message"; data: Message }
-  | { type: "part"; data: Part }
-  | { type: "session_diff"; data: unknown }
-  | { type: "model"; data: unknown }
-
-/** Extract share ID from a share URL like https://opncd.ai/share/abc123 */
-export function parseShareUrl(url: string): string | null {
-  const match = url.match(/^https?:\/\/[^/]+\/share\/([a-zA-Z0-9_-]+)$/)
-  return match ? match[1] : null
-}
-
-export function shouldAttachShareAuthHeaders(shareUrl: string, accountBaseUrl: string): boolean {
-  try {
-    return new URL(shareUrl).origin === new URL(accountBaseUrl).origin
-  } catch {
-    return false
-  }
-}
-
-/**
- * Transform ShareNext API response (flat array) into the nested structure for local file storage.
- *
- * The API returns a flat array: [session, message, message, part, part, ...]
- * Local storage expects: { info: session, messages: [{ info: message, parts: [part, ...] }, ...] }
- *
- * This groups parts by their messageID to reconstruct the hierarchy before writing to disk.
- */
-export function transformShareData(shareData: ShareData[]): {
-  info: SDKSession
-  messages: Array<{ info: Message; parts: Part[] }>
-} | null {
-  const sessionItem = shareData.find((d) => d.type === "session")
-  if (!sessionItem) return null
-
-  const messageMap = new Map<string, Message>()
-  const partMap = new Map<string, Part[]>()
-
-  for (const item of shareData) {
-    if (item.type === "message") {
-      messageMap.set(item.data.id, item.data)
-    } else if (item.type === "part") {
-      if (!partMap.has(item.data.messageID)) {
-        partMap.set(item.data.messageID, [])
-      }
-      partMap.get(item.data.messageID)!.push(item.data)
-    }
-  }
-
-  if (messageMap.size === 0) return null
-
-  return {
-    info: sessionItem.data,
-    messages: Array.from(messageMap.values()).map((msg) => ({
-      info: msg,
-      parts: partMap.get(msg.id) ?? [],
-    })),
-  }
-}
-
 export const ImportCommand = cmd({
   command: "import <file>",
-  describe: "import session data from JSON file or URL",
+  describe: "import session data from a local JSON file",
   builder: (yargs: Argv) => {
     return yargs.positional("file", {
-      describe: "path to JSON file or share URL",
+      describe: "path to a local JSON file",
       type: "string",
       demandOption: true,
     })
@@ -95,56 +32,19 @@ export const ImportCommand = cmd({
           }
         | undefined
 
-      const isUrl = args.file.startsWith("http://") || args.file.startsWith("https://")
+      if (args.file.startsWith("http://") || args.file.startsWith("https://")) {
+        process.stdout.write("Importing remote share URLs is no longer supported in local-first numasec builds.")
+        process.stdout.write(EOL)
+        process.stdout.write("Export the session to a local JSON file and import that file instead.")
+        process.stdout.write(EOL)
+        return
+      }
 
-      if (isUrl) {
-        const slug = parseShareUrl(args.file)
-        if (!slug) {
-          const baseUrl = await ShareNext.url()
-          process.stdout.write(`Invalid URL format. Expected: ${baseUrl}/share/<slug>`)
-          process.stdout.write(EOL)
-          return
-        }
-
-        const parsed = new URL(args.file)
-        const baseUrl = parsed.origin
-        const req = await ShareNext.request()
-        const headers = shouldAttachShareAuthHeaders(args.file, req.baseUrl) ? req.headers : {}
-
-        const dataPath = req.api.data(slug)
-        let response = await fetch(`${baseUrl}${dataPath}`, {
-          headers,
-        })
-
-        if (!response.ok && dataPath !== `/api/share/${slug}/data`) {
-          response = await fetch(`${baseUrl}/api/share/${slug}/data`, {
-            headers,
-          })
-        }
-
-        if (!response.ok) {
-          process.stdout.write(`Failed to fetch share data: ${response.statusText}`)
-          process.stdout.write(EOL)
-          return
-        }
-
-        const shareData: ShareData[] = await response.json()
-        const transformed = transformShareData(shareData)
-
-        if (!transformed) {
-          process.stdout.write(`Share not found or empty: ${slug}`)
-          process.stdout.write(EOL)
-          return
-        }
-
-        exportData = transformed
-      } else {
-        exportData = await Filesystem.readJson<NonNullable<typeof exportData>>(args.file).catch(() => undefined)
-        if (!exportData) {
-          process.stdout.write(`File not found: ${args.file}`)
-          process.stdout.write(EOL)
-          return
-        }
+      exportData = await Filesystem.readJson<NonNullable<typeof exportData>>(args.file).catch(() => undefined)
+      if (!exportData) {
+        process.stdout.write(`File not found: ${args.file}`)
+        process.stdout.write(EOL)
+        return
       }
 
       if (!exportData) {

@@ -8,6 +8,7 @@ import {
   EvidenceRunTable,
 } from "./evidence.sql"
 import type { SessionID } from "../session/schema"
+import { canonicalSecuritySessionID } from "./security-session"
 
 export class EvidenceGraphStoreError extends Schema.TaggedErrorClass<EvidenceGraphStoreError>()(
   "EvidenceGraphStoreError",
@@ -137,13 +138,14 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
 
       const upsertNode = Effect.fn("EvidenceGraphStore.upsertNode")((input: EvidenceGraphStore.UpsertNodeInput) =>
         query((db: DbClient) => {
+          const sessionID = canonicalSecuritySessionID(input.sessionID)
           const fingerprint = input.fingerprint ?? createEvidenceFingerprint({ type: input.type, payload: input.payload })
-          const id = createNodeID(input.sessionID, input.type, fingerprint)
+          const id = createNodeID(sessionID, input.type, fingerprint)
           db
             .insert(EvidenceNodeTable)
             .values({
               id: nodeID(id),
-              session_id: input.sessionID,
+              session_id: sessionID,
               type: input.type,
               fingerprint,
               status: input.status ?? "active",
@@ -168,7 +170,7 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
             .from(EvidenceNodeTable)
             .where(
               and(
-                eq(EvidenceNodeTable.session_id, input.sessionID),
+                eq(EvidenceNodeTable.session_id, sessionID),
                 eq(EvidenceNodeTable.type, input.type),
                 eq(EvidenceNodeTable.fingerprint, fingerprint),
               ),
@@ -181,12 +183,13 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
 
       const upsertEdge = Effect.fn("EvidenceGraphStore.upsertEdge")((input: EvidenceGraphStore.UpsertEdgeInput) =>
         query((db: DbClient) => {
-          const id = createEdgeID(input.sessionID, input.fromNodeID, input.toNodeID, input.relation)
+          const sessionID = canonicalSecuritySessionID(input.sessionID)
+          const id = createEdgeID(sessionID, input.fromNodeID, input.toNodeID, input.relation)
           db
             .insert(EvidenceEdgeTable)
             .values({
               id: edgeID(id),
-              session_id: input.sessionID,
+              session_id: sessionID,
               from_node_id: nodeID(input.fromNodeID),
               to_node_id: nodeID(input.toNodeID),
               relation: input.relation,
@@ -213,7 +216,7 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
             .from(EvidenceEdgeTable)
             .where(
               and(
-                eq(EvidenceEdgeTable.session_id, input.sessionID),
+                eq(EvidenceEdgeTable.session_id, sessionID),
                 eq(EvidenceEdgeTable.from_node_id, nodeID(input.fromNodeID)),
                 eq(EvidenceEdgeTable.to_node_id, nodeID(input.toNodeID)),
                 eq(EvidenceEdgeTable.relation, input.relation),
@@ -227,9 +230,10 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
 
       const supersedeNode = Effect.fn("EvidenceGraphStore.supersedeNode")((input: EvidenceGraphStore.SupersedeNodeInput) =>
         Effect.gen(function* () {
+          const sessionID = canonicalSecuritySessionID(input.sessionID)
           const reason = input.reason ?? ""
           const edge = yield* upsertEdge({
-            sessionID: input.sessionID,
+            sessionID,
             fromNodeID: input.supersedingNodeID,
             toNodeID: input.supersededNodeID,
             relation: "supersedes",
@@ -247,7 +251,7 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
               })
               .where(
                 and(
-                  eq(EvidenceNodeTable.session_id, input.sessionID),
+                  eq(EvidenceNodeTable.session_id, sessionID),
                   eq(EvidenceNodeTable.id, nodeID(input.supersededNodeID)),
                 ),
               )
@@ -260,11 +264,12 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
 
       const upsertRun = Effect.fn("EvidenceGraphStore.upsertRun")((input: EvidenceGraphStore.UpsertRunInput) =>
         query((db: DbClient) => {
+          const sessionID = canonicalSecuritySessionID(input.sessionID)
           db
             .insert(EvidenceRunTable)
             .values({
               id: runID(input.id),
-              session_id: input.sessionID,
+              session_id: sessionID,
               planner_state: input.plannerState,
               hypothesis_id: input.hypothesisID,
               status: input.status,
@@ -295,7 +300,7 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
           db
             .select()
             .from(EvidenceNodeTable)
-            .where(eq(EvidenceNodeTable.session_id, sessionID))
+            .where(eq(EvidenceNodeTable.session_id, canonicalSecuritySessionID(sessionID)))
             .all(),
         ),
       )
@@ -305,7 +310,7 @@ export class EvidenceGraphStore extends ServiceMap.Service<EvidenceGraphStore, E
           db
             .select()
             .from(EvidenceEdgeTable)
-            .where(eq(EvidenceEdgeTable.session_id, sessionID))
+            .where(eq(EvidenceEdgeTable.session_id, canonicalSecuritySessionID(sessionID)))
             .all(),
         ),
       )

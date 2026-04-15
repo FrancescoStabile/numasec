@@ -3,15 +3,17 @@
  *
  * Wraps fetch() with:
  * - Follow redirects (configurable depth)
- * - Skip TLS verification (NODE_TLS_REJECT_UNAUTHORIZED=0)
+ * - Respect TLS verification by default with opt-in insecure override
  * - Configurable timeout
- *
- * No target restrictions — numasec is a pentesting tool.
- * The user is responsible for authorization on any target.
  */
+
+import { Flag } from "../flag/flag"
+import type { SessionID } from "../session/schema"
+import { Scope } from "./scope"
 
 const DEFAULT_TIMEOUT = 15_000
 const MAX_REDIRECTS = 10
+type HttpFetchOptions = RequestInit & { tls?: { rejectUnauthorized: boolean } }
 
 export interface HttpRequestOptions {
   method?: string
@@ -21,6 +23,8 @@ export interface HttpRequestOptions {
   followRedirects?: boolean
   maxRedirects?: number
   cookies?: string
+  insecureTls?: boolean
+  sessionID?: SessionID | string
 }
 
 export interface HttpResponse {
@@ -32,6 +36,16 @@ export interface HttpResponse {
   url: string
   redirectChain: string[]
   elapsed: number
+}
+
+export function insecureTlsEnabled(options: HttpRequestOptions = {}) {
+  if (typeof options.insecureTls === "boolean") return options.insecureTls
+  return Flag.NUMASEC_SECURITY_INSECURE_TLS
+}
+
+export function httpRequestTls(options: HttpRequestOptions = {}) {
+  if (!insecureTlsEnabled(options)) return
+  return { rejectUnauthorized: false }
 }
 
 // ── Core fetch wrapper ─────────────────────────────────────────
@@ -58,9 +72,6 @@ export async function httpRequest(
     cookies,
   } = options
 
-  // Disable TLS verification for scanners (targets often use self-signed certs)
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
-
   const reqHeaders: Record<string, string> = {
     "User-Agent": "Mozilla/5.0 (compatible; numasec/5.0)",
     ...headers,
@@ -72,18 +83,24 @@ export async function httpRequest(
   const start = Date.now()
 
   for (let i = 0; i <= maxRedirects; i++) {
+    if (options.sessionID) {
+      Scope.ensure(options.sessionID, currentUrl)
+    }
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const response = await fetch(currentUrl, {
+      const request: HttpFetchOptions = {
         method: i === 0 ? method : "GET",
         headers: reqHeaders,
         body: i === 0 ? body : undefined,
         signal: controller.signal,
         redirect: "manual",
-      })
+      }
+      const tls = httpRequestTls(options)
+      if (tls) request.tls = tls
+      const response = await fetch(currentUrl, request)
       clearTimeout(timer)
 
       // Handle redirects manually to track chain

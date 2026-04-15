@@ -61,7 +61,7 @@ export const XssTestTool = Tool.define("xss_test", {
     await ctx.ask({
       permission: "xss_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, parameter: params.parameter } as Record<string, any>,
     })
 
@@ -69,6 +69,7 @@ export const XssTestTool = Tool.define("xss_test", {
 
     const result = await testPayloads({
       url: params.url,
+      sessionID: ctx.sessionID,
       method: params.method,
       parameter: params.parameter,
       position: params.position as PayloadPosition,

@@ -6,6 +6,17 @@ import type { ToolResultEnvelope } from "./tool/result-envelope"
 
 type Item = Record<string, any>
 
+export type IngestedToolEnvelope = {
+  artifacts: number
+  observations: number
+  verifications: number
+  external: number
+  artifactNodeIDs: string[]
+  observationNodeIDs: string[]
+  verificationNodeIDs: string[]
+  nodeIDsByKey: Record<string, string>
+}
+
 function key(kind: string, item: Item, index: number) {
   const value = item.key
   if (typeof value === "string" && value.length > 0) return value
@@ -118,13 +129,16 @@ export async function ingestToolEnvelope(input: {
   title: string
   metadata?: Record<string, unknown>
   envelope: ToolResultEnvelope
-}) {
+}): Promise<IngestedToolEnvelope> {
   const map = new Map<string, string>()
   const meta = input.metadata ?? {}
   let artifacts = 0
   let observations = 0
   let verifications = 0
   let external = 0
+  const artifactNodeIDs: string[] = []
+  const observationNodeIDs: string[] = []
+  const verificationNodeIDs: string[] = []
 
   const register = async (kindValue: "artifact" | "observation" | "verification", list: Item[]) => {
     let index = 0
@@ -132,9 +146,18 @@ export async function ingestToolEnvelope(input: {
       const node = await upsert(input.sessionID, input.tool, kindValue, item, index++, input.title, meta)
       map.set(node.key, node.row.id)
       if (node.stored) external += 1
-      if (kindValue === "artifact") artifacts += 1
-      if (kindValue === "observation") observations += 1
-      if (kindValue === "verification") verifications += 1
+      if (kindValue === "artifact") {
+        artifacts += 1
+        artifactNodeIDs.push(node.row.id)
+      }
+      if (kindValue === "observation") {
+        observations += 1
+        observationNodeIDs.push(node.row.id)
+      }
+      if (kindValue === "verification") {
+        verifications += 1
+        verificationNodeIDs.push(node.row.id)
+      }
     }
   }
 
@@ -202,5 +225,9 @@ export async function ingestToolEnvelope(input: {
     observations,
     verifications,
     external,
+    artifactNodeIDs,
+    observationNodeIDs,
+    verificationNodeIDs,
+    nodeIDsByKey: Object.fromEntries(map.entries()),
   }
 }

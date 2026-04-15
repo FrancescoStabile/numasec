@@ -10,6 +10,7 @@ import { mapValues } from "remeda"
 import { errors } from "../error"
 import { lazy } from "../../util/lazy"
 import { Log } from "../../util/log"
+import { redactProviderInfo } from "../secret-redaction"
 
 const log = Log.create({ service: "server" })
 
@@ -56,9 +57,10 @@ export const ProviderRoutes = lazy(() =>
           mapValues(filteredProviders, (x) => Provider.fromModelsDevProvider(x)),
           connected,
         )
+        const visible = mapValues(providers, (item) => redactProviderInfo(item))
         return c.json({
-          all: Object.values(providers),
-          default: mapValues(providers, (item) => Provider.sort(Object.values(item.models))[0].id),
+          all: Object.values(visible),
+          default: mapValues(visible, (item) => Provider.sort(Object.values(item.models))[0].id),
           connected: Object.keys(connected),
         })
       },

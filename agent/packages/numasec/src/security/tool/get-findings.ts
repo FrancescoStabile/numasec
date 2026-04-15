@@ -12,6 +12,7 @@ import { getNextActions } from "../enrichment/next-actions"
 import { makeToolResultEnvelope } from "./result-envelope"
 import { deriveAttackPathProjection } from "../chain-projection"
 import { projectFindings } from "../finding-projector"
+import { canonicalSecuritySessionID } from "../security-session"
 
 const DESCRIPTION = `Retrieve saved security findings for the current session.
 Use this to review what has been found so far, check for gaps, and plan next steps.
@@ -28,10 +29,11 @@ export const GetFindingsTool = Tool.define("get_findings", {
     include_false_positive: z.boolean().optional().describe("Include findings marked false_positive"),
   }),
   async execute(params, ctx) {
-    const projected = projectFindings(ctx.sessionID)
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
+    const projected = projectFindings(sessionID)
     const view = params.view ?? (params.canonical_only === true ? "canonical" : params.canonical_only === false ? "raw" : "all")
     let rows = Database.use((db) => {
-      const conditions = [eq(FindingTable.session_id, ctx.sessionID)]
+      const conditions = [eq(FindingTable.session_id, sessionID)]
       if (params.severity) conditions.push(eq(FindingTable.severity, params.severity as any))
       const query = db
         .select()
@@ -46,7 +48,7 @@ export const GetFindingsTool = Tool.define("get_findings", {
     if (view === "raw") rows = rows.filter((item) => item.state !== "suppressed" && item.state !== "refuted")
     if (view === "canonical") {
       rows = deriveAttackPathProjection({
-        sessionID: ctx.sessionID,
+        sessionID,
         severity: params.severity as any,
         includeFalsePositive: params.include_false_positive,
       }).findings

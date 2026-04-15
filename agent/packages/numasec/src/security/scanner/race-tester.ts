@@ -6,6 +6,7 @@
  */
 
 import { httpRequest, type HttpRequestOptions } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface RaceResult {
   vulnerable: boolean
@@ -36,9 +37,10 @@ export async function testRaceCondition(
     cookies?: string
     count?: number
     timeout?: number
+    sessionID?: SessionID | string
   } = {},
 ): Promise<RaceResult> {
-  const { method = "POST", headers = {}, body, cookies, count = 10, timeout = 15_000 } = options
+  const { method = "POST", headers = {}, body, cookies, count = 10, timeout = 15_000, sessionID } = options
   const start = Date.now()
 
   const reqOptions: HttpRequestOptions = {
@@ -48,6 +50,7 @@ export async function testRaceCondition(
     cookies,
     timeout,
     followRedirects: true,
+    sessionID,
   }
 
   // Fire all requests simultaneously

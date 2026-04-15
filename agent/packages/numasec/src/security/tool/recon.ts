@@ -32,13 +32,14 @@ export const ReconTool = Tool.define("recon", {
     await ctx.ask({
       permission: "recon",
       patterns: [params.target],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { target: params.target } as Record<string, any>,
     })
 
     const profile = await runObserveSurfaceProfile(
       {
         target: params.target,
+        sessionID: ctx.sessionID,
         modes: ["recon"],
         ports: params.ports,
         skip_js: params.skip_js,

@@ -6,6 +6,7 @@
  */
 
 import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface CrawlResult {
   urls: string[]
@@ -105,9 +106,9 @@ function detectTechnologies(headers: Record<string, string>, body: string): stri
   return [...techs]
 }
 
-async function fetchRobots(baseUrl: string): Promise<string[]> {
+async function fetchRobots(baseUrl: string, sessionID?: SessionID | string): Promise<string[]> {
   try {
-    const resp = await httpRequest(`${baseUrl}/robots.txt`, { timeout: 5000 })
+    const resp = await httpRequest(`${baseUrl}/robots.txt`, { timeout: 5000, sessionID })
     if (resp.status !== 200) return []
     const disallowed: string[] = []
     for (const line of resp.body.split("\n")) {
@@ -120,9 +121,9 @@ async function fetchRobots(baseUrl: string): Promise<string[]> {
   }
 }
 
-async function fetchSitemap(baseUrl: string): Promise<string[]> {
+async function fetchSitemap(baseUrl: string, sessionID?: SessionID | string): Promise<string[]> {
   try {
-    const resp = await httpRequest(`${baseUrl}/sitemap.xml`, { timeout: 5000 })
+    const resp = await httpRequest(`${baseUrl}/sitemap.xml`, { timeout: 5000, sessionID })
     if (resp.status !== 200) return []
     const urls: string[] = []
     const re = /<loc>([^<]+)<\/loc>/gi
@@ -134,11 +135,11 @@ async function fetchSitemap(baseUrl: string): Promise<string[]> {
   }
 }
 
-async function detectOpenAPI(baseUrl: string): Promise<string | undefined> {
+async function detectOpenAPI(baseUrl: string, sessionID?: SessionID | string): Promise<string | undefined> {
   const paths = ["/openapi.json", "/swagger.json", "/api-docs", "/v2/api-docs", "/v3/api-docs"]
   for (const p of paths) {
     try {
-      const resp = await httpRequest(`${baseUrl}${p}`, { timeout: 5000 })
+      const resp = await httpRequest(`${baseUrl}${p}`, { timeout: 5000, sessionID })
       if (resp.status === 200 && (resp.body.includes('"openapi"') || resp.body.includes('"swagger"'))) {
         return `${baseUrl}${p}`
       }
@@ -154,9 +155,9 @@ async function detectOpenAPI(baseUrl: string): Promise<string | undefined> {
  */
 export async function crawl(
   startUrl: string,
-  options: { maxUrls?: number; maxDepth?: number; timeout?: number } = {},
+  options: { maxUrls?: number; maxDepth?: number; timeout?: number; sessionID?: SessionID | string } = {},
 ): Promise<CrawlResult> {
-  const { maxUrls = 100, maxDepth = 3, timeout = 10_000 } = options
+  const { maxUrls = 100, maxDepth = 3, timeout = 10_000, sessionID } = options
   const start = Date.now()
   const visited = new Set<string>()
   const allForms: FormInfo[] = []
@@ -167,9 +168,9 @@ export async function crawl(
 
   // Parallel: fetch robots, sitemap, openapi while crawling
   const [robotsDisallowed, sitemap, openapi] = await Promise.all([
-    fetchRobots(baseUrl),
-    fetchSitemap(baseUrl),
-    detectOpenAPI(baseUrl),
+    fetchRobots(baseUrl, sessionID),
+    fetchSitemap(baseUrl, sessionID),
+    detectOpenAPI(baseUrl, sessionID),
   ])
 
   // Add sitemap URLs to queue
@@ -183,7 +184,7 @@ export async function crawl(
     visited.add(item.url)
 
     try {
-      const resp = await httpRequest(item.url, { timeout })
+      const resp = await httpRequest(item.url, { timeout, sessionID })
       if (resp.status === 0 || resp.status >= 400) continue
 
       const techs = detectTechnologies(resp.headers, resp.body)

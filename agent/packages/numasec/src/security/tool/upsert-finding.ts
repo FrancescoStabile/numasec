@@ -5,11 +5,15 @@ import { Tool } from "../../tool/tool"
 import { Database } from "../../storage/db"
 import { EvidenceNodeTable } from "../evidence.sql"
 import { FindingTable } from "../security.sql"
+import type { FindingID } from "../security.sql"
 import { enrichFinding, generateFindingId, normalizeSeverity } from "../enrichment/enrich"
 import { EvidenceGraphStore } from "../evidence-store"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
+import type { SessionID } from "../../session/schema"
 
 type EvidenceNodeID = (typeof EvidenceNodeTable)["$inferInsert"]["id"]
+type FindingRow = (typeof FindingTable)["$inferSelect"]
 
 function nodeID(value: string): EvidenceNodeID {
   return value as EvidenceNodeID
@@ -95,6 +99,141 @@ function severityStep(value: string, shift: number): Severity {
   return SEVERITY_ORDER[next]
 }
 
+function hypothesisStatus(current: string, positive: boolean) {
+  if (!positive) return current
+  if (current === "superseded" || current === "refuted") return current
+  return "confirmed"
+}
+
+function sameText(left: string, right: string) {
+  return left.trim().toLowerCase() === right.trim().toLowerCase()
+}
+
+function manualFinding(row: FindingRow) {
+  return row.manual_override || row.tool_used !== "finding_projector"
+}
+
+function findingRow(sessionID: SessionID, findingID: string) {
+  if (!findingID) return
+  return Database.use((db) =>
+    db
+      .select()
+      .from(FindingTable)
+      .where(and(eq(FindingTable.session_id, sessionID), eq(FindingTable.id, findingID as FindingID)))
+      .get(),
+  )
+}
+
+function scopeCandidates(input: {
+  sessionID: SessionID
+  hypothesisID: string
+  url: string
+  method: string
+  parameter: string
+}) {
+  return Database.use((db) =>
+    db
+      .select()
+      .from(FindingTable)
+      .where(
+        and(
+          eq(FindingTable.session_id, input.sessionID),
+          eq(FindingTable.source_hypothesis_id, input.hypothesisID),
+          eq(FindingTable.url, input.url),
+          eq(FindingTable.method, input.method),
+          eq(FindingTable.parameter, input.parameter),
+        ),
+      )
+      .all(),
+  ).filter((row) => manualFinding(row) && row.state !== "suppressed" && row.state !== "refuted")
+}
+
+function candidateSummary(rows: FindingRow[]) {
+  return rows.map((row) => `${row.id} (${row.title})`).join(", ")
+}
+
+function resolveExistingFinding(input: {
+  sessionID: SessionID
+  hypothesisID: string
+  generatedFindingID: string
+  targetFindingID: string
+  rootCauseKey: string
+  title: string
+  url: string
+  method: string
+  parameter: string
+}) {
+  if (input.targetFindingID) {
+    const row = findingRow(input.sessionID, input.targetFindingID)
+    if (!row) {
+      throw new Error(`upsert_finding target_finding_id was not found in this session: ${input.targetFindingID}`)
+    }
+    return {
+      row,
+      resolution: "target_finding_id",
+    } as const
+  }
+
+  const direct = findingRow(input.sessionID, input.generatedFindingID)
+  if (direct) {
+    return {
+      row: direct,
+      resolution: "generated_id",
+    } as const
+  }
+
+  const candidates = scopeCandidates({
+    sessionID: input.sessionID,
+    hypothesisID: input.hypothesisID,
+    url: input.url,
+    method: input.method,
+    parameter: input.parameter,
+  })
+  const exactTitle = candidates.filter((row) => sameText(row.title, input.title))
+  if (exactTitle.length === 1) {
+    return {
+      row: exactTitle[0]!,
+      resolution: "exact_title_scope",
+    } as const
+  }
+  if (exactTitle.length > 1) {
+    throw new Error(
+      `upsert_finding found multiple existing manual findings with the same title in scope: ${candidateSummary(exactTitle)}. Pass target_finding_id explicitly.`,
+    )
+  }
+
+  if (input.rootCauseKey) {
+    const keyed = candidates.filter((row) => row.root_cause_key === input.rootCauseKey)
+    if (keyed.length === 1) {
+      return {
+        row: keyed[0]!,
+        resolution: "root_cause_key_scope",
+      } as const
+    }
+    if (keyed.length > 1) {
+      throw new Error(
+        `upsert_finding found multiple existing manual findings with root_cause_key=${input.rootCauseKey}: ${candidateSummary(keyed)}. Pass target_finding_id explicitly.`,
+      )
+    }
+  }
+
+  if (candidates.length === 1) {
+    return {
+      row: candidates[0]!,
+      resolution: "single_scope_candidate",
+    } as const
+  }
+  if (candidates.length > 1) {
+    throw new Error(
+      `upsert_finding found multiple existing manual findings in scope: ${candidateSummary(candidates)}. Pass target_finding_id explicitly.`,
+    )
+  }
+
+  return {
+    resolution: "new",
+  } as const
+}
+
 const DESCRIPTION = `Create or update a finding from a validated hypothesis and evidence.
 Writes both graph-native finding node and legacy finding projection for compatibility.`
 
@@ -111,6 +250,8 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
     taxonomy_tags: z.array(z.string()).optional().describe("Optional taxonomy tags"),
     confidence: z.number().min(0).max(1).optional().describe("Finding confidence"),
     status: z.string().optional().describe("Finding status"),
+    target_finding_id: z.string().optional().describe("Optional existing finding id to update in place"),
+    root_cause_key: z.string().optional().describe("Optional stable root cause key for update and dedup semantics"),
     strict_assertion: z.boolean().optional().describe("Fail instead of downgrade when assertion contract is incomplete"),
     url: z.string().optional().describe("Affected URL"),
     method: z.string().optional().describe("HTTP method"),
@@ -120,13 +261,14 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
     remediation: z.string().optional().describe("Remediation summary"),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const hypothesis = Database.use((db) =>
       db
         .select()
         .from(EvidenceNodeTable)
         .where(
           and(
-            eq(EvidenceNodeTable.session_id, ctx.sessionID),
+            eq(EvidenceNodeTable.session_id, sessionID),
             eq(EvidenceNodeTable.id, nodeID(params.hypothesis_id)),
             eq(EvidenceNodeTable.type, "hypothesis"),
           ),
@@ -149,7 +291,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
         .from(EvidenceNodeTable)
         .where(
           and(
-            eq(EvidenceNodeTable.session_id, ctx.sessionID),
+            eq(EvidenceNodeTable.session_id, sessionID),
             inArray(EvidenceNodeTable.id, refList.map(nodeID)),
           ),
         )
@@ -201,7 +343,8 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
     const parameter = params.parameter ?? ""
     const impact = params.impact
 
-    const findingID = generateFindingId({
+    const generatedFindingID = generateFindingId({
+      sessionID,
       method,
       url,
       parameter,
@@ -210,6 +353,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
     })
 
     const enrichment = enrichFinding({
+      sessionID,
       title: params.title,
       severity,
       description: impact,
@@ -217,13 +361,20 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       parameter,
     })
 
-    const existing = Database.use((db) =>
-      db
-        .select()
-        .from(FindingTable)
-        .where(eq(FindingTable.id, findingID))
-        .get(),
-    )
+    const resolved = resolveExistingFinding({
+      sessionID,
+      hypothesisID: params.hypothesis_id,
+      generatedFindingID,
+      targetFindingID: (params.target_finding_id ?? "").trim(),
+      rootCauseKey: (params.root_cause_key ?? "").trim(),
+      title: params.title,
+      url,
+      method,
+      parameter,
+    })
+    const existing = resolved.row
+    const findingID = existing?.id ?? generatedFindingID
+    const rootCauseKey = (params.root_cause_key ?? "").trim() || existing?.root_cause_key || findingID
 
     if (!existing) {
       Database.use((db) =>
@@ -231,7 +382,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
           .insert(FindingTable)
           .values({
             id: findingID,
-            session_id: ctx.sessionID,
+            session_id: sessionID,
             title: params.title,
             severity,
             description: impact,
@@ -240,7 +391,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
             state: findingState,
             family: "",
             source_hypothesis_id: params.hypothesis_id,
-            root_cause_key: findingID,
+            root_cause_key: rootCauseKey,
             suppression_reason: "",
             reportable: true,
             manual_override: true,
@@ -265,21 +416,21 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       Database.use((db) =>
         db
           .update(FindingTable)
-            .set({
-              title: params.title,
-              severity,
-              description: impact,
-              evidence: params.evidence_refs.join(","),
-              confirmed: findingState === "verified",
-              state: findingState,
-              source_hypothesis_id: params.hypothesis_id,
-              root_cause_key: existing.root_cause_key || findingID,
-              suppression_reason: "",
-              reportable: true,
-              manual_override: true,
-              url,
-              method,
-              parameter,
+          .set({
+            title: params.title,
+            severity,
+            description: impact,
+            evidence: params.evidence_refs.join(","),
+            confirmed: findingState === "verified",
+            state: findingState,
+            source_hypothesis_id: params.hypothesis_id,
+            root_cause_key: rootCauseKey,
+            suppression_reason: "",
+            reportable: true,
+            manual_override: true,
+            url,
+            method,
+            parameter,
             payload: params.payload ?? "",
             confidence,
             tool_used: params.tool_used ?? existing.tool_used,
@@ -291,7 +442,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
             attack_technique: enrichment.attackTechnique ?? existing.attack_technique,
             time_updated: Date.now(),
           })
-          .where(eq(FindingTable.id, findingID))
+          .where(and(eq(FindingTable.session_id, sessionID), eq(FindingTable.id, findingID)))
           .run(),
       )
     }
@@ -299,49 +450,67 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
     const node = Effect.runSync(
       EvidenceGraphStore.use((store) =>
         store.upsertNode({
-          sessionID: ctx.sessionID,
-            type: "finding",
-            fingerprint: findingID,
-            status: params.status ?? (contractStatus === "complete" ? "active" : "needs_verification"),
-            confidence,
-            sourceTool: params.tool_used ?? "upsert_finding",
-            payload: {
-              finding_id: findingID,
-              title: params.title,
-              severity,
-              impact,
-              url,
-              method,
-              parameter,
-              taxonomy_tags: params.taxonomy_tags ?? [],
-              evidence_refs: params.evidence_refs,
-              negative_control_refs: params.negative_control_refs ?? [],
-              impact_refs: params.impact_refs ?? [],
-              assertion_contract: {
-                required: contractRequired,
-                status: contractStatus,
-                missing,
-                suggestions,
-                requested_severity: requestedSeverity,
-                effective_severity: severity,
-                requested_confidence: requestedConfidence,
-                effective_confidence: confidence,
-                positive_verification: positiveOK,
-                negative_control: negativeOK,
-                impact_evidence: impactOK,
-                confidence_cap: confidenceCap,
-              },
-              cwe_id: enrichment.cweId ?? "",
-              owasp_category: enrichment.owaspCategory ?? "",
+          sessionID,
+          type: "finding",
+          fingerprint: findingID,
+          status: params.status ?? (contractStatus === "complete" ? "active" : "needs_verification"),
+          confidence,
+          sourceTool: params.tool_used ?? "upsert_finding",
+          payload: {
+            finding_id: findingID,
+            title: params.title,
+            severity,
+            impact,
+            url,
+            method,
+            parameter,
+            taxonomy_tags: params.taxonomy_tags ?? [],
+            root_cause_key: rootCauseKey,
+            evidence_refs: params.evidence_refs,
+            negative_control_refs: params.negative_control_refs ?? [],
+            impact_refs: params.impact_refs ?? [],
+            assertion_contract: {
+              required: contractRequired,
+              status: contractStatus,
+              missing,
+              suggestions,
+              requested_severity: requestedSeverity,
+              effective_severity: severity,
+              requested_confidence: requestedConfidence,
+              effective_confidence: confidence,
+              positive_verification: positiveOK,
+              negative_control: negativeOK,
+              impact_evidence: impactOK,
+              confidence_cap: confidenceCap,
             },
+            cwe_id: enrichment.cweId ?? "",
+            owasp_category: enrichment.owaspCategory ?? "",
+          },
         }),
       ).pipe(Effect.provide(EvidenceGraphStore.layer)),
     )
 
+    const nextHypothesisStatus = hypothesisStatus(hypothesis.status, positiveOK)
+    if (nextHypothesisStatus !== hypothesis.status || confidence > hypothesis.confidence) {
+      Effect.runSync(
+        EvidenceGraphStore.use((store) =>
+          store.upsertNode({
+            sessionID,
+            type: "hypothesis",
+            fingerprint: hypothesis.fingerprint,
+            status: nextHypothesisStatus,
+            confidence: Math.max(hypothesis.confidence, confidence),
+            sourceTool: hypothesis.source_tool || "upsert_hypothesis",
+            payload: readPayload(hypothesis.payload),
+          }),
+        ).pipe(Effect.provide(EvidenceGraphStore.layer)),
+      )
+    }
+
     Effect.runSync(
       EvidenceGraphStore.use((store) =>
         store.upsertEdge({
-          sessionID: ctx.sessionID,
+          sessionID,
           fromNodeID: params.hypothesis_id,
           toNodeID: node.id,
           relation: "establishes",
@@ -357,7 +526,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       Effect.runSync(
         EvidenceGraphStore.use((store) =>
           store.upsertEdge({
-            sessionID: ctx.sessionID,
+            sessionID,
             fromNodeID: ref,
             toNodeID: node.id,
             relation: "supports",
@@ -374,7 +543,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       Effect.runSync(
         EvidenceGraphStore.use((store) =>
           store.upsertEdge({
-            sessionID: ctx.sessionID,
+            sessionID,
             fromNodeID: ref,
             toNodeID: node.id,
             relation: "controls",
@@ -391,7 +560,7 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       Effect.runSync(
         EvidenceGraphStore.use((store) =>
           store.upsertEdge({
-            sessionID: ctx.sessionID,
+            sessionID,
             fromNodeID: ref,
             toNodeID: node.id,
             relation: "demonstrates_impact",
@@ -409,6 +578,9 @@ export const UpsertFindingTool = Tool.define("upsert_finding", {
       metadata: {
         findingID,
         nodeID: node.id,
+        targetFindingID: existing?.id ?? "",
+        findingResolution: resolved.resolution,
+        rootCauseKey,
         severity,
         confidence,
         assertionContract: {
