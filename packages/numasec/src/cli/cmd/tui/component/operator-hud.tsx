@@ -3,18 +3,29 @@ import { useTheme } from "@tui/context/theme"
 import { useProject } from "@tui/context/project"
 import { Kind } from "@/core/kind"
 import { OperationActive } from "@/core/operation"
+import { Plan } from "@/core/plan"
 import type { Info as OpInfo } from "@/core/operation/info"
 
 export function OperatorHud() {
   const { theme } = useTheme()
   const project = useProject()
   const [op, setOp] = createSignal<OpInfo | undefined>(undefined)
+  const [planStats, setPlanStats] = createSignal<{ done: number; total: number; running: number; blocked: number }>({
+    done: 0,
+    total: 0,
+    running: 0,
+    blocked: 0,
+  })
 
   const refresh = async () => {
     const dir = project.instance.directory()
     if (!dir) return setOp(undefined)
     const info = await OperationActive.resolveActive(dir).catch(() => undefined)
     setOp(info)
+    if (info) {
+      const nodes = await Plan.list(dir, info.slug).catch(() => [])
+      setPlanStats(Plan.progress(nodes))
+    }
   }
   refresh()
   const timer = setInterval(refresh, 4000)
@@ -65,6 +76,20 @@ export function OperatorHud() {
             <text fg={theme.textMuted}>
               SESS <span style={{ fg: theme.text }}>{current().sessions.length}</span>
             </text>
+            <Show when={planStats().total > 0}>
+              <text fg={theme.textMuted}>
+                PLAN{" "}
+                <span style={{ fg: theme.text }}>
+                  {planStats().done}/{planStats().total}
+                </span>
+                <Show when={planStats().running > 0}>
+                  <span> · {planStats().running} running</span>
+                </Show>
+                <Show when={planStats().blocked > 0}>
+                  <span style={{ fg: theme.error ?? theme.textMuted }}> · {planStats().blocked} blocked</span>
+                </Show>
+              </text>
+            </Show>
           </box>
         )
       }}
