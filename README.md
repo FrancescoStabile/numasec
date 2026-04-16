@@ -1,292 +1,170 @@
-<h1 align="center">numasec</h1>
-<h3 align="center">The AI agent for cyber security. Like Claude Code, but for cyber security.</h3>
-
 <p align="center">
-  <img src="docs/readmeimage.png" alt="numasec running a pentest against OWASP Juice Shop" width="900" />
+  <img src="assets/readmeimage.png" alt="numasec" width="720" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=flat-square&color=DC143C" alt="GitHub Stars" /></a>
-  <a href="#why-numasec"><img src="https://img.shields.io/badge/AI%20Cyber%20Security-Agent-DC143C?style=flat-square" alt="AI Cyber Security Agent" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License" /></a>
-  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=dev&style=flat-square&label=build" alt="Build" /></a>
-  <a href="https://github.com/FrancescoStabile/numasec/releases/latest"><img src="https://img.shields.io/github/v/release/FrancescoStabile/numasec?style=flat-square&label=release" alt="Release" /></a>
+  <strong>AI cybersecurity agent. In your terminal.</strong>
 </p>
 
 <p align="center">
-  37 native security tools · 48 templates, payload packs, and playbooks · evidence graph + attack paths
+  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=flat-square&color=00ff41" alt="Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ff41?style=flat-square" alt="MIT" /></a>
+  <a href="https://github.com/FrancescoStabile/numasec/actions"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=develop&style=flat-square&label=CI" alt="CI" /></a>
 </p>
 
-## Table of Contents
+---
 
-- [Quickstart](#quickstart)
-- [Why numasec](#why-numasec)
-- [What it finds](#what-it-finds)
-- [How it works](#how-it-works)
-- [LLM Providers](#llm-providers)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development](#development)
-- [Contributing](#contributing)
+numasec is an open-source AI agent for cybersecurity that lives in your terminal.
 
-## Quickstart
+It is not a scanner. It is not a wrapper around ChatGPT. It is a conversational operator — you talk to it, it reasons about what to do, and then it does it. Shell commands, HTTP requests, browser automation, recon, exploitation, reporting. Whatever the job requires.
+
+Think of what Claude Code did for software engineering. numasec does that for security.
+
+<p align="center">
+  <img src="assets/pentest-demo.gif" alt="numasec pentest demo" width="720" />
+</p>
+
+## Why
+
+AI-powered coding tools changed how people write software. Security has nothing equivalent. There are scanners that dump 500 findings and leave you to figure it out. There are ChatGPT wrappers that can't actually run anything. There is no tool where you can sit in a terminal, describe what you need, and watch an AI agent actually do security work.
+
+numasec fills that gap. It has:
+
+- **Shell access.** Full bash. nmap, sqlmap, nuclei, gobuster, ffuf, burp, wireshark — whatever is installed on your system, numasec can use it. Run it inside Kali and it has access to everything.
+- **Native security tools.** Built-in HTTP client, Playwright browser automation, attack surface recon, web crawling. No external dependencies needed for the basics.
+- **5 specialized agents.** Each one has deep methodology prompts — not generic "be a hacker" instructions, but structured operational knowledge encoding how experienced practitioners actually work.
+- **Any LLM provider.** Anthropic, OpenAI, Google, xAI, OpenRouter, Ollama, Bedrock, GitHub Models. You pick the brain; numasec provides the hands.
+- **Single binary.** TypeScript on Bun. Builds to a standalone executable for macOS, Linux, and Windows. No Python, no pip, no virtualenvs.
+
+## Install
 
 ```bash
-npm install -g numasec
-numasec
+git clone https://github.com/FrancescoStabile/numasec.git
+cd numasec && bun install
+cd packages/numasec && bun run build
 ```
 
-Connect a provider, choose a model, type `pentest https://yourapp.com`, and it starts.
+The binary lands in `dist/numasec-<platform>/bin/numasec`. Add it to your PATH or run it directly.
 
-## Why numasec
-
-Coding has Claude Code, Copilot, Cursor.
-Cyber security has nothing.
-
-Until now.
-
-<p align="center">
-  <img src="docs/pentest-demo.gif" alt="numasec running a pentest" width="900" />
-</p>
-
-- **Built for cyber security from the ground up.** Not a wrapper around ChatGPT. 37 native security tools, 48 templates, payload packs, and playbooks, a stateful browser runtime, and an evidence graph that turns proof into attack paths.
-- **Recon. Exploit. Chain vulnerabilities. Generate reports.** Default credentials → admin access → user enumeration. SQLi → token issuance → account takeover. IDOR → data exposure → business impact.
-- **Single binary, no Python tax.** Pure TypeScript. No Docker required. `bun build` produces a single executable.
-- **Attack paths, not isolated findings.** Every serious run becomes graph nodes and edges — evidence, hypotheses, findings, resources, attack paths — not a pile of disconnected scanner output.
-- **Works with hosted and local LLM providers.** Use the provider you already trust for reasoning and orchestration; numasec still executes the scanning, evidence capture, chaining, and reporting locally.
-
-<p align="center">
-  <a href="https://github.com/FrancescoStabile/numasec/stargazers">
-    <img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=social" alt="GitHub Stars" />
-  </a>
-  <br/>
-  <sub>If numasec is useful to you, a star helps more people find it.</sub>
-</p>
-
-## What it finds
-
-<table>
-<tr>
-<td width="33%">
-
-**Injection**
-- SQL injection (blind, time-based, union, error-based)
-- NoSQL injection
-- OS command injection
-- Server-Side Template Injection
-- XXE injection
-- GraphQL introspection & injection
-- CRLF injection
-
-</td>
-<td width="33%">
-
-**Authentication & Access**
-- JWT attacks (alg:none, weak HS256, kid traversal)
-- OAuth misconfiguration
-- Default credentials & password spray
-- IDOR
-- CSRF
-- Privilege escalation
-
-</td>
-<td width="33%">
-
-**Client & Server Side**
-- XSS (reflected, stored, DOM)
-- SSRF with cloud metadata detection
-- CORS misconfiguration
-- Path traversal / LFI
-- Open redirect
-- Race conditions
-- File upload bypass
-- Mass assignment
-
-</td>
-</tr>
-</table>
-
-Every finding includes **CWE ID**, **CVSS 3.1 score**, **OWASP Top 10 category**, **MITRE ATT&CK technique**, and **remediation steps**.
-
-<p align="center">
-  <img src="docs/attack-chain.gif" alt="numasec attack chain findings" width="900" />
-</p>
-
-## How it works
-
-```mermaid
-graph TD
-    A["pentest https://app.com"] --> B
-
-    B["🗺️ Planner + Playbooks\n48 templates, payload packs, and playbooks\nChooses what to hit next from the live surface"]
-    B --> C
-
-    C["⚔️ Stateful Runtime\nBrowser actors · shared auth · working memory\nRecovery, replay, resource inventory"]
-    C --> D
-
-    D["🔧 37 Native Security Tools\nRecon · auth · injection · browser · replay\nBuilt to keep pushing, not just probe once"]
-    D --> E
-
-    E["🧠 Evidence Graph\nNodes + edges for evidence, hypotheses,\nfindings, resources, and attack paths"]
-    E --> F
-
-    F["📄 Report\nSARIF · HTML · Markdown"]
-
-    style B fill:#1a1a2e,color:#e0e0e0,stroke:#DC143C
-    style C fill:#1a1a2e,color:#e0e0e0,stroke:#DC143C
-    style D fill:#1a1a2e,color:#e0e0e0,stroke:#DC143C
-    style E fill:#1a1a2e,color:#e0e0e0,stroke:#DC143C
-    style F fill:#1a1a2e,color:#e0e0e0,stroke:#DC143C
-```
-
-Every serious run now leaves behind graph nodes and edges — evidence, hypotheses, findings, resources, attack paths — so numasec remembers what it proved instead of rediscovering the same app every turn.
-
-Reports include executive summary, risk score, OWASP coverage matrix, attack paths, and per-finding remediation. SARIF plugs into GitHub Code Scanning and GitLab SAST.
-
-<p align="center">
-  <img src="docs/report-demo.gif" alt="numasec report output" width="900" />
-</p>
-
-## LLM Providers
-
-All 37 tools execute inside numasec. The model decides what to do next; numasec performs the recon, testing, evidence capture, and reporting.
-
-| Use case | Provider examples | Notes |
-|---|---|---|
-| Hosted reasoning | Anthropic, OpenAI, xAI, Google, OpenRouter, Bedrock, GitHub Models | Best when you want stronger reasoning on harder chains and longer investigations |
-| Local / private | Ollama | Best when you want local execution and no external model API spend |
-
-## Installation
-
-### npm (recommended)
-
-```bash
-npm install -g numasec
-numasec
-```
-
-For browser automation, install Chromium once:
+**Required for browser tool** — numasec uses Playwright for browser automation:
 
 ```bash
 npx playwright install chromium
 ```
 
-### From source (local build)
+Optional but recommended — install external tools to extend what numasec can do:
 
 ```bash
-git clone https://github.com/FrancescoStabile/numasec.git
-cd numasec
-bash install.sh
+apt install nmap sqlmap ffuf gobuster    # or your package manager
 ```
 
-This installs a **local** build from your current checkout. Pull updates in the repo, then rerun `bash install.sh` to refresh it.
-
-Or manually:
+## Quick start
 
 ```bash
-cd numasec/agent
-bun install
-cd packages/numasec
-NUMASEC_CHANNEL=local NUMASEC_VERSION=local bun run build
-# Binary at dist/numasec-<platform>-<arch>/bin/numasec
+numasec
 ```
 
-### Optional: external tools
+That's it. You're in the TUI. Start talking.
 
-numasec works standalone, but external probes get much better with this setup:
-
-```bash
-# Recommended
-apt install nmap
-
-# Optional
-apt install sqlmap
-apt install ffuf
+```
+> Pentest http://localhost:3000 — it's a Juice Shop instance, focus on injection and broken access control
 ```
 
-Chromium is what unlocks the full browser side of numasec: login flows, SPA work, authenticated replay, and browser-driven attack paths.
+numasec will map the attack surface, test endpoints, chain findings, and produce a report. You can interrupt, redirect, ask questions, or take over at any point. It's conversational — not fire-and-forget.
 
-## Usage
+Switch agents with `/mode` or TAB:
 
-```bash
-numasec                  # Launch the TUI
+```
+/mode pentest    # penetration testing
+/mode appsec     # code review, SAST, dependency analysis
+/mode osint      # open-source intelligence, recon, forensics
+/mode hacking    # CTF, exploit dev, reverse engineering
+/mode security   # general purpose (default)
 ```
 
-### Agent modes
+## What it looks like
 
-| Mode | What it does |
+<p align="center">
+  <img src="assets/attack-chain.gif" alt="attack chain visualization" width="720" />
+</p>
+
+<p align="center">
+  <img src="assets/report-demo.gif" alt="report generation" width="720" />
+</p>
+
+## Agents
+
+| Agent | What it does |
 |---|---|
-| 🔴 **pentest** | Full PTES methodology: recon → vuln testing → exploitation → report |
-| 🔵 **recon** | Reconnaissance only, no exploitation |
-| 🟠 **hunt** | Systematic OWASP-style vulnerability hunting |
-| 🟡 **review** | Secure code review, no network scanning |
-| 🟢 **report** | Findings, attack paths, and deliverables |
+| **security** | General-purpose security operator. Default mode. Ask it anything — threat modeling, architecture review, incident response, whatever. |
+| **pentest** | PTES/OWASP methodology. Systematic recon → exploitation → chaining → reporting. |
+| **appsec** | Secure code review, SAST, dependency auditing, security architecture analysis. Thinks like a developer who became an attacker. |
+| **osint** | Intelligence collection, digital forensics, threat intel. Sources everything, confidence-levels assessments, full provenance chains. |
+| **hacking** | CTF, exploit development, reverse engineering, crypto, binary exploitation. Creative problem-solving mode. |
 
-### Canonical workflow commands
+Every agent has a full operational prompt encoding methodology, decision frameworks, and domain expertise. They are not "you are a hacker" one-liners — they are structured operational knowledge built from real-world practice.
 
-| Command | Description |
+## Tools
+
+### Security
+
+| Tool | Description |
 |---|---|
-| `/scope set <target>` | Set engagement scope and begin reconnaissance |
-| `/scope show` | Show current scope and latest observed surface |
-| `/hypothesis list` | List evidence-graph hypotheses |
-| `/verify next` | Plan the next verification primitive |
-| `/evidence list` | List findings with available evidence |
-| `/evidence show <id-or-title>` | Show full evidence for one finding |
-| `/chains list` | List derived attack paths |
-| `/finding list` | List findings by severity |
-| `/finding finalize <id-or-title>` | Finalize one provisional finding through the closure path |
-| `/remediation plan` | Generate prioritized remediation actions |
-| `/retest run [filter]` | Replay and retest saved findings |
-| `/report status` | Show report readiness, blockers, and whether final export is currently possible |
-| `/report generate [format] [--out <path>] [--final] [--note <text>]` | Generate report (`markdown`, `html`, `sarif`); default is a working report, `--final` enforces readiness |
-| `/report finalize [format] [--out <path>] [--working] [--note <text>]` | Run the closure-aware report path; blocks with exact blocker commands instead of drifting |
+| `bash` | Full shell. Run anything — nmap, sqlmap, nuclei, gobuster, metasploit, whatever is on the system. |
+| `http_request` | Raw HTTP client with auth, cookies, redirect control, response parsing, curl replay. |
+| `browser` | Playwright-based. Navigate, click, fill forms, screenshot, evaluate JS, extract cookies, intercept requests. |
+| `observe_surface` | Attack surface recon — crawl, directory fuzz, JavaScript analysis, port scanning, service fingerprinting. |
 
-Legacy aliases still supported in v1.x:
+### Platform
 
-| Legacy command | Current replacement |
+File read/write/edit, grep, glob, git operations, code search, web search, web fetch, multi-file edit, apply patch, task delegation, LSP integration, planning, and more. 20+ tools total.
+
+## .numasec.md
+
+Drop a `.numasec.md` file in any directory to give the agent persistent context for that target:
+
+```markdown
+# Target: internal-api.corp.com
+- Base URL: https://internal-api.corp.com/v2
+- Auth: Bearer token in Authorization header (get from /auth/login)
+- Test credentials: testuser / testpass123
+- Focus areas: IDOR, privilege escalation, JWT manipulation
+- Out of scope: DoS, rate limiting, social engineering
+```
+
+numasec loads this automatically when you launch from that directory.
+
+## Providers
+
+numasec is multi-provider. The model handles reasoning; numasec handles execution locally on your machine.
+
+| Category | Providers |
 |---|---|
-| `/target <url>` | `/scope set <url>` |
-| `/findings` | `/finding list` |
-| `/report <format>` | `/report generate <format>` |
-| `/evidence` | `/evidence list` |
-| `/evidence <id-or-title>` | `/evidence show <id-or-title>` |
+| Cloud | Anthropic, OpenAI, Google, xAI, OpenRouter, AWS Bedrock, GitHub Models |
+| Local | Ollama, any OpenAI-compatible endpoint |
+
+Configure with `numasec --provider <name>` or set it in the TUI.
 
 ## Development
 
 ```bash
-cd agent
-bun install
-
-# Type check
-bun typecheck
-
-# Tests
-cd packages/numasec && bun test --timeout 30000
-
-# Runtime validation
-cd packages/numasec && bun run test:runtime
-
-# Benchmark proof pack (runtime eval + live fixture + optional local Juice Shop)
-cd packages/numasec && bun run test:benchmark-proof
-
-# Build
-cd packages/numasec && bun run build
+bun install              # from repo root
+bun dev                  # launch dev mode
+bun typecheck            # type check workspace
+cd packages/numasec
+bun test --timeout 30000 # run tests
+bun run build            # build binary
 ```
 
-## Contributing
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
-Issues, PRs, and ideas are welcome.
+## License
 
-- **Found a bug?** Open an issue with steps to reproduce.
-- **Want to contribute code?** Fork, branch from `dev`, open a PR.
+[MIT](./LICENSE)
 
-<p align="center">
-  Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>.
-</p>
+---
 
 <p align="center">
-  <a href="https://www.linkedin.com/in/francesco-stabile-dev"><img src="https://img.shields.io/badge/LinkedIn-0077B5?style=flat-square&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
-  <a href="https://x.com/Francesco_Sta"><img src="https://img.shields.io/badge/X-000000?style=flat-square&logo=x&logoColor=white" alt="X" /></a>
+  Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>
+  · <a href="https://x.com/Francesco_Sta">@Francesco_Sta</a>
 </p>
-
-<p align="center"><a href="LICENSE">MIT License</a></p>
