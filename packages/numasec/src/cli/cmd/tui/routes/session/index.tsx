@@ -20,6 +20,7 @@ import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
+import { OperationsBar } from "@tui/component/operations-bar"
 import { selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -408,7 +409,7 @@ export function Session() {
       },
     },
     {
-      title: "Rename session",
+      title: "Rename operation",
       value: "session.rename",
       keybind: "session_rename",
       category: "Session",
@@ -1054,7 +1055,9 @@ export function Session() {
         tui: tuiConfig,
       }}
     >
-      <box flexDirection="row">
+      <box flexDirection="column" flexGrow={1}>
+        <OperationsBar sessionID={route.sessionID} />
+        <box flexDirection="row" flexGrow={1}>
         <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
             <scrollbox
@@ -1228,6 +1231,7 @@ export function Session() {
             </Match>
           </Switch>
         </Show>
+      </box>
       </box>
     </context.Provider>
   )

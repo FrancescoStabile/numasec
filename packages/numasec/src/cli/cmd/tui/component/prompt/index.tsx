@@ -38,6 +38,7 @@ import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
 import { useArgs } from "@tui/context/args"
+import { Kind } from "@/core/kind"
 
 export type PromptProps = {
   sessionID?: string
@@ -896,6 +897,24 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  const thinkingPhrases = createMemo(() => {
+    const a = local.agent.current()
+    const pack = Kind.byAgent(a?.name)
+    return pack?.thinking ?? ["working"]
+  })
+  const [thinkingTick, setThinkingTick] = createSignal(0)
+  createEffect(() => {
+    if (status().type === "idle") return
+    const phrases = thinkingPhrases()
+    if (phrases.length <= 1) return
+    const t = setInterval(() => setThinkingTick((n) => (n + 1) % phrases.length), 1600)
+    onCleanup(() => clearInterval(t))
+  })
+  const thinkingLabel = createMemo(() => {
+    const phrases = thinkingPhrases()
+    return phrases[thinkingTick() % phrases.length]
+  })
+
   return (
     <>
       <Autocomplete
@@ -1136,7 +1155,16 @@ export function Prompt(props: PromptProps) {
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>
-                      <text fg={highlight()}>{store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)} </text>
+                      <text fg={highlight()}>
+                        <Show when={store.mode === "normal" && Kind.byAgent(agent().name)}>
+                          {(pack) => (
+                            <span style={{ fg: theme[pack().accent] ?? highlight(), bold: true }}>
+                              {pack().glyph} [{pack().short}]
+                            </span>
+                          )}
+                        </Show>
+                        {store.mode === "shell" ? "Shell" : ` ${Locale.titlecase(agent().name)}`}{" "}
+                      </text>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>
                           <text flexShrink={0} fg={keybind.leader ? theme.textMuted : theme.text}>
@@ -1203,6 +1231,9 @@ export function Prompt(props: PromptProps) {
                     <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
                   </Show>
                 </box>
+                <Show when={status().type !== "retry"}>
+                  <text fg={theme.textMuted}>{thinkingLabel()}…</text>
+                </Show>
                 <box flexDirection="row" gap={1} flexShrink={0}>
                   {(() => {
                     const retry = createMemo(() => {
