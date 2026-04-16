@@ -36,6 +36,7 @@ import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
+import { DialogOperation } from "@tui/component/dialog-operation"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
@@ -481,6 +482,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       hidden: true,
       onSelect: () => {
         local.model.cycleFavorite(-1)
+      },
+    },
+    {
+      title: "Switch operation",
+      value: "operation.list",
+      keybind: "operation_list",
+      category: "Operation",
+      slash: {
+        name: "operations",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogOperation />)
       },
     },
     {

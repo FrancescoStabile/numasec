@@ -10,6 +10,7 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "../plugin"
 import { Kind } from "@/core/kind"
+import { OperationHomeHint } from "../component/operation-home-hint"
 
 // TODO: what is the best way to do this?
 let once = false
@@ -86,6 +87,7 @@ export function Home() {
             />
           </TuiPluginRuntime.Slot>
         </box>
+        <OperationHomeHint />
         <TuiPluginRuntime.Slot name="home_bottom" />
         <box flexGrow={1} minHeight={0} />
         <Toast />
