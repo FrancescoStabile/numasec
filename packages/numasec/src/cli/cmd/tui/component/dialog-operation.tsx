@@ -44,8 +44,16 @@ export function DialogOperation() {
     }
   })
 
+  // The outer box is load-bearing: opentui's insertExpression has a
+  // `while (typeof v === "function") v = v()` loop that unwraps SolidJS memos
+  // (Switch/Show both return createMemo — a function). Without the box wrapper the
+  // loop subscribes the *parent* render-effect to data() and stage(), causing it to
+  // recreate this component on every async fetch completion → infinite RAM growth.
+  // A concrete opentui node (box) is not a function, so the loop stops here and all
+  // reactivity is handled by the box's own internal render-effects.
   return (
-    <Switch>
+    <box>
+      <Switch>
       <Match when={stage() === "new-label"}>
         <DialogPrompt
           title="New operation — label"
@@ -132,6 +140,7 @@ export function DialogOperation() {
         </Show>
       </Match>
     </Switch>
+    </box>
   )
 }
 
