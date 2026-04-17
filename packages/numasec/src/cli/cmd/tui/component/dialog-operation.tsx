@@ -1,4 +1,4 @@
-import { createResource, createSignal, Show, Match, Switch } from "solid-js"
+import { createMemo, createResource, createSignal, Match, Show, Switch } from "solid-js"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { useDialog } from "@tui/ui/dialog"
@@ -20,7 +20,10 @@ const KINDS: OperationKind[] = ["pentest", "ctf", "bughunt", "osint", "research"
 export function DialogOperation() {
   const dialog = useDialog()
   const project = useProject()
-  const [tick, setTick] = createSignal(0)
+  // Boolean-flip tick (≤2 distinct source values) — integer ticks make createResource
+  // treat every refetch as a new source, stacking in-flight work. See commit 43ff009.
+  const [tick, setTick] = createSignal(true)
+  const refresh = () => setTick((v) => !v)
   const [stage, setStage] = createSignal<"list" | "new-label" | "new-kind">("list")
   const [pendingLabel, setPendingLabel] = createSignal("")
   let inflight = false
@@ -80,7 +83,7 @@ export function DialogOperation() {
         <Show when={data()} fallback={<DialogSelect title="Operations" options={[]} />}>
           {(d) => {
             const NEW = "__new__"
-            const options = [
+            const options = createMemo(() => [
               ...d().ops.map((op) => ({
                 value: op.slug,
                 title: `${KIND_GLYPHS[op.kind] ?? "◆"} ${op.label}`,
@@ -93,12 +96,12 @@ export function DialogOperation() {
                 description: "Create a fresh engagement (label → kind)",
                 category: "New",
               },
-            ]
+            ])
             return (
               <DialogSelect
                 title={d().ops.length === 0 ? "Operations (empty — create one)" : "Select operation"}
                 current={d().active}
-                options={options}
+                options={options()}
                 onSelect={async (option) => {
                   if (option.value === NEW) {
                     setPendingLabel("")
@@ -108,7 +111,7 @@ export function DialogOperation() {
                   const dir = d().dir
                   if (!dir) return dialog.clear()
                   await Operation.activate(dir, option.value)
-                  setTick((v) => v + 1)
+                  refresh()
                   dialog.clear()
                 }}
                 keybind={[
@@ -119,7 +122,7 @@ export function DialogOperation() {
                       const dir = d().dir
                       if (!dir) return
                       await Operation.archive(dir, option.value).catch(() => undefined)
-                      setTick((v) => v + 1)
+                      refresh()
                     },
                   },
                 ]}

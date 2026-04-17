@@ -1,10 +1,13 @@
-import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createResource, createSignal, Show } from "solid-js"
 import { useProject } from "@tui/context/project"
 import { useTheme } from "@tui/context/theme"
 import { Operation, type OperationInfo, type OperationKind } from "@/core/operation"
 
-// Single-line banner for the active operation. Refreshes on a low-frequency
-// interval (5s) — no busy-polling. File-level mtime is the source of truth.
+// Single-line banner for the active operation. Event-driven: fetched once on mount,
+// plus explicit refresh() invocations when the app mutates the operation (create /
+// activate / archive). No setInterval — polling a filesystem marker from the render
+// tree reliably stacked in dev mode and we already have the dialog as the mutation
+// point. See commit 43ff009 for context on the polling-induced freeze class.
 const KIND_GLYPHS: Record<OperationKind, string> = {
   pentest: "◆",
   ctf: "▲",
@@ -24,7 +27,9 @@ function relativeAge(ms: number): string {
 export function OperationBanner() {
   const project = useProject()
   const { theme } = useTheme()
-  const [tick, setTick] = createSignal(0)
+  // Boolean-flip tick: only two distinct source values, so createResource can never
+  // stack dozens of in-flight fetches with fresh source identities.
+  const [tick] = createSignal(true)
   let inflight = false
 
   const [info] = createResource(tick, async (): Promise<OperationInfo | undefined> => {
@@ -37,14 +42,6 @@ export function OperationBanner() {
     } finally {
       inflight = false
     }
-  })
-
-  let timer: ReturnType<typeof setInterval> | undefined
-  onMount(() => {
-    timer = setInterval(() => setTick((v) => v + 1), 5000)
-  })
-  onCleanup(() => {
-    if (timer) clearInterval(timer)
   })
 
   return (
