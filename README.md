@@ -2,165 +2,176 @@
   <img src="assets/readmeimage.png" alt="numasec" width="720" />
 </p>
 
-<p align="center">
-  <strong>AI cybersecurity agent. In your terminal.</strong>
-</p>
+<p align="center"><b>AI cybersecurity agent. In your terminal.</b></p>
 
 <p align="center">
-  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=flat-square&color=00ff41" alt="Stars" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ff41?style=flat-square" alt="MIT" /></a>
-  <a href="https://github.com/FrancescoStabile/numasec/actions"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=develop&style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=develop&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/FrancescoStabile/numasec/releases"><img src="https://img.shields.io/github/v/release/FrancescoStabile/numasec?include_prereleases&style=flat-square&color=00ff41" alt="release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ff41?style=flat-square" alt="MIT"></a>
+  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=flat-square&color=00ff41" alt="stars"></a>
+</p>
+
+<!-- HERO GIF — 15–20s, dark terminal, user types a target, numasec maps surface,
+     hits an endpoint, finds something, emits a finding card. Recommended width 900px.
+     Replace below when ready. -->
+<p align="center">
+  <img src="assets/pentest-demo.gif" alt="numasec running a pentest in the terminal" width="900" />
 </p>
 
 ---
 
-numasec is an open-source AI agent for cybersecurity that lives in your terminal.
+## What this is
 
-It is not a scanner. It is not a wrapper around ChatGPT. It is a conversational operator — you talk to it, it reasons about what to do, and then it does it. Shell commands, HTTP requests, browser automation, recon, exploitation, reporting. Whatever the job requires.
+numasec is an AI agent for cybersecurity work. It runs in a terminal. You talk to it, it reasons, and then it actually does the work — shell commands, HTTP requests, a real Chromium browser, recon, exploitation, reporting. It doesn't just tell you *what* to do, it does it.
 
-Think of what Claude Code did for software engineering. numasec does that for security.
+I built this because the AI-for-security space is full of two things that don't help me:
 
-<p align="center">
-  <img src="assets/pentest-demo.gif" alt="numasec pentest demo" width="720" />
-</p>
+1. **Scanners** that dump five hundred findings and walk away.
+2. **Chat wrappers** that sound smart and can't run a single command.
 
-## Why
+What I wanted was the thing Claude Code is for engineering, applied to offsec. A shell, a browser, a methodology, and a model that knows what it's doing. So I built it.
 
-AI-powered coding tools changed how people write software. Security has nothing equivalent. There are scanners that dump 500 findings and leave you to figure it out. There are ChatGPT wrappers that can't actually run anything. There is no tool where you can sit in a terminal, describe what you need, and watch an AI agent actually do security work.
+## Status
 
-numasec fills that gap. It has:
-
-- **Shell access.** Full bash. nmap, sqlmap, nuclei, gobuster, ffuf, burp, wireshark — whatever is installed on your system, numasec can use it. Run it inside Kali and it has access to everything.
-- **Native security tools.** Built-in HTTP client, Playwright browser automation, attack surface recon, web crawling. No external dependencies needed for the basics.
-- **5 specialized agents.** Each one has deep methodology prompts — not generic "be a hacker" instructions, but structured operational knowledge encoding how experienced practitioners actually work.
-- **Any LLM provider.** Anthropic, OpenAI, Google, xAI, OpenRouter, Ollama, Bedrock, GitHub Models. You pick the brain; numasec provides the hands.
-- **Single binary.** TypeScript on Bun. Builds to a standalone executable for macOS, Linux, and Windows. No Python, no pip, no virtualenvs.
+**Alpha.** It works. I use it. It will also surprise you in ways that are sometimes good and sometimes not. Bug reports welcome. See `SECURITY.md` if you find something you shouldn't share in public.
 
 ## Install
 
+### From source (recommended for now)
+
 ```bash
 git clone https://github.com/FrancescoStabile/numasec.git
-cd numasec && bun install
-cd packages/numasec && bun run build
+cd numasec
+bun install
+cd packages/numasec
+bun run build
 ```
 
-The binary lands in `dist/numasec-<platform>/bin/numasec`. Add it to your PATH or run it directly.
+The binary lands in `packages/numasec/dist/numasec-<platform>/bin/numasec`. Symlink it into your `PATH` or run it directly.
 
-**Required for browser tool** — numasec uses Playwright for browser automation:
+### Dependencies you probably want
+
+numasec can use any tool that exists on your machine. For the built-in browser tool you need a headless Chromium:
 
 ```bash
 npx playwright install chromium
 ```
 
-Optional but recommended — install external tools to extend what numasec can do:
+For classic offsec work, install the usual suspects with whatever package manager you have:
 
 ```bash
-apt install nmap sqlmap ffuf gobuster    # or your package manager
+apt install nmap sqlmap ffuf gobuster    # Debian/Kali/Ubuntu
+brew install nmap sqlmap ffuf gobuster   # macOS
 ```
 
-## Quick start
+Nothing else is required. No pip, no virtualenv, no Python at all.
+
+## First run
 
 ```bash
 numasec
 ```
 
-That's it. You're in the TUI. Start talking.
+You land in the TUI. Type something like you'd write to a teammate:
 
 ```
-> Pentest http://localhost:3000 — it's a Juice Shop instance, focus on injection and broken access control
+> Pentest http://localhost:3000. It's a Juice Shop instance, focus on
+> injection and broken access control, go.
 ```
 
-numasec will map the attack surface, test endpoints, chain findings, and produce a report. You can interrupt, redirect, ask questions, or take over at any point. It's conversational — not fire-and-forget.
+numasec will map the surface, probe endpoints, chain findings, and when you ask for it produce a report. You can interrupt, redirect, push back, take over. It's a conversation, not a script.
 
-Switch agents with `/mode` or TAB:
+Switch agent with `/mode` or `Tab`:
 
 ```
-/mode pentest    # penetration testing
-/mode appsec     # code review, SAST, dependency analysis
-/mode osint      # open-source intelligence, recon, forensics
-/mode hacking    # CTF, exploit dev, reverse engineering
-/mode security   # general purpose (default)
+/mode pentest    penetration testing (PTES/OWASP flavored)
+/mode appsec     code review, SAST, dependency analysis
+/mode osint      open-source intelligence, recon, forensics
+/mode hacking    CTF, exploit dev, reverse engineering
+/mode security   default general-purpose operator (Jarvis mode)
 ```
 
-## What it looks like
-
+<!-- MODE-SWITCH GIF — a 6–8s clip showing Tab cycling through the agents,
+     each with its own glyph and color accent. -->
 <p align="center">
-  <img src="assets/attack-chain.gif" alt="attack chain visualization" width="720" />
+  <img src="assets/report-demo.gif" alt="switching agents in numasec" width="900" />
 </p>
 
+## What it actually does
+
+- **Full shell.** Bash, with guardrails when you go out of workspace. Whatever is installed is available — nmap, sqlmap, nuclei, ffuf, metasploit, wireshark, your homemade exploit script, you name it.
+- **Native HTTP client.** Raw requests, auth, cookies, redirect control, body rendering, curl replay — without shelling out.
+- **Real browser.** Playwright-driven Chromium. Navigate, click, fill, screenshot, evaluate JS, intercept requests, diff the DOM between states.
+- **Attack surface recon.** Crawl, directory fuzz, JS static analysis, port scanning, service fingerprinting as first-class primitives.
+- **OOB callbacks, secrets, crypto, net probes, auth profiles.** The pieces a real operator needs that stock chat assistants don't have.
+- **Operations.** An event-sourced engagement fascicule (target, scope, OPSEC mode, runs) that carries across sessions and produces signable report bundles. Runtime scope enforcement means the agent *cannot* touch hosts you didn't authorize. See `docs/` for the details.
+- **Any LLM.** Anthropic, OpenAI, Google, xAI, OpenRouter, Bedrock, GitHub Models, Ollama, any OpenAI-compatible endpoint. The model is the brain, numasec is the hands.
+
+<!-- ATTACK-CHAIN GIF — 10–15s showing numasec discovering an IDOR, chaining it
+     into a privilege escalation, and dropping an observation with evidence. -->
 <p align="center">
-  <img src="assets/report-demo.gif" alt="report generation" width="720" />
+  <img src="assets/attack-chain.gif" alt="attack chain discovery" width="900" />
 </p>
 
-## Agents
+## Project context with `.numasec.md`
 
-| Agent | What it does |
-|---|---|
-| **security** | General-purpose security operator. Default mode. Ask it anything — threat modeling, architecture review, incident response, whatever. |
-| **pentest** | PTES/OWASP methodology. Systematic recon → exploitation → chaining → reporting. |
-| **appsec** | Secure code review, SAST, dependency auditing, security architecture analysis. Thinks like a developer who became an attacker. |
-| **osint** | Intelligence collection, digital forensics, threat intel. Sources everything, confidence-levels assessments, full provenance chains. |
-| **hacking** | CTF, exploit development, reverse engineering, crypto, binary exploitation. Creative problem-solving mode. |
-
-Every agent has a full operational prompt encoding methodology, decision frameworks, and domain expertise. They are not "you are a hacker" one-liners — they are structured operational knowledge built from real-world practice.
-
-## Tools
-
-### Security
-
-| Tool | Description |
-|---|---|
-| `bash` | Full shell. Run anything — nmap, sqlmap, nuclei, gobuster, metasploit, whatever is on the system. |
-| `http_request` | Raw HTTP client with auth, cookies, redirect control, response parsing, curl replay. |
-| `browser` | Playwright-based. Navigate, click, fill forms, screenshot, evaluate JS, extract cookies, intercept requests. |
-| `observe_surface` | Attack surface recon — crawl, directory fuzz, JavaScript analysis, port scanning, service fingerprinting. |
-
-### Platform
-
-File read/write/edit, grep, glob, git operations, code search, web search, web fetch, multi-file edit, apply patch, task delegation, LSP integration, planning, and more. 20+ tools total.
-
-## .numasec.md
-
-Drop a `.numasec.md` file in any directory to give the agent persistent context for that target:
+Drop a `.numasec.md` in any directory to give numasec persistent context when it's launched from there:
 
 ```markdown
 # Target: internal-api.corp.com
-- Base URL: https://internal-api.corp.com/v2
-- Auth: Bearer token in Authorization header (get from /auth/login)
-- Test credentials: testuser / testpass123
-- Focus areas: IDOR, privilege escalation, JWT manipulation
-- Out of scope: DoS, rate limiting, social engineering
+- Base: https://internal-api.corp.com/v2
+- Auth: Bearer in `Authorization` (grab from POST /auth/login)
+- Creds: testuser / testpass123
+- Focus: IDOR, privesc, JWT tampering
+- Out of scope: DoS, social, rate-limit brute force
 ```
 
-numasec loads this automatically when you launch from that directory.
+It's loaded automatically. No flags, no env var, no config. It's just there.
 
-## Providers
+## Documentation
 
-numasec is multi-provider. The model handles reasoning; numasec handles execution locally on your machine.
+- [`AGENTS.md`](./AGENTS.md) — what each built-in agent is, how it thinks
+- [`docs/MANIFESTO.md`](./docs/MANIFESTO.md) — what numasec is *for*, and what it refuses to be
+- [`docs/PROMPTS.md`](./docs/PROMPTS.md) — the operational prompts that make the agents act like operators, not chatbots
+- [`docs/TOOLS.md`](./docs/TOOLS.md) — every tool the agent can call
+- [`docs/PLUGINS.md`](./docs/PLUGINS.md) — how to extend with your own tools
+- [`docs/NUMASEC_FILE_FORMAT.md`](./docs/NUMASEC_FILE_FORMAT.md) — the `.numasec` replay format (JSONL + manifest + evidence bundle, sha256 verifiable)
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — how to help
+- [`SECURITY.md`](./SECURITY.md) — responsible disclosure
 
-| Category | Providers |
-|---|---|
-| Cloud | Anthropic, OpenAI, Google, xAI, OpenRouter, AWS Bedrock, GitHub Models |
-| Local | Ollama, any OpenAI-compatible endpoint |
+## FAQ
 
-Configure with `numasec --provider <name>` or set it in the TUI.
+**Is this safe to run against production?**
+Only if you have permission. numasec is an agent — it does real things. Use operations + scope boundaries before pointing it at anything you care about. When scope is set, the runtime guard refuses requests to out-of-scope hosts before they leave the tool.
+
+**Does it need a cloud model?**
+No. It runs fine on Ollama or any OpenAI-compatible local endpoint. Quality obviously depends on the model, but the architecture is provider-agnostic.
+
+**How is this different from Claude Code / opencode / etc.?**
+Those are coding agents. numasec is an offsec agent. Different prompts, different tools, different methodology, same general class of thing. If you want to write code, use them. If you want to test systems for weaknesses, use this.
+
+**Can I use it for defense / blue team?**
+Yes. The `security` and `appsec` agents are set up for that — architecture review, threat modeling, code review, incident response helper. It's not only red.
+
+**Why TypeScript and not Python?**
+Because Bun packages to a single statically-linked binary and I'd rather ship one file than a pip wheel and its thirty transitive dependencies. Also because the rest of the AI-terminal ecosystem lives here now, and that's where the reusable pieces are.
 
 ## Development
 
 ```bash
-bun install              # from repo root
-bun dev                  # launch dev mode
-bun typecheck            # type check workspace
+bun install                 # from repo root
+bun dev                     # launch in dev mode
+bun typecheck               # tsgo across the workspace
 cd packages/numasec
-bun test --timeout 30000 # run tests
-bun run build            # build binary
+bun test --timeout 30000    # run the suite
+bun run build               # build binary
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a PR.
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE).
 
 ---
 

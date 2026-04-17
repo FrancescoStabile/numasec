@@ -6,6 +6,7 @@ import { OperationActive } from "@/core/operation"
 import { Plan } from "@/core/plan"
 import { Observation } from "@/core/observation"
 import { Evidence } from "@/core/evidence"
+import { FileWatcher } from "@/file/watcher"
 import type { Info as OpInfo } from "@/core/operation/info"
 
 export function OperatorHud() {
@@ -29,23 +30,30 @@ export function OperatorHud() {
   }>({ total: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0, none: 0 })
   const [evidenceCount, setEvidenceCount] = createSignal(0)
 
+  let inflight = false
   const refresh = async () => {
-    const dir = project.instance.directory()
-    if (!dir) return setOp(undefined)
-    const info = await OperationActive.resolveActive(dir).catch(() => undefined)
-    setOp(info)
-    if (info) {
-      const nodes = await Plan.list(dir, info.slug).catch(() => [])
-      setPlanStats(Plan.progress(nodes))
-      const items = await Observation.list(dir, info.slug).catch(() => [])
-      const counts = Observation.severityCounts(items)
-      setObsStats({ total: items.length, ...counts })
-      const ev = await Evidence.list(dir, info.slug).catch(() => [])
-      setEvidenceCount(ev.length)
+    if (inflight) return
+    inflight = true
+    try {
+      const dir = project.instance.directory()
+      if (!dir) return setOp(undefined)
+      const info = await OperationActive.resolveActive(dir).catch(() => undefined)
+      setOp(info)
+      if (info) {
+        const nodes = await Plan.list(dir, info.slug).catch(() => [])
+        setPlanStats(Plan.progress(nodes))
+        const items = await Observation.list(dir, info.slug).catch(() => [])
+        const counts = Observation.severityCounts(items)
+        setObsStats({ total: items.length, ...counts })
+        const ev = await Evidence.list(dir, info.slug).catch(() => [])
+        setEvidenceCount(ev.length)
+      }
+    } finally {
+      inflight = false
     }
   }
   refresh()
-  const timer = setInterval(refresh, 4000)
+  const timer = setInterval(refresh, FileWatcher.hasNativeBinding() ? 4000 : 8000)
   onCleanup(() => clearInterval(timer))
 
   return (

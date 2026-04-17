@@ -5,6 +5,7 @@ import { useProject } from "@tui/context/project"
 import { Kind } from "@/core/kind"
 import { OperationActive } from "@/core/operation"
 import type { Info as OpInfo } from "@/core/operation/info"
+import { FileWatcher } from "@/file/watcher"
 import { BRAND, SCOPE, SUBJECT } from "@tui/component/glyph"
 
 // "Mission strip" — the always-visible header that gives every numasec screenshot
@@ -39,13 +40,21 @@ export function OperationsBar(props: { sessionID?: string }) {
   const [now, setNow] = createSignal(Date.now())
 
   const refresh = async () => {
-    const dir = project.instance.directory()
-    if (!dir) return setActiveOp(undefined)
-    const info = await OperationActive.resolveActive(dir).catch(() => undefined)
-    setActiveOp(info)
+    if (inflight) return
+    inflight = true
+    try {
+      const dir = project.instance.directory()
+      if (!dir) return setActiveOp(undefined)
+      const info = await OperationActive.resolveActive(dir).catch(() => undefined)
+      setActiveOp(info)
+    } finally {
+      inflight = false
+    }
   }
+  let inflight = false
   refresh()
-  const opTimer = setInterval(refresh, 4000)
+  const opInterval = FileWatcher.hasNativeBinding() ? 4000 : 8000
+  const opTimer = setInterval(refresh, opInterval)
   const tickTimer = setInterval(() => setNow(Date.now()), 1000)
   onCleanup(() => {
     clearInterval(opTimer)

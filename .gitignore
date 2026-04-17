@@ -33,3 +33,6 @@ session.json
 /numasec.json
 .numasec/
 .playwright-browsers/
+
+# Local notes (agent scratchpad)
+notes/

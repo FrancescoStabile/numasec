@@ -8,16 +8,23 @@ import { Operation, OperationActive } from "@/core/operation"
 export function DialogOperation() {
   const dialog = useDialog()
   const project = useProject()
-  const [tick, setTick] = createSignal(0)
+  const [tick, setTick] = createSignal(true)
+  let inflight = false
 
   const [data] = createResource(tick, async () => {
-    const dir = project.instance.directory()
-    if (!dir) return { ops: [], active: undefined as string | undefined }
-    const [ops, active] = await Promise.all([
-      Operation.list(dir).catch(() => []),
-      OperationActive.getActiveSlug(dir).catch(() => undefined),
-    ])
-    return { ops, active }
+    if (inflight) return
+    inflight = true
+    try {
+      const dir = project.instance.directory()
+      if (!dir) return { ops: [], active: undefined as string | undefined }
+      const [ops, active] = await Promise.all([
+        Operation.list(dir).catch(() => []),
+        OperationActive.getActiveSlug(dir).catch(() => undefined),
+      ])
+      return { ops, active }
+    } finally {
+      inflight = false
+    }
   })
 
   return (
@@ -41,7 +48,7 @@ export function DialogOperation() {
               const dir = project.instance.directory()
               if (!dir) return dialog.clear()
               await OperationActive.setActive(dir, option.value)
-              setTick((t) => t + 1)
+              setTick((v) => !v)
               dialog.clear()
             }}
             keybind={[
@@ -51,7 +58,7 @@ export function DialogOperation() {
                   const dir = project.instance.directory()
                   if (!dir) return
                   await Operation.archive(dir, option.value).catch(() => undefined)
-                  setTick((t) => t + 1)
+                  setTick((v) => !v)
                 },
               },
             ]}

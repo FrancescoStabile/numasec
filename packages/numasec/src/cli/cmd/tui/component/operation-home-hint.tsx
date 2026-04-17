@@ -3,6 +3,7 @@ import { useTheme } from "@tui/context/theme"
 import { useProject } from "@tui/context/project"
 import { Kind } from "@/core/kind"
 import { Operation, OperationActive } from "@/core/operation"
+import { FileWatcher } from "@/file/watcher"
 import type { Info as OpInfo } from "@/core/operation/info"
 
 export function OperationHomeHint() {
@@ -11,22 +12,29 @@ export function OperationHomeHint() {
   const [op, setOp] = createSignal<OpInfo | undefined>(undefined)
   const [count, setCount] = createSignal(0)
 
+  let inflight = false
   const refresh = async () => {
-    const dir = project.instance.directory()
-    if (!dir) {
-      setOp(undefined)
-      setCount(0)
-      return
+    if (inflight) return
+    inflight = true
+    try {
+      const dir = project.instance.directory()
+      if (!dir) {
+        setOp(undefined)
+        setCount(0)
+        return
+      }
+      const [active, all] = await Promise.all([
+        OperationActive.resolveActive(dir).catch(() => undefined),
+        Operation.list(dir).catch(() => []),
+      ])
+      setOp(active)
+      setCount(all.filter((o) => o.status === "active").length)
+    } finally {
+      inflight = false
     }
-    const [active, all] = await Promise.all([
-      OperationActive.resolveActive(dir).catch(() => undefined),
-      Operation.list(dir).catch(() => []),
-    ])
-    setOp(active)
-    setCount(all.filter((o) => o.status === "active").length)
   }
   refresh()
-  const timer = setInterval(refresh, 4000)
+  const timer = setInterval(refresh, FileWatcher.hasNativeBinding() ? 4000 : 8000)
   onCleanup(() => clearInterval(timer))
 
   return (
