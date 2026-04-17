@@ -1167,14 +1167,7 @@ export function Prompt(props: PromptProps) {
                   {(agent) => (
                     <>
                       <text fg={highlight()}>
-                        <Show when={store.mode === "normal" && Kind.byAgent(agent().name)}>
-                          {(pack) => (
-                            <span style={{ fg: theme[pack().accent] ?? highlight(), bold: true }}>
-                              {pack().glyph} [{pack().short}]
-                            </span>
-                          )}
-                        </Show>
-                        {store.mode === "shell" ? "Shell" : ` ${Locale.titlecase(agent().name)}`}{" "}
+                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}{" "}
                       </text>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>

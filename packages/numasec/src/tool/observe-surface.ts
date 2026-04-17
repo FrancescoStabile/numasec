@@ -28,9 +28,24 @@ function parseHost(target: string) {
   return target.replace(/^https?:\/\//, "").split("/")[0]!.split(":")[0]!
 }
 
+function parsePort(target: string): number | undefined {
+  if (target.startsWith("http://") || target.startsWith("https://")) {
+    const u = new URL(target)
+    if (u.port) return Number(u.port)
+    return u.protocol === "https:" ? 443 : 80
+  }
+  const authority = target.replace(/^https?:\/\//, "").split("/")[0]!
+  const parts = authority.split(":")
+  if (parts.length < 2) return undefined
+  const p = Number(parts[1])
+  return Number.isFinite(p) ? p : undefined
+}
+
 function targetUrl(target: string, host: string) {
   if (target.startsWith("http://") || target.startsWith("https://")) return target
-  return `http://${host}`
+  const authority = target.replace(/^https?:\/\//, "").split("/")[0]!
+  const rest = target.slice(target.indexOf(authority) + authority.length)
+  return `http://${authority}${rest}`
 }
 
 interface SurfaceResult {
@@ -74,7 +89,7 @@ async function recon(
 
   const webPorts = scan.openPorts
     .map((item) => item.port)
-    .filter((p) => [80, 443, 8080, 8443, 3000, 5000, 8000, 8888, 9090].includes(p))
+    .filter((p) => [80, 443, 3000, 3001, 4000, 5000, 5173, 8000, 8080, 8081, 8443, 8888, 9000, 9090].includes(p))
   if (webPorts.length > 0 || target.startsWith("http")) {
     const webTarget = target.startsWith("http")
       ? target
@@ -163,7 +178,14 @@ export const ObserveSurfaceTool = Tool.define(
               : ["recon", "crawl", "dir_fuzz", "js"]
 
           const host = parseHost(params.target)
+          const explicitPort = parsePort(params.target)
           const url = targetUrl(params.target, host)
+
+          const reconPorts = (() => {
+            if (params.ports && params.ports.length > 0) return params.ports
+            if (explicitPort !== undefined) return [explicitPort]
+            return undefined
+          })()
 
           const result: SurfaceResult = {
             target: params.target,
@@ -182,7 +204,7 @@ export const ObserveSurfaceTool = Tool.define(
           }
 
           yield* Effect.promise(async () => {
-            if (modes.includes("recon")) await recon(params.target, host, params.ports, result, stage)
+            if (modes.includes("recon")) await recon(params.target, host, reconPorts, result, stage)
             if (modes.includes("crawl")) await doCrawl(url, params.max_urls, params.max_depth, result, stage)
             if (modes.includes("dir_fuzz")) await doFuzz(url, host, params.wordlist, params.extensions, result, stage)
             if (modes.includes("js")) await doJs(url, result, stage)
