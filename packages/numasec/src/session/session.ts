@@ -29,6 +29,7 @@ import type { Provider } from "@/provider"
 import { Permission } from "@/permission"
 import { Global } from "@/global"
 import { Effect, Layer, Option, Context } from "effect"
+import { Operation, OperationActive } from "@/core/operation"
 
 const log = Log.create({ service: "session" })
 
@@ -415,6 +416,14 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       log.info("created", result)
 
       yield* Effect.sync(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
+
+      yield* Effect.sync(() => {
+        void (async () => {
+          const slug = await OperationActive.getActiveSlug(input.directory).catch(() => undefined)
+          if (!slug) return
+          await Operation.attachSession(input.directory, slug, result.id).catch(() => undefined)
+        })()
+      })
 
       if (!Flag.NUMASEC_EXPERIMENTAL_WORKSPACES) {
         // This only exist for backwards compatibility. We should not be

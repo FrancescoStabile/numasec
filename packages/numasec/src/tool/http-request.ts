@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import * as Tool from "./tool"
 import DESCRIPTION from "./http-request.txt"
+import { Guard, ScopeDeniedError } from "@/core/boundary"
 
 const MAX_BODY = 8000
 const DEFAULT_TIMEOUT = 15_000
@@ -62,11 +63,22 @@ export const HttpRequestTool = Tool.define(
             throw new Error("URL must start with http:// or https://")
           }
 
+          const scope = yield* Effect.tryPromise({
+            try: () => Guard.checkUrl(process.cwd(), params.url),
+            catch: (e) => (e instanceof ScopeDeniedError ? e : new Error(String(e))),
+          })
+
           yield* ctx.ask({
             permission: "http_request",
             patterns: [params.url],
             always: [],
-            metadata: { url: params.url, method: params.method },
+            metadata: {
+              url: params.url,
+              method: params.method,
+              scope: scope.mode,
+              scope_reason: scope.reason,
+              scope_matched: scope.matched,
+            },
           })
 
           const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT)

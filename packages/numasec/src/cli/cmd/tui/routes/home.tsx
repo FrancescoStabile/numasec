@@ -1,5 +1,5 @@
 import { Prompt, type PromptRef } from "@tui/component/prompt"
-import { createEffect, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal } from "solid-js"
 import { Logo } from "../component/logo"
 import { useProject } from "../context/project"
 import { useSync } from "../context/sync"
@@ -9,11 +9,13 @@ import { useRouteData } from "@tui/context/route"
 import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "../plugin"
+import { Kind } from "@/core/kind"
+import { OperationHomeHint } from "../component/operation-home-hint"
 
 // TODO: what is the best way to do this?
 let once = false
-const placeholder = {
-  normal: ["Pentest http://target.local", "Analyze this code for vulnerabilities", "Recon the attack surface of this app"],
+const fallback = {
+  normal: ["Start a security assessment", "Pentest http://target.local", "Review this code for vulnerabilities"],
   shell: ["nmap -sV target.local", "sqlmap --help", "nuclei -h"],
 }
 
@@ -25,6 +27,12 @@ export function Home() {
   const [ref, setRef] = createSignal<PromptRef | undefined>()
   const args = useArgs()
   const local = useLocal()
+  const placeholder = createMemo(() => {
+    const a = local.agent.current()
+    const pack = Kind.byAgent(a?.name)
+    if (!pack) return fallback
+    return pack.placeholders
+  })
   let sent = false
 
   const bind = (r: PromptRef | undefined) => {
@@ -75,10 +83,11 @@ export function Home() {
               ref={bind}
               workspaceID={project.workspace.current()}
               right={<TuiPluginRuntime.Slot name="home_prompt_right" workspace_id={project.workspace.current()} />}
-              placeholders={placeholder}
+              placeholders={placeholder()}
             />
           </TuiPluginRuntime.Slot>
         </box>
+        <OperationHomeHint />
         <TuiPluginRuntime.Slot name="home_bottom" />
         <box flexGrow={1} minHeight={0} />
         <Toast />

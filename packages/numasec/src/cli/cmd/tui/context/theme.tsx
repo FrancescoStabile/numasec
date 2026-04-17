@@ -25,6 +25,9 @@ import nord from "./theme/nord.json" with { type: "json" }
 import osakaJade from "./theme/osaka-jade.json" with { type: "json" }
 import onedark from "./theme/one-dark.json" with { type: "json" }
 import numasec from "./theme/numasec.json" with { type: "json" }
+import numasecBlackhat from "./theme/numasec-blackhat.json" with { type: "json" }
+import numasecRedteam from "./theme/numasec-redteam.json" with { type: "json" }
+import numasecBlueteam from "./theme/numasec-blueteam.json" with { type: "json" }
 import orng from "./theme/orng.json" with { type: "json" }
 import lucentOrng from "./theme/lucent-orng.json" with { type: "json" }
 import palenight from "./theme/palenight.json" with { type: "json" }
@@ -108,6 +111,9 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   ["one-dark"]: onedark,
   ["osaka-jade"]: osakaJade,
   numasec,
+  ["numasec-blackhat"]: numasecBlackhat,
+  ["numasec-redteam"]: numasecRedteam,
+  ["numasec-blueteam"]: numasecBlueteam,
   orng,
   ["lucent-orng"]: lucentOrng,
   palenight,

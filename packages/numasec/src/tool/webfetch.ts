@@ -4,6 +4,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import * as Tool from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
+import { Guard, ScopeDeniedError } from "@/core/boundary"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
@@ -33,6 +34,11 @@ export const WebFetchTool = Tool.define(
             throw new Error("URL must start with http:// or https://")
           }
 
+          const scope = yield* Effect.tryPromise({
+            try: () => Guard.checkUrl(process.cwd(), params.url),
+            catch: (e) => (e instanceof ScopeDeniedError ? e : new Error(String(e))),
+          })
+
           yield* ctx.ask({
             permission: "webfetch",
             patterns: [params.url],
@@ -41,6 +47,9 @@ export const WebFetchTool = Tool.define(
               url: params.url,
               format: params.format,
               timeout: params.timeout,
+              scope: scope.mode,
+              scope_reason: scope.reason,
+              scope_matched: scope.matched,
             },
           })
 
