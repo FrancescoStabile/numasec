@@ -1,0 +1,30 @@
+Run a well-known reconnaissance or OSINT binary and return its raw stdout/stderr. numasec does not parse tool output; read the raw text and reason over it.
+
+Supported tools (autodetected via PATH; operation fails with a clear message if the binary is missing):
+
+Web / offensive:
+- nuclei     - template-based vulnerability scanner (projectdiscovery)
+- ffuf       - fast web fuzzer (content discovery, parameter fuzzing)
+- katana     - crawler and link miner (projectdiscovery)
+- sqlmap     - automatic SQL injection and DB takeover
+- httpx      - HTTP toolkit (status, title, tech fingerprint)
+- subfinder  - passive subdomain enumeration
+
+OSINT:
+- theharvester - email, subdomain, host and employee intel
+- sherlock     - find usernames across 400+ platforms
+- maigret      - deep username OSINT (forks sherlock)
+- shodan       - Shodan CLI (requires SHODAN_API_KEY)
+- whois        - WHOIS lookups
+- holehe       - check which sites an email is registered on
+
+Parameters:
+- tool: one of the supported names above
+- args: array of command-line arguments passed verbatim to the binary
+- stdin: optional string piped to the binary's stdin
+- timeout_ms: max run time (default 120000, max 600000)
+
+Notes:
+- Each invocation is gated by operator permission via ctx.ask with permission="recon".
+- Output is capped at 4MB per stream to protect the transcript.
+- For tools not in this list, use the bash tool directly.

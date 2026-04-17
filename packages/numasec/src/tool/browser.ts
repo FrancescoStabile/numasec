@@ -5,7 +5,19 @@ import DESCRIPTION from "./browser.txt"
 
 const parameters = z.object({
   action: z
-    .enum(["navigate", "click", "fill", "screenshot", "evaluate", "get_cookies"])
+    .enum([
+      "navigate",
+      "click",
+      "fill",
+      "screenshot",
+      "evaluate",
+      "get_cookies",
+      "dom_snapshot",
+      "storage_snapshot",
+      "console_log",
+      "network_tab",
+      "dom_diff",
+    ])
     .describe("Browser action to perform"),
   url: z
     .string()
@@ -21,14 +33,40 @@ const parameters = z.object({
   cookies: z.string().optional().describe("Raw Cookie header to seed the browser session"),
   local_storage: z.record(z.string(), z.string()).optional().describe("localStorage seed"),
   session_storage: z.record(z.string(), z.string()).optional().describe("sessionStorage seed"),
+  max_bytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(1048576)
+    .optional()
+    .describe("Max output bytes for dom_snapshot / console_log / network_tab"),
+  clear: z.boolean().optional().describe("Drain console/network buffer after read"),
 })
 
 type Params = z.infer<typeof parameters>
+
+interface ConsoleEntry {
+  level: string
+  text: string
+  ts: number
+}
+interface NetworkEntry {
+  ts: number
+  method: string
+  url: string
+  status?: number
+  content_type?: string
+  duration_ms?: number
+  req_id: string
+}
 
 interface Session {
   browser: any
   context: any
   page: any
+  console: ConsoleEntry[]
+  network: NetworkEntry[]
+  lastDom?: string
 }
 
 const sessions = new Map<string, Session>()
@@ -113,7 +151,45 @@ async function ensure(abort: AbortSignal): Promise<Session> {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
   })
   const page = await context.newPage()
-  const entry: Session = { browser, context, page }
+  const entry: Session = { browser, context, page, console: [], network: [] }
+
+  const MAX_BUFFER = 500
+  page.on("console", (msg: any) => {
+    entry.console.push({
+      level: msg.type?.() ?? "log",
+      text: msg.text?.() ?? String(msg),
+      ts: Date.now(),
+    })
+    if (entry.console.length > MAX_BUFFER) entry.console.shift()
+  })
+  page.on("pageerror", (err: any) => {
+    entry.console.push({ level: "pageerror", text: String(err?.message ?? err), ts: Date.now() })
+    if (entry.console.length > MAX_BUFFER) entry.console.shift()
+  })
+  const pending = new Map<string, { ts: number; method: string; url: string }>()
+  context.on("request", (req: any) => {
+    const id = `${Date.now()}-${req.url()}`
+    pending.set(req, { ts: Date.now(), method: req.method(), url: req.url() })
+    ;(req as any).__id = id
+  })
+  context.on("response", async (resp: any) => {
+    const req = resp.request()
+    const start = pending.get(req)
+    pending.delete(req)
+    const ts = start?.ts ?? Date.now()
+    const headers = resp.headers?.() ?? {}
+    entry.network.push({
+      ts,
+      method: req.method(),
+      url: req.url(),
+      status: resp.status(),
+      content_type: headers["content-type"],
+      duration_ms: Date.now() - ts,
+      req_id: (req as any).__id ?? "",
+    })
+    if (entry.network.length > MAX_BUFFER) entry.network.shift()
+  })
+
   sessions.set(id, entry)
 
   abort.addEventListener(
@@ -239,6 +315,135 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
       title: `${cookies.length} cookies`,
       metadata: { count: cookies.length },
       output: lines.join("\n") || "No cookies.",
+    }
+  }
+
+  if (params.action === "dom_snapshot") {
+    const max = params.max_bytes ?? 65536
+    const html = await page.content()
+    session.lastDom = html
+    const title = await page.title().catch(() => "")
+    const summary = await page
+      .evaluate(() => {
+        const forms = Array.from(document.querySelectorAll("form")).map((f) => ({
+          action: (f as HTMLFormElement).action,
+          method: (f as HTMLFormElement).method,
+          inputs: Array.from(f.querySelectorAll("input,textarea,select")).map((i) => ({
+            name: (i as HTMLInputElement).name,
+            type: (i as HTMLInputElement).type,
+          })),
+        }))
+        const links = Array.from(document.querySelectorAll("a[href]"))
+          .slice(0, 200)
+          .map((a) => (a as HTMLAnchorElement).href)
+        const scripts = Array.from(document.querySelectorAll("script[src]"))
+          .map((s) => (s as HTMLScriptElement).src)
+          .slice(0, 100)
+        return { forms, links, scripts }
+      })
+      .catch(() => ({ forms: [], links: [], scripts: [] }))
+    const body = html.length > max ? html.slice(0, max) + `\n... (truncated, ${html.length} chars)` : html
+    return {
+      title: `DOM snapshot ${page.url()}`,
+      metadata: { url: page.url(), size: html.length, title, summary } as any,
+      output: [
+        `URL: ${page.url()}`,
+        `Title: ${title}`,
+        `Forms: ${summary.forms.length}  Links: ${summary.links.length}  Scripts: ${summary.scripts.length}`,
+        "",
+        "── Summary ──",
+        JSON.stringify(summary, null, 2),
+        "",
+        "── HTML ──",
+        body,
+      ].join("\n"),
+    }
+  }
+
+  if (params.action === "storage_snapshot") {
+    const storage = await page
+      .evaluate(() => {
+        const local: Record<string, string> = {}
+        const session: Record<string, string> = {}
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k) local[k] = localStorage.getItem(k) ?? ""
+        }
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const k = sessionStorage.key(i)
+          if (k) session[k] = sessionStorage.getItem(k) ?? ""
+        }
+        return { local, session }
+      })
+      .catch(() => ({ local: {}, session: {} }))
+    const cookies = await context.cookies()
+    return {
+      title: `Storage ${page.url()}`,
+      metadata: {
+        localKeys: Object.keys(storage.local).length,
+        sessionKeys: Object.keys(storage.session).length,
+        cookieCount: cookies.length,
+      },
+      output: JSON.stringify({ ...storage, cookies }, null, 2),
+    }
+  }
+
+  if (params.action === "console_log") {
+    const max = params.max_bytes ?? 65536
+    const entries = [...session.console]
+    if (params.clear) session.console.length = 0
+    const lines = entries.map((e) => `[${new Date(e.ts).toISOString()}] ${e.level}: ${e.text}`).join("\n")
+    const body = lines.length > max ? lines.slice(0, max) + `\n... (truncated, ${lines.length} chars)` : lines
+    return {
+      title: `Console log (${entries.length})`,
+      metadata: { count: entries.length },
+      output: body || "(no console entries)",
+    }
+  }
+
+  if (params.action === "network_tab") {
+    const max = params.max_bytes ?? 65536
+    const entries = [...session.network]
+    if (params.clear) session.network.length = 0
+    const lines = entries
+      .map(
+        (e) =>
+          `[${new Date(e.ts).toISOString()}] ${e.method} ${e.status ?? "---"} ${e.url}  (${e.duration_ms ?? "?"}ms, ${e.content_type ?? "?"})`,
+      )
+      .join("\n")
+    const body = lines.length > max ? lines.slice(0, max) + `\n... (truncated, ${lines.length} chars)` : lines
+    return {
+      title: `Network (${entries.length} requests)`,
+      metadata: { count: entries.length },
+      output: body || "(no requests)",
+    }
+  }
+
+  if (params.action === "dom_diff") {
+    const prev = session.lastDom
+    if (!prev) throw new Error("dom_diff requires a prior dom_snapshot in this session")
+    const current = await page.content()
+    session.lastDom = current
+    const prevLines = prev.split("\n")
+    const curLines = current.split("\n")
+    const added: string[] = []
+    const removed: string[] = []
+    const prevSet = new Set(prevLines)
+    const curSet = new Set(curLines)
+    for (const l of curLines) if (!prevSet.has(l)) added.push(l)
+    for (const l of prevLines) if (!curSet.has(l)) removed.push(l)
+    const max = params.max_bytes ?? 65536
+    const out = [
+      `+ ${added.length} added lines`,
+      `- ${removed.length} removed lines`,
+      "",
+      ...added.slice(0, 200).map((l) => `+ ${l}`),
+      ...removed.slice(0, 200).map((l) => `- ${l}`),
+    ].join("\n")
+    return {
+      title: `DOM diff (+${added.length}/-${removed.length})`,
+      metadata: { added: added.length, removed: removed.length } as any,
+      output: out.length > max ? out.slice(0, max) + "\n... (truncated)" : out,
     }
   }
 

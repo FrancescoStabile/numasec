@@ -27,6 +27,7 @@ import { ProjectProvider } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { StartupLoading } from "@tui/component/startup-loading"
+import { BootSplash } from "@tui/component/boot-splash"
 import { SyncProvider, useSync } from "@tui/context/sync"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel, useConnected } from "@tui/component/dialog-model"
@@ -887,6 +888,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       {plugin()}
       <TuiPluginRuntime.Slot name="app" />
       <StartupLoading ready={ready} />
+      <BootSplash />
     </box>
   )
 }

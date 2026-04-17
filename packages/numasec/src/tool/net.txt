@@ -1,0 +1,13 @@
+Raw TCP/UDP one-shot probes. Use for banner grabs, protocol fingerprinting, and short request/response exchanges where HTTP is not appropriate.
+
+Operations (op):
+- tcp_send    — { host, port, payload?, timeout_ms?, read_bytes? } → response bytes (utf8, invalid bytes shown as \xHH)
+- udp_send    — { host, port, payload, timeout_ms?, read_bytes? } → response bytes
+- banner_grab — { host, port, timeout_ms? } → raw banner text (connect, read, close)
+
+Constraints:
+- Default timeout 5000ms, max 30000ms.
+- Default read limit 16384 bytes.
+- No interactive sessions, no reverse shells. Single request/response only.
+- Payload treated as UTF-8 unless `payload_encoding: "hex"` or `"base64"` is supplied.
+- Scope boundary is enforced on `host` via the runtime guard where configured.

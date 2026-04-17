@@ -7,6 +7,11 @@ Actions:
 - screenshot: Capture a full-page PNG screenshot
 - evaluate: Execute arbitrary JavaScript in the page context
 - get_cookies: Retrieve all cookies for the current browser context
+- dom_snapshot: Capture full DOM + structured summary (forms, links, scripts). Caches for dom_diff.
+- storage_snapshot: Read localStorage, sessionStorage, and cookies together
+- console_log: Return buffered console messages and page errors since session start
+- network_tab: Return buffered HTTP requests (method, status, URL, content-type, duration)
+- dom_diff: Diff current DOM against the previous dom_snapshot (added/removed lines)
 
 Parameters:
 - action: The browser action to perform
@@ -18,6 +23,8 @@ Parameters:
 - cookies: Raw Cookie header string to seed the browser session
 - local_storage: Key-value pairs to seed into localStorage
 - session_storage: Key-value pairs to seed into sessionStorage
+- max_bytes: Output byte cap for dom_snapshot/console_log/network_tab/dom_diff (default 65536)
+- clear: Drain the console/network buffer after read
 
 Use this tool for:
 - Testing SPAs that require JavaScript rendering

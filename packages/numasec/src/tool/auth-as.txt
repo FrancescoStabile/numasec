@@ -1,0 +1,19 @@
+Named authentication profiles for reuse across http_request/browser calls.
+
+Stored plain-JSON under `~/.config/numasec/auth-profiles.json`.
+
+Operations:
+- set    — { name, type, target_url?, credentials }           → stores or updates profile
+- get    — { name }                                            → returns the profile (secret values masked)
+- list   — {}                                                   → lists profile names and types
+- remove — { name }                                            → deletes profile
+
+Supported `type` values:
+- basic   — { username, password_ref }                          username + reference to `secrets` entry
+- bearer  — { token_ref }                                       Bearer token reference
+- cookie  — { cookies: [{ name, value_ref, domain?, path? }] }
+- form    — { login_url, username_field, password_field, username, password_ref, success_match? }
+
+`*_ref` fields point to names in the `secrets` vault so that secrets are never inlined in chat/transcript.
+
+Reuse: pass `auth_profile: "<name>"` to http_request/browser to have numasec apply the credentials at call time (implementation hook in those tools).

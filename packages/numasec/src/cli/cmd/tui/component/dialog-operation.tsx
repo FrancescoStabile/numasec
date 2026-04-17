@@ -28,7 +28,7 @@ export function DialogOperation() {
           return {
             value: op.slug,
             title: `${pack?.glyph ?? "◆"} ${op.label}`,
-            description: `${op.kind} · ${op.slug} · ${op.sessions.length} sess · ${op.status}`,
+            description: `${op.kind} · ${op.slug} · ${op.sessions.length} runs · ${op.status}`,
             category: op.status === "active" ? "Active" : "Archived",
           }
         })

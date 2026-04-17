@@ -91,7 +91,7 @@ export function OperatorHud() {
               </text>
             </Show>
             <text fg={theme.textMuted}>
-              SESS <span style={{ fg: theme.text }}>{current().sessions.length}</span>
+              RUNS <span style={{ fg: theme.text }}>{current().sessions.length}</span>
             </text>
             <Show when={planStats().total > 0}>
               <text fg={theme.textMuted}>

@@ -17,6 +17,7 @@ export interface KindPack {
   agent: string
   glyph: string
   accent: "primary" | "secondary" | "accent" | "warning" | "error" | "info" | "success"
+  tagline: string
   placeholders: {
     normal: string[]
     shell: string[]
@@ -28,27 +29,29 @@ export interface KindPack {
 const PACKS: Record<KindId, KindPack> = {
   security: {
     id: "security",
-    label: "Security Assessment",
+    label: "Security Sidekick",
     short: "sec",
     agent: "security",
     glyph: "◈",
     accent: "info",
+    tagline: "Jarvis on Kali — install, explain, analyze logs, anything ad-hoc",
     placeholders: {
       normal: [
-        "Review this architecture for risks",
-        "Threat-model the payments service",
-        "Draft an incident response checklist for S3 exposure",
+        "install nuclei and run a quick scan on http://localhost",
+        "explain SAML reflection attacks with one example",
+        "tail this log and tell me what looks weird",
+        "what's the latest CVE for nginx 1.18?",
       ],
-      shell: ["nmap --help", "grep -r secret .", "jq . config.json"],
+      shell: ["apt install -y nuclei", "tail -n 200 /var/log/auth.log", "openssl s_client -connect host:443"],
     },
     thinking: [
-      "mapping assets",
-      "scoring risk",
-      "aligning to CSF",
-      "weighing controls",
-      "drafting recommendations",
+      "checking versions",
+      "looking it up",
+      "reading the man page",
+      "tailing the log",
+      "drafting the answer",
     ],
-    deliverable: "consult-memo",
+    deliverable: "answer",
   },
   pentest: {
     id: "pentest",
@@ -57,6 +60,7 @@ const PACKS: Record<KindId, KindPack> = {
     agent: "pentest",
     glyph: "◆",
     accent: "error",
+    tagline: "Authorized engagement — scope, findings, evidence, report",
     placeholders: {
       normal: [
         "Pentest http://localhost:3000",
@@ -82,6 +86,7 @@ const PACKS: Record<KindId, KindPack> = {
     agent: "appsec",
     glyph: "❮❯",
     accent: "accent",
+    tagline: "Read the code like a reviewer — bugs, sinks, fixes",
     placeholders: {
       normal: [
         "Review this repo for authz bugs",
@@ -106,6 +111,7 @@ const PACKS: Record<KindId, KindPack> = {
     agent: "osint",
     glyph: "⌬",
     accent: "secondary",
+    tagline: "Find what's already public — sources, confidence, provenance",
     placeholders: {
       normal: [
         "Profile acme-corp.com leadership",
@@ -125,27 +131,29 @@ const PACKS: Record<KindId, KindPack> = {
   },
   hacking: {
     id: "hacking",
-    label: "Hacking / CTF",
+    label: "Hacking (raw)",
     short: "h4x",
     agent: "hacking",
     glyph: "⚑",
     accent: "warning",
+    tagline: "Just hack — no ceremony, no report, full speed",
     placeholders: {
       normal: [
-        "Solve this crypto challenge",
-        "Root this HTB box, I give you the IP",
-        "Reverse this binary and find the flag",
+        "10.10.11.42 — root it",
+        "http://chal.ctf:1337 — flag is in /flag",
+        "reverse this binary, get the flag",
+        "dumped this hash, crack it",
       ],
-      shell: ["r2 -A ./bin", "gdb -q ./challenge", "strings ./artifact | rg -i flag"],
+      shell: ["nmap -sCV -T4 10.10.11.42", "gdb -q ./bin", "hashcat -m 1000 hash.txt rockyou.txt"],
     },
     thinking: [
-      "enumerating services",
-      "analyzing binary",
-      "hunting foothold",
-      "escalating context",
-      "extracting flag",
+      "probing",
+      "enumerating",
+      "popping",
+      "pivoting",
+      "exfiltrating",
     ],
-    deliverable: "ctf-writeup",
+    deliverable: "shell",
   },
 }
 
