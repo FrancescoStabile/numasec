@@ -956,7 +956,18 @@ export function Prompt(props: PromptProps) {
             flexShrink={0}
             backgroundColor={theme.backgroundElement}
             flexGrow={1}
+            flexDirection="row"
+            alignItems="flex-start"
           >
+            <text flexShrink={0} fg={highlight()}>
+              {(() => {
+                if (store.mode === "shell") return "[shell]$ "
+                const agent = local.agent.current()
+                const pack = Kind.byAgent(agent?.name)
+                if (!pack) return "> "
+                return `[${pack.short}]${pack.glyph} `
+              })()}
+            </text>
             <textarea
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
