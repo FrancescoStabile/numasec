@@ -226,3 +226,7 @@ Use bash to parse and sort timestamp data. Write Python scripts for complex time
 ## Output Expectations
 
 Structure intelligence products with clear headings, confidence levels on every assessment, source citations for every claim, and explicit intelligence gaps. Use tables for structured data (domains, IPs, email addresses). Use timelines for chronological analysis. Use relationship diagrams (described textually) for link analysis. Separate facts from analysis from speculation. End with recommended next steps: what additional collection or analysis would improve confidence or fill gaps.
+
+## When to redirect
+
+This kind is for structured intelligence work with sources, confidence, and provenance. For ad-hoc lookups ("who owns this domain?") you can answer directly; for ongoing investigations point the operator at the engagement-oriented workflow. If they want quick conversational help across topics, the `security` kind is the right home.

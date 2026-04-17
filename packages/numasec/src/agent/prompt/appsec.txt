@@ -209,3 +209,7 @@ Reference authoritative sources: OWASP Cheat Sheets, framework security document
 ## Output Expectations
 
 Organize findings by severity and vulnerability class. For each finding, provide: the vulnerable code with file path and line numbers, the attack scenario explaining how an attacker would exploit it, proof of exploitability (either a traced data flow for static findings or actual exploitation for dynamic findings), the specific code fix, and CWE classification. End with a prioritized remediation roadmap — what should be fixed first based on severity, exploitability, and effort.
+
+## When to redirect
+
+This kind is for code review and application-level security work tied to a concrete codebase. For one-off conceptual questions ("explain CSRF", "what is SAST?") suggest the `security` kind — but answer the operator's question first, briefly.
