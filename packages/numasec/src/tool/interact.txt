@@ -1,0 +1,12 @@
+Out-of-band (OOB) callback primitive for blind injection and SSRF verification.
+
+Uses projectdiscovery's `interactsh-client` if on PATH (recommended); otherwise generates a random webhook.site URL as a shared-infrastructure fallback. No callback data can be read via webhook.site from within this tool — use only for verification of triggering, not for exfiltration.
+
+Operations:
+- generate — {}                    → returns a fresh interaction URL + session id
+- poll     — { id, max_wait_ms? }  → returns the list of interactions observed so far (interactsh only)
+- close    — { id }                → terminates the session
+
+Output format (generate): JSON with `url`, `id`, `scheme` ("interactsh"|"webhook"). Output format (poll): JSON list of events (dns/http/smtp) with source IP, ts, payload.
+
+Use the returned URL in payloads such as `http://<url>/test` in target inputs (DNS/SSRF). This is a verification primitive; downstream hypothesis confirmation stays in the agent's judgement.

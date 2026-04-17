@@ -24,6 +24,11 @@ import { CodeSearchTool } from "./codesearch"
 import { HttpRequestTool } from "./http-request"
 import { BrowserTool } from "./browser"
 import { ObserveSurfaceTool } from "./observe-surface"
+import { CryptoTool } from "./crypto"
+import { NetTool } from "./net"
+import { SecretsTool } from "./secrets"
+import { AuthAsTool } from "./auth-as"
+import { InteractTool } from "./interact"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
 import * as Truncate from "./truncate"
@@ -117,6 +122,11 @@ export const layer: Layer.Layer<
     const httprequest = yield* HttpRequestTool
     const browser = yield* BrowserTool
     const observe = yield* ObserveSurfaceTool
+    const cryptoTool = yield* CryptoTool
+    const netTool = yield* NetTool
+    const secretsTool = yield* SecretsTool
+    const authAs = yield* AuthAsTool
+    const interactTool = yield* InteractTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -197,6 +207,11 @@ export const layer: Layer.Layer<
           httprequest: Tool.init(httprequest),
           browser: Tool.init(browser),
           observe: Tool.init(observe),
+          crypto: Tool.init(cryptoTool),
+          net: Tool.init(netTool),
+          secrets: Tool.init(secretsTool),
+          auth_as: Tool.init(authAs),
+          interact: Tool.init(interactTool),
         })
 
         return {
@@ -220,6 +235,11 @@ export const layer: Layer.Layer<
             tool.httprequest,
             tool.browser,
             tool.observe,
+            tool.crypto,
+            tool.net,
+            tool.secrets,
+            tool.auth_as,
+            tool.interact,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,
