@@ -75,7 +75,7 @@
   },
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@actions/github": "6.0.1",
+    "@actions/github": "9.1.0",
     "@agentclientprotocol/sdk": "0.14.1",
     "@ai-sdk/amazon-bedrock": "4.0.92",
     "@ai-sdk/anthropic": "3.0.68",
