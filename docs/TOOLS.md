@@ -37,6 +37,13 @@ beyond per-session buffers. The agent reads raw tool output and reasons over it.
   - `set` a named profile (`basic`, `bearer`, `cookie`, `form`) with credentials payload
   - Referenced by name from `http_request` / `browser` to replay authenticated sessions
 
+## Recon & OSINT
+
+- **recon** *(new)* — unified wrapper for external recon/OSINT binaries. One tool, twelve dispatchable backends, no output parsing.
+  - Web: `nuclei`, `ffuf`, `katana`, `sqlmap`, `httpx`, `subfinder`
+  - OSINT: `theharvester`, `sherlock`, `maigret`, `shodan`, `whois`, `holehe`
+  - Returns raw stdout/stderr + exit code + duration. Returns a clear "Binary not found" if missing on PATH.
+
 ## Out-of-band
 
 - **interact** *(new)* — OOB callback generator
