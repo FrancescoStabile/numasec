@@ -106,7 +106,7 @@
     "@numasec/script": "workspace:*",
     "@numasec/sdk": "workspace:*",
     "@numasec/util": "workspace:*",
-    "@octokit/graphql": "9.0.2",
+    "@octokit/graphql": "9.0.3",
     "@octokit/rest": "catalog:",
     "@openauthjs/openauth": "catalog:",
     "@openrouter/ai-sdk-provider": "2.5.0",
