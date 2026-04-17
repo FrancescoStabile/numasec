@@ -37,7 +37,7 @@ export async function openWorkspaceSession(input: {
     const result = await client.session.create({ workspaceID: input.workspaceID }).catch(() => undefined)
     if (!result) {
       input.toast.show({
-        message: "Failed to create workspace session",
+        message: "Failed to create workspace run",
         variant: "error",
       })
       return
@@ -48,7 +48,7 @@ export async function openWorkspaceSession(input: {
     }
     if (!result.data) {
       input.toast.show({
-        message: "Failed to create workspace session",
+        message: "Failed to create workspace run",
         variant: "error",
       })
       return

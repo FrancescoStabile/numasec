@@ -124,7 +124,7 @@ export function DialogSessionList() {
 
   return (
     <DialogSelect
-      title="Sessions"
+      title="Runs"
       options={options()}
       skipFilter={true}
       current={currentSessionID()}

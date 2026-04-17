@@ -258,7 +258,7 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Interrupt session",
+        title: "Interrupt run",
         value: "session.interrupt",
         keybind: "session_interrupt",
         category: "Session",
@@ -623,10 +623,10 @@ export function Prompt(props: PromptProps) {
       })
 
       if (res.error) {
-        console.log("Creating a session failed:", res.error)
+        console.log("Creating a run failed:", res.error)
 
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: "Creating a run failed. Open console for more details.",
           variant: "error",
         })
 
