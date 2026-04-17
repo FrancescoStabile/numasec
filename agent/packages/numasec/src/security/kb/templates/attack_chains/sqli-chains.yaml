@@ -34,11 +34,11 @@ chains:
       - step: 5
         action: "Authenticate with extracted credentials"
         technique: "POST to login endpoint with dumped username/password"
-        tool: "relay_credentials"
+        tool: "http_request"
       - step: 6
         action: "Run post-auth testing"
-        technique: "plan(action='post_auth', token=<obtained_token>)"
-        tool: "plan"
+        technique: "Use plan_next with auth-obtained signals and the captured token/session context"
+        tool: "plan_next"
     impact: "Full database compromise, account takeover, privilege escalation"
     cwe_chain: ["CWE-89", "CWE-522", "CWE-284"]
 

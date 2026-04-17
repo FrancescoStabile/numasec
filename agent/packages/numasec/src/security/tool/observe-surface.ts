@@ -7,6 +7,9 @@ import { dirFuzz, type DirFuzzResult } from "../scanner/dir-fuzzer"
 import { scanPorts, type PortScanResult } from "../scanner/port-scanner"
 import { probeServices, type ServiceProbeResult } from "../scanner/service-prober"
 import { EvidenceGraphStore } from "../evidence-store"
+import type { SessionID } from "../../session/schema"
+import { Scope } from "../scope"
+import { persistEngagementTarget } from "../target-store"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Observe target surface and produce baseline evidence.
@@ -17,6 +20,7 @@ export type ObserveSurfaceMode = z.infer<typeof MODE>
 
 export interface ObserveSurfaceProfileInput {
   target: string
+  sessionID?: SessionID
   modes?: ObserveSurfaceMode[]
   max_urls?: number
   max_depth?: number
@@ -76,6 +80,9 @@ export async function runObserveSurfaceProfile(
   const modes: ObserveSurfaceMode[] = params.modes && params.modes.length > 0
     ? params.modes
     : ["recon", "crawl", "dir_fuzz", "js"]
+  if (params.sessionID) {
+    Scope.ensure(params.sessionID, params.target)
+  }
   const host = parseHost(params.target)
   const target = targetUrl(params.target, host)
   const urls = new Set<string>()
@@ -117,7 +124,9 @@ export async function runObserveSurfaceProfile(
     if (!params.skip_js && (webPorts.length > 0 || params.target.startsWith("http"))) {
       const webTarget = params.target.startsWith("http") ? params.target : `http://${host}:${webPorts[0] || 80}`
       hooks.onStage?.("Analyzing JavaScript...")
-      const js = await analyzeJs(webTarget)
+      const js = await analyzeJs(webTarget, {
+        sessionID: params.sessionID,
+      })
       reconJsAnalysis = js
       for (const item of js.endpoints) endpoints.add(item)
       for (const item of js.spaRoutes) endpoints.add(item)
@@ -136,6 +145,7 @@ export async function runObserveSurfaceProfile(
     const result = await crawl(target, {
       maxUrls: params.max_urls,
       maxDepth: params.max_depth,
+      sessionID: params.sessionID,
     })
     crawlResult = result
     for (const item of result.urls) {
@@ -158,6 +168,7 @@ export async function runObserveSurfaceProfile(
     const result = await dirFuzz(target, {
       wordlist: params.wordlist,
       extensions: params.extensions,
+      sessionID: params.sessionID,
     })
     dirFuzzResult = result
     for (const item of result.found) {
@@ -167,7 +178,9 @@ export async function runObserveSurfaceProfile(
 
   if (modes.includes("js")) {
     hooks.onStage?.(`Analyzing JavaScript at ${target}...`)
-    const result = await analyzeJs(target)
+    const result = await analyzeJs(target, {
+      sessionID: params.sessionID,
+    })
     jsResult = result
     for (const item of result.endpoints) endpoints.add(item)
     for (const item of result.spaRoutes) endpoints.add(item)
@@ -221,13 +234,19 @@ export const ObserveSurfaceTool = Tool.define("observe_surface", {
     await ctx.ask({
       permission: "observe_surface",
       patterns: [params.target],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { target: params.target, modes: params.modes } as Record<string, any>,
+    })
+    persistEngagementTarget({
+      sessionID: ctx.sessionID,
+      url: params.target,
+      source: "observe_surface",
     })
 
     const profile = await runObserveSurfaceProfile(
       {
         target: params.target,
+        sessionID: ctx.sessionID,
         modes: params.modes,
         max_urls: params.max_urls,
         max_depth: params.max_depth,

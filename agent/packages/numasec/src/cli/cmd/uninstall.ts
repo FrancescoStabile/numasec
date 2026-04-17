@@ -95,7 +95,7 @@ async function collectRemovalTargets(args: UninstallArgs, method: Installation.M
     { path: Global.Path.state, label: "State", keep: false },
   ]
 
-  const shellConfig = method === "curl" ? await getShellConfigFile() : null
+  const shellConfig = method === "curl" || method === "source" ? await getShellConfigFile() : null
 
   // Find all numasec binaries/symlinks in common PATH locations
   const binary = await findBinaryToRemove(method)
@@ -113,6 +113,32 @@ async function findBinaryToRemove(method: Installation.Method): Promise<string |
     path.join(home, ".numasec", "bin", "numasec"),
     path.join(home, ".bun", "bin", "numasec"),
   ]
+
+  async function source(file: string) {
+    const next = await fs.realpath(file).catch(() => file)
+    let dir = next
+    const stat = await fs.stat(next).catch(() => undefined)
+    if (stat?.isFile()) dir = path.dirname(next)
+    while (true) {
+      const install = path.join(dir, "install.sh")
+      const agent = path.join(dir, "agent", "package.json")
+      if ((await Filesystem.exists(install)) && (await Filesystem.exists(agent))) return true
+      const parent = path.dirname(dir)
+      if (parent === dir) return false
+      dir = parent
+    }
+  }
+
+  if (method === "source") {
+    for (const candidate of candidates) {
+      try {
+        const stat = await fs.lstat(candidate)
+        if (!stat.isFile() && !stat.isSymbolicLink()) continue
+        if (await source(candidate)) return candidate
+      } catch {}
+    }
+    return null
+  }
 
   for (const candidate of candidates) {
     try {
@@ -152,15 +178,11 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
     prompts.log.info(`  ✓ Shell PATH in ${shortenPath(targets.shellConfig)}`)
   }
 
-  if (method !== "curl" && method !== "unknown") {
+  if (method !== "curl" && method !== "source" && method !== "unknown") {
     const cmds: Record<string, string> = {
       npm: "npm uninstall -g numasec",
       pnpm: "pnpm uninstall -g numasec",
       bun: "bun remove -g numasec",
-      yarn: "yarn global remove numasec",
-      brew: "brew uninstall numasec",
-      choco: "choco uninstall numasec",
-      scoop: "scoop uninstall numasec",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -208,26 +230,19 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
       npm: ["npm", "uninstall", "-g", "numasec"],
       pnpm: ["pnpm", "uninstall", "-g", "numasec"],
       bun: ["bun", "remove", "-g", "numasec"],
-      yarn: ["yarn", "global", "remove", "numasec"],
-      brew: ["brew", "uninstall", "numasec"],
-      choco: ["choco", "uninstall", "numasec"],
-      scoop: ["scoop", "uninstall", "numasec"],
     }
 
     const cmd = cmds[method]
     if (cmd) {
       spinner.start(`Running ${cmd.join(" ")}...`)
-      const result = await Process.run(method === "choco" ? ["choco", "uninstall", "numasec", "-y", "-r"] : cmd, {
+      const result = await Process.run(cmd, {
         nothrow: true,
       })
       if (result.code !== 0) {
         spinner.stop(`Package manager uninstall failed: exit code ${result.code}`, 1)
         const text = `${result.stdout.toString("utf8")}\n${result.stderr.toString("utf8")}`
-        if (method === "choco" && text.includes("not running from an elevated command shell")) {
-          prompts.log.warn(`You may need to run '${cmd.join(" ")}' from an elevated command shell`)
-        } else {
-          prompts.log.warn(`You may need to run manually: ${cmd.join(" ")}`)
-        }
+        void text
+        prompts.log.warn(`You may need to run manually: ${cmd.join(" ")}`)
       } else {
         spinner.stop("Package removed")
       }
@@ -316,7 +331,7 @@ async function cleanShellConfig(file: string) {
 
     if (skip) {
       skip = false
-      if (trimmed.includes(".numasec/bin") || trimmed.includes("fish_add_path")) {
+      if (trimmed.startsWith("export PATH=") || trimmed.startsWith("fish_add_path")) {
         continue
       }
     }

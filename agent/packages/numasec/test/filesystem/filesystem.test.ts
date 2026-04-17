@@ -76,6 +76,23 @@ describe("AppFileSystem", () => {
         expect(result).toEqual(data)
       }),
     )
+
+    it(
+      "applies secure permissions at write time when mode is provided",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const tmp = yield* fs.makeTempDirectoryScoped()
+        const file = path.join(tmp, "secret.json")
+
+        yield* fs.writeJson(file, { secret: true }, 0o600)
+
+        const info = yield* fs.stat(file)
+        expect(info.type).toBe("File")
+        if (process.platform !== "win32") {
+          expect(info.mode & 0o777).toBe(0o600)
+        }
+      }),
+    )
   })
 
   describe("ensureDir", () => {
@@ -148,6 +165,23 @@ describe("AppFileSystem", () => {
 
         const result = yield* fs.readFile(file)
         expect(new Uint8Array(result)).toEqual(content)
+      }),
+    )
+
+    it(
+      "applies secure permissions at write time when mode is provided",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const tmp = yield* fs.makeTempDirectoryScoped()
+        const file = path.join(tmp, "secure", "note.txt")
+
+        yield* fs.writeWithDirs(file, "secret", 0o600)
+
+        const info = yield* fs.stat(file)
+        expect(info.type).toBe("File")
+        if (process.platform !== "win32") {
+          expect(info.mode & 0o777).toBe(0o600)
+        }
       }),
     )
   })

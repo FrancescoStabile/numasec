@@ -4,9 +4,11 @@ import { Instance } from "../../src/project/instance"
 import { Server } from "../../src/server/server"
 import { CoverageTable, FindingTable, TargetTable } from "../../src/security/security.sql"
 import { EvidenceEdgeTable, EvidenceNodeTable, type EvidenceEdgeID, type EvidenceNodeID } from "../../src/security/evidence.sql"
+import { persistEngagementTarget } from "../../src/security/target-store"
 import type { FindingID, TargetID } from "../../src/security/security.sql"
 import { Session } from "../../src/session"
-import { Database } from "../../src/storage/db"
+import { MessageTable, PartTable } from "../../src/session/session.sql"
+import { Database, eq } from "../../src/storage/db"
 import { Log } from "../../src/util/log"
 
 const root = path.join(__dirname, "../..")
@@ -62,6 +64,7 @@ type SummaryBody = {
     findings: { count: number; latest_time_updated: number | null; changed: boolean }
     chains: { count: number; latest_time_updated: number | null; changed: boolean }
     coverage: { count: number; latest_time_updated: number | null; changed: boolean }
+    engagement: { count: number; latest_time_updated: number | null; changed: boolean }
     evidence_nodes: { enabled: boolean; count: number; latest_time_updated: number | null; changed: boolean }
     evidence_edges: { enabled: boolean; count: number; latest_time_updated: number | null; changed: boolean }
   }
@@ -121,6 +124,34 @@ describe("security read model routes", () => {
           findings: unknown[]
           chains: Array<{ chain_id: string }>
           summary: { finding_count: number; chain_count: number }
+          engagement: {
+            engagement_target_url: string | null
+            current_endpoint_url: string | null
+            last_tested_url: string | null
+            findings: {
+              total: number
+              verified: number
+              provisional: number
+              suppressed: number
+              severity: { critical: number; high: number; medium: number; low: number; info: number }
+            }
+            report: {
+              state: string
+              working_ready: boolean
+              final_ready: boolean
+              final_blocked: boolean
+              final_snapshot: {
+                state: string
+                exported_at: number | null
+                exported_revision: number | null
+              }
+              verification_debt: {
+                promotion_gaps: number
+                open_hypotheses: number
+                open_critical_hypotheses: number
+              }
+            }
+          }
         }
 
         expect(body.session_id).toBe(session.id)
@@ -132,6 +163,175 @@ describe("security read model routes", () => {
         expect(body.chains[0].chain_id).toBe("CHAIN-001")
         expect(body.summary.finding_count).toBe(2)
         expect(body.summary.chain_count).toBe(1)
+        expect(body.engagement.engagement_target_url).toBe("https://example.com")
+        expect(body.engagement.current_endpoint_url).toBe("https://example.com/api/admin")
+        expect(body.engagement.last_tested_url).toBe("https://example.com/api/admin")
+        expect(body.engagement.findings.total).toBe(2)
+        expect(body.engagement.findings.severity.critical).toBe(1)
+        expect(body.engagement.findings.severity.high).toBe(1)
+        expect(body.engagement.report.state).toBe("final_ready")
+        expect(body.engagement.report.working_ready).toBe(true)
+        expect(body.engagement.report.final_ready).toBe(true)
+        expect(body.engagement.report.final_snapshot.state).toBe("absent")
+
+        await Session.remove(session.id)
+      },
+    })
+  })
+
+  test("marks a stale final snapshot as reopened when security state changes afterwards", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const session = await Session.create({})
+
+        Database.use((db) =>
+          db
+            .insert(FindingTable)
+            .values({
+              id: "SSEC-READ-REOPEN" as FindingID,
+              session_id: session.id,
+              title: "Verified finding",
+              severity: "high",
+              description: "before reopen",
+              confirmed: true,
+              state: "verified",
+              reportable: true,
+              manual_override: true,
+              url: "https://example.com/api/search",
+              method: "GET",
+              confidence: 0.9,
+              tool_used: "test",
+              time_created: 1,
+              time_updated: 1,
+            })
+            .run(),
+        )
+
+        Database.use((db) =>
+          db
+            .insert(MessageTable)
+            .values({
+              id: "msg-read-reopen" as any,
+              session_id: session.id,
+              data: {
+                role: "assistant",
+              } as any,
+              time_created: 2,
+              time_updated: 2,
+            })
+            .run(),
+        )
+        Database.use((db) =>
+          db
+            .insert(PartTable)
+            .values({
+              id: "part-read-reopen" as any,
+              message_id: "msg-read-reopen" as any,
+              session_id: session.id,
+              data: {
+                type: "tool",
+                callID: "call-read-reopen",
+                tool: "generate_report",
+                state: {
+                  status: "completed",
+                  input: {
+                    format: "markdown",
+                  },
+                  output: "# Security Assessment Report",
+                  output_v2: {},
+                  title: "Report (markdown): 1 verified, risk 20/100",
+                  metadata: {
+                    reportRendered: "final",
+                    engagementRevision: 1,
+                  },
+                  time: {
+                    start: 1,
+                    end: 2,
+                  },
+                },
+              } as any,
+              time_created: 2,
+              time_updated: 2,
+            })
+            .run(),
+        )
+        Database.use((db) =>
+          db
+            .update(FindingTable)
+            .set({
+              description: "after reopen",
+              time_updated: 3,
+            })
+            .where(eq(FindingTable.id, "SSEC-READ-REOPEN" as any))
+            .run(),
+        )
+
+        const app = Server.Default()
+        const response = await app.request(`/security/${session.id}/read`)
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as {
+          engagement: {
+            report: {
+              state: string
+              final_snapshot: {
+                state: string
+                exported_revision: number | null
+              }
+              updated_at: number | null
+            }
+            revision: number
+          }
+        }
+
+        expect(body.engagement.report.state).toBe("final_ready")
+        expect(body.engagement.report.final_snapshot.state).toBe("reopened")
+        expect(body.engagement.report.final_snapshot.exported_revision).toBe(1)
+        expect(body.engagement.revision).toBe(3)
+
+        await Session.remove(session.id)
+      },
+    })
+  })
+
+  test("uses persisted engagement target when findings point at a deeper endpoint", async () => {
+    await Instance.provide({
+      directory: root,
+      fn: async () => {
+        const session = await Session.create({})
+        persistEngagementTarget({
+          sessionID: session.id,
+          url: "http://localhost:3000/rest/user/security-question",
+          source: "observe_surface",
+        })
+
+        Database.use((db) =>
+          db
+            .insert(FindingTable)
+            .values({
+              id: "SSEC-READ-TARGET01" as FindingID,
+              session_id: session.id,
+              title: "Endpoint finding",
+              severity: "high",
+              url: "http://localhost:3000/api/Users",
+            })
+            .run(),
+        )
+
+        const app = Server.Default()
+        const response = await app.request(`/security/${session.id}/read`)
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as {
+          engagement: {
+            engagement_target_url: string | null
+            current_endpoint_url: string | null
+            last_tested_url: string | null
+          }
+        }
+
+        expect(body.engagement.engagement_target_url).toBe("http://localhost:3000")
+        expect(body.engagement.current_endpoint_url).toBe("http://localhost:3000/api/Users")
+        expect(body.engagement.last_tested_url).toBe("http://localhost:3000/api/Users")
 
         await Session.remove(session.id)
       },
@@ -549,6 +749,9 @@ describe("security read model routes", () => {
         expect(enabledBody.checkpoints.evidence_edges.changed).toBe(true)
         expect(enabledBody.checkpoints.coverage.latest_time_updated).toBe(2_100)
         expect(enabledBody.checkpoints.coverage.changed).toBe(false)
+        expect(enabledBody.checkpoints.engagement.count).toBe(1)
+        expect(enabledBody.checkpoints.engagement.latest_time_updated).toBe(2_600)
+        expect(enabledBody.checkpoints.engagement.changed).toBe(true)
         expect(enabledBody.sync.since).toBe(2_400)
 
         delete process.env["NUMASEC_SECURITY_GRAPH_READ"]
@@ -563,6 +766,7 @@ describe("security read model routes", () => {
         expect(disabledBody.checkpoints.evidence_nodes.count).toBe(0)
         expect(disabledBody.checkpoints.evidence_edges.enabled).toBe(false)
         expect(disabledBody.checkpoints.evidence_edges.count).toBe(0)
+        expect(disabledBody.checkpoints.engagement.count).toBe(1)
 
         await Session.remove(session.id)
       },

@@ -3,7 +3,6 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { UI } from "../ui"
 import { cmd } from "./cmd"
-import { Flag } from "../../flag/flag"
 import { bootstrap } from "../bootstrap"
 import { EOL } from "os"
 import { Filesystem } from "../../util/filesystem"
@@ -29,6 +28,7 @@ import { BashTool } from "../../tool/bash"
 import { TodoWriteTool } from "../../tool/todo"
 import { Locale } from "../../util/locale"
 import { allowLabel, resolveApproval } from "../../permission/approval"
+import { serverAuthorizationHeader } from "../../server/auth"
 
 type ToolProps<T extends Tool.Info> = {
   input: Tool.InferParameters<T>
@@ -249,10 +249,6 @@ export const RunCommand = cmd({
         describe: "fork the session before continuing (requires --continue or --session)",
         type: "boolean",
       })
-      .option("share", {
-        type: "boolean",
-        describe: "share the session",
-      })
       .option("model", {
         type: "string",
         alias: ["m"],
@@ -393,21 +389,6 @@ export const RunCommand = cmd({
       const name = title()
       const result = await sdk.session.create({ title: name, permission: rules })
       return result.data?.id
-    }
-
-    async function share(sdk: NumasecClient, sessionID: string) {
-      const cfg = await sdk.config.get()
-      if (!cfg.data) return
-      if (cfg.data.share !== "auto" && !Flag.NUMASEC_AUTO_SHARE && !args.share) return
-      const res = await sdk.session.share({ sessionID }).catch((error) => {
-        if (error instanceof Error && error.message.includes("disabled")) {
-          UI.println(UI.Style.TEXT_DANGER_BOLD + "!  " + error.message)
-        }
-        return { error }
-      })
-      if (!res.error && "data" in res && res.data?.share?.url) {
-        UI.println(UI.Style.TEXT_INFO_BOLD + "~  " + res.data.share.url)
-      }
     }
 
     async function execute(sdk: NumasecClient) {
@@ -636,7 +617,6 @@ export const RunCommand = cmd({
         UI.error("Session not found")
         process.exit(1)
       }
-      await share(sdk, sessionID)
 
       loop().catch((e) => {
         console.error(e)
@@ -666,10 +646,10 @@ export const RunCommand = cmd({
 
     if (args.attach) {
       const headers = (() => {
-        const password = args.password ?? process.env.NUMASEC_SERVER_PASSWORD
-        if (!password) return undefined
-        const username = process.env.NUMASEC_SERVER_USERNAME ?? "numasec"
-        const auth = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+        const auth = serverAuthorizationHeader({
+          password: args.password ?? process.env.NUMASEC_SERVER_PASSWORD,
+        })
+        if (!auth) return undefined
         return { Authorization: auth }
       })()
       const sdk = createNumasecClient({ baseUrl: args.attach, directory, headers })

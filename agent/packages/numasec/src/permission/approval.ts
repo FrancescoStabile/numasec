@@ -29,6 +29,7 @@ const MEDIUM = new Set<string>([
   "build_chains",
   "derive_attack_paths",
   "generate_report",
+  "report_status",
   "kb_search",
   "pentest_plan",
 ])
@@ -41,6 +42,7 @@ const HIGH = new Set<string>([
   "task",
   "doom_loop",
   "external_directory",
+  "external_directory_mutation",
   "exec_command",
   "security_shell",
   "browser",

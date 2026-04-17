@@ -6,6 +6,7 @@
  */
 
 import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface GraphqlResult {
   vulnerable: boolean
@@ -47,7 +48,7 @@ const INTROSPECTION_QUERY = `{
 async function graphqlRequest(
   url: string,
   query: string,
-  options: { headers?: Record<string, string>; cookies?: string; timeout?: number } = {},
+  options: { headers?: Record<string, string>; cookies?: string; timeout?: number; sessionID?: SessionID | string } = {},
 ): Promise<{ data: unknown; errors?: unknown[]; status: number; body: string }> {
   const resp = await httpRequest(url, {
     method: "POST",
@@ -58,6 +59,7 @@ async function graphqlRequest(
     body: JSON.stringify({ query }),
     cookies: options.cookies,
     timeout: options.timeout ?? 15_000,
+    sessionID: options.sessionID,
   })
 
   let data: unknown
@@ -78,7 +80,7 @@ async function graphqlRequest(
  */
 async function testIntrospection(
   url: string,
-  options: { headers?: Record<string, string>; cookies?: string; timeout?: number },
+  options: { headers?: Record<string, string>; cookies?: string; timeout?: number; sessionID?: SessionID | string },
 ): Promise<{ finding?: GraphqlFinding; schema?: GraphqlSchema }> {
   const resp = await graphqlRequest(url, INTROSPECTION_QUERY, options)
 
@@ -128,7 +130,7 @@ async function testIntrospection(
  */
 async function testDepthAttack(
   url: string,
-  options: { headers?: Record<string, string>; cookies?: string; timeout?: number },
+  options: { headers?: Record<string, string>; cookies?: string; timeout?: number; sessionID?: SessionID | string },
 ): Promise<GraphqlFinding | undefined> {
   // Build a deeply nested query
   let query = "{ __typename"
@@ -157,7 +159,7 @@ async function testDepthAttack(
  */
 async function testBatching(
   url: string,
-  options: { headers?: Record<string, string>; cookies?: string; timeout?: number },
+  options: { headers?: Record<string, string>; cookies?: string; timeout?: number; sessionID?: SessionID | string },
 ): Promise<GraphqlFinding | undefined> {
   const batchQuery = JSON.stringify([
     { query: "{ __typename }" },
@@ -173,6 +175,7 @@ async function testBatching(
     body: batchQuery,
     cookies: options.cookies,
     timeout: options.timeout ?? 15_000,
+    sessionID: options.sessionID,
   })
 
   try {
@@ -201,6 +204,7 @@ export async function testGraphql(
     headers?: Record<string, string>
     cookies?: string
     timeout?: number
+    sessionID?: SessionID | string
   } = {},
 ): Promise<GraphqlResult> {
   const findings: GraphqlFinding[] = []

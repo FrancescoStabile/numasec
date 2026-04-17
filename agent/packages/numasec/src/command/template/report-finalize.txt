@@ -1,0 +1,22 @@
+Finalize the report through the closure-aware report path.
+
+Arguments: $ARGUMENTS
+
+Parse arguments as:
+- `markdown|html|sarif` optional format (default: markdown)
+- `--out <path>` optional output file path
+- `--working` optional override to force a working draft instead of final mode
+- `--note <text>` optional operator note to embed in the rendered report
+
+Call `finalize_report` with:
+- `format`
+- `output_path` when `--out` is present
+- `mode="working"` only when `--working` is present
+- otherwise keep the default final-mode closure gate
+- `note` from `--note <text>` when present
+- `include_ids=true`
+
+Then summarize:
+- whether final export succeeded or is still blocked
+- blocker count and next operator commands when blocked
+- report state and output path when successful

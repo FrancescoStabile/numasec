@@ -9,7 +9,6 @@ import { basicAuth } from "hono/basic-auth"
 import z from "zod"
 import { Provider } from "../provider/provider"
 import { NamedError } from "@numasec/util/error"
-import { LSP } from "../lsp"
 import { Format } from "../format"
 import { TuiRoutes } from "./routes/tui"
 import { Instance } from "../project/instance"
@@ -46,6 +45,7 @@ import { GlobalRoutes } from "./routes/global"
 import { MDNS } from "./mdns"
 import { lazy } from "@/util/lazy"
 import { initProjectors } from "./projectors"
+import { resolveServerAuthPolicy, type ServerBasicAuth } from "./auth"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -74,7 +74,7 @@ export namespace Server {
 
   export const Default = lazy(() => createApp({}))
 
-  export const createApp = (opts: { cors?: string[] }): Hono => {
+  export const createApp = (opts: { cors?: string[]; auth?: ServerBasicAuth }): Hono => {
     const app = new Hono()
     return app
       .onError((err, c) => {
@@ -100,10 +100,11 @@ export namespace Server {
         // Allow CORS preflight requests to succeed without auth.
         // Browser clients sending Authorization headers will preflight with OPTIONS.
         if (c.req.method === "OPTIONS") return next()
-        const password = Flag.NUMASEC_SERVER_PASSWORD
-        if (!password) return next()
-        const username = Flag.NUMASEC_SERVER_USERNAME ?? "numasec"
-        return basicAuth({ username, password })(c, next)
+        if (!opts.auth) return next()
+        return basicAuth({
+          username: opts.auth.username,
+          password: opts.auth.password,
+        })(c, next)
       })
       .use(async (c, next) => {
         const skipLogging = c.req.path === "/log"
@@ -130,13 +131,6 @@ export namespace Server {
 
             if (input.startsWith("http://localhost:")) return input
             if (input.startsWith("http://127.0.0.1:")) return input
-            if (
-              input === "tauri://localhost" ||
-              input === "http://tauri.localhost" ||
-              input === "https://tauri.localhost"
-            )
-              return input
-
             // *.numasec.ai (https only, adjust if needed)
             if (/^https:\/\/([a-z0-9-]+\.)*numasec\.ai$/.test(input)) {
               return input
@@ -477,27 +471,6 @@ export namespace Server {
         },
       )
       .get(
-        "/lsp",
-        describeRoute({
-          summary: "Get LSP status",
-          description: "Get LSP server status",
-          operationId: "lsp.status",
-          responses: {
-            200: {
-              description: "LSP server status",
-              content: {
-                "application/json": {
-                  schema: resolver(LSP.Status.array()),
-                },
-              },
-            },
-          },
-        }),
-        async (c) => {
-          return c.json(await LSP.status())
-        },
-      )
-      .get(
         "/formatter",
         describeRoute({
           summary: "Get formatter status",
@@ -545,7 +518,7 @@ export namespace Server {
           })
           const match = response.headers.get("content-type")?.includes("text/html")
             ? (await response.clone().text()).match(
-                /<script\b(?![^>]*\bsrc\s*=)[^>]*\bid=(['"])oc-theme-preload-script\1[^>]*>([\s\S]*?)<\/script>/i,
+                /<script\b(?![^>]*\bsrc\s*=)[^>]*\bid=(['"])numasec-theme-preload-script\1[^>]*>([\s\S]*?)<\/script>/i,
               )
             : undefined
           const hash = match ? createHash("sha256").update(match[2]).digest("base64") : ""
@@ -581,7 +554,11 @@ export namespace Server {
     cors?: string[]
   }) {
     url = new URL(`http://${opts.hostname}:${opts.port}`)
-    const app = createApp(opts)
+    const authPolicy = resolveServerAuthPolicy(opts.hostname)
+    const app = createApp({
+      cors: opts.cors,
+      auth: authPolicy.auth,
+    })
     const args = {
       hostname: opts.hostname,
       idleTimeout: 0,
@@ -616,6 +593,9 @@ export namespace Server {
       return originalStop(closeActiveConnections)
     }
 
-    return server
+    return Object.assign(server, {
+      auth: authPolicy.auth,
+      authPolicy,
+    })
   }
 }

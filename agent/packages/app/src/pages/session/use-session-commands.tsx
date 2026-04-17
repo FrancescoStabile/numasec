@@ -129,116 +129,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     return permission.isAutoAcceptingDirectory(sdk.directory)
   }
   command.register("session", () => {
-    const share =
-      sync.data.config.share === "disabled"
-        ? []
-        : [
-            sessionCommand({
-              id: "session.share",
-              title: info()?.share?.url
-                ? language.t("session.share.copy.copyLink")
-                : language.t("command.session.share"),
-              description: info()?.share?.url
-                ? language.t("toast.session.share.success.description")
-                : language.t("command.session.share.description"),
-              slash: "share",
-              disabled: !params.id,
-              onSelect: async () => {
-                if (!params.id) return
-
-                const write = (value: string) => {
-                  const body = typeof document === "undefined" ? undefined : document.body
-                  if (body) {
-                    const textarea = document.createElement("textarea")
-                    textarea.value = value
-                    textarea.setAttribute("readonly", "")
-                    textarea.style.position = "fixed"
-                    textarea.style.opacity = "0"
-                    textarea.style.pointerEvents = "none"
-                    body.appendChild(textarea)
-                    textarea.select()
-                    const copied = document.execCommand("copy")
-                    body.removeChild(textarea)
-                    if (copied) return Promise.resolve(true)
-                  }
-
-                  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-                  if (!clipboard?.writeText) return Promise.resolve(false)
-                  return clipboard.writeText(value).then(
-                    () => true,
-                    () => false,
-                  )
-                }
-
-                const copy = async (url: string, existing: boolean) => {
-                  const ok = await write(url)
-                  if (!ok) {
-                    showToast({
-                      title: language.t("toast.session.share.copyFailed.title"),
-                      variant: "error",
-                    })
-                    return
-                  }
-
-                  showToast({
-                    title: existing
-                      ? language.t("session.share.copy.copied")
-                      : language.t("toast.session.share.success.title"),
-                    description: language.t("toast.session.share.success.description"),
-                    variant: "success",
-                  })
-                }
-
-                const existing = info()?.share?.url
-                if (existing) {
-                  await copy(existing, true)
-                  return
-                }
-
-                const url = await sdk.client.session
-                  .share({ sessionID: params.id })
-                  .then((res) => res.data?.share?.url)
-                  .catch(() => undefined)
-                if (!url) {
-                  showToast({
-                    title: language.t("toast.session.share.failed.title"),
-                    description: language.t("toast.session.share.failed.description"),
-                    variant: "error",
-                  })
-                  return
-                }
-
-                await copy(url, false)
-              },
-            }),
-            sessionCommand({
-              id: "session.unshare",
-              title: language.t("command.session.unshare"),
-              description: language.t("command.session.unshare.description"),
-              slash: "unshare",
-              disabled: !params.id || !info()?.share?.url,
-              onSelect: async () => {
-                if (!params.id) return
-                await sdk.client.session
-                  .unshare({ sessionID: params.id })
-                  .then(() =>
-                    showToast({
-                      title: language.t("toast.session.unshare.success.title"),
-                      description: language.t("toast.session.unshare.success.description"),
-                      variant: "success",
-                    }),
-                  )
-                  .catch(() =>
-                    showToast({
-                      title: language.t("toast.session.unshare.failed.title"),
-                      description: language.t("toast.session.unshare.failed.description"),
-                      variant: "error",
-                    }),
-                  )
-              },
-            }),
-          ]
-
     return [
       sessionCommand({
         id: "session.new",
@@ -501,7 +391,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           })
         },
       }),
-      ...share,
     ]
   })
 }

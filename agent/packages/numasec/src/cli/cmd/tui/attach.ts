@@ -5,6 +5,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { existsSync } from "fs"
+import { serverAuthorizationHeader } from "@/server/auth"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
@@ -56,14 +57,15 @@ export const AttachCommand = cmd({
           process.chdir(args.dir)
           return process.cwd()
         } catch {
-          // If the directory doesn't exist locally (remote attach), pass it through.
+          // Preserve the requested path so the attached server can resolve it if needed.
           return args.dir
         }
       })()
       const headers = (() => {
-        const password = args.password ?? process.env.NUMASEC_SERVER_PASSWORD
-        if (!password) return undefined
-        const auth = `Basic ${Buffer.from(`numasec:${password}`).toString("base64")}`
+        const auth = serverAuthorizationHeader({
+          password: args.password ?? process.env.NUMASEC_SERVER_PASSWORD,
+        })
+        if (!auth) return undefined
         return { Authorization: auth }
       })()
       const config = await Instance.provide({

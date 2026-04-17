@@ -5,6 +5,7 @@ import { Database } from "../storage/db"
 import { buildChainGroups } from "./chain-builder"
 import { EvidenceEdgeTable, EvidenceNodeTable } from "./evidence.sql"
 import { CoverageTable, FindingTable } from "./security.sql"
+import { canonicalSecuritySessionID } from "./security-session"
 
 type FindingRow = (typeof FindingTable)["$inferSelect"]
 
@@ -77,48 +78,45 @@ function clusterKey(url: string): string {
 }
 
 export function persistAttackPathProjection(sessionID: SessionID, result: DeriveAttackPathResult) {
-  Database.use((db) =>
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
+  Database.transaction((db) => {
     db
       .update(FindingTable)
       .set({
         chain_id: "",
       })
-      .where(eq(FindingTable.session_id, sessionID))
-      .run(),
-  )
-  for (const item of result.chains) {
-    for (const finding of item.findings) {
-      Database.use((db) =>
+      .where(eq(FindingTable.session_id, currentSessionID))
+      .run()
+
+    for (const item of result.chains) {
+      for (const finding of item.findings) {
         db
           .update(FindingTable)
           .set({
             chain_id: item.id,
           })
-          .where(eq(FindingTable.id, finding.id))
-          .run(),
-      )
+          .where(and(eq(FindingTable.session_id, currentSessionID), eq(FindingTable.id, finding.id)))
+          .run()
+      }
     }
-  }
 
-  Database.use((db) =>
     db
       .delete(CoverageTable)
-      .where(eq(CoverageTable.session_id, sessionID))
-      .run(),
-  )
-  for (const entry of result.owaspCounts.entries()) {
-    Database.use((db) =>
+      .where(eq(CoverageTable.session_id, currentSessionID))
+      .run()
+
+    for (const entry of result.owaspCounts.entries()) {
       db
         .insert(CoverageTable)
         .values({
-          session_id: sessionID,
+          session_id: currentSessionID,
           category: entry[0],
           tested: true,
           finding_count: entry[1],
         })
-        .run(),
-    )
-  }
+        .run()
+    }
+  })
 }
 
 function hostKey(url: string): string {
@@ -250,7 +248,8 @@ function chainTitle(items: FindingRow[]): string {
 }
 
 export function deriveAttackPathProjection(input: DeriveAttackPathInput): DeriveAttackPathResult {
-  const conditions = [eq(FindingTable.session_id, input.sessionID)]
+  const sessionID = canonicalSecuritySessionID(input.sessionID)
+  const conditions = [eq(FindingTable.session_id, sessionID)]
   if (input.severity) conditions.push(eq(FindingTable.severity, input.severity))
   if (!input.includeFalsePositive) conditions.push(eq(FindingTable.false_positive, false))
   const findingsAll = Database.use((db) =>
@@ -277,14 +276,14 @@ export function deriveAttackPathProjection(input: DeriveAttackPathInput): Derive
     db
       .select()
       .from(EvidenceNodeTable)
-      .where(eq(EvidenceNodeTable.session_id, input.sessionID))
+      .where(eq(EvidenceNodeTable.session_id, sessionID))
       .all(),
   )
   const edgeRows = Database.use((db) =>
     db
       .select()
       .from(EvidenceEdgeTable)
-      .where(eq(EvidenceEdgeTable.session_id, input.sessionID))
+      .where(eq(EvidenceEdgeTable.session_id, sessionID))
       .all(),
   )
 

@@ -110,10 +110,6 @@ export const dict = {
   "command.session.compact.description": "总结会话以减少上下文大小",
   "command.session.fork": "从消息分叉",
   "command.session.fork.description": "从之前的消息创建新会话",
-  "command.session.share": "分享会话",
-  "command.session.share.description": "分享此会话并将链接复制到剪贴板",
-  "command.session.unshare": "取消分享会话",
-  "command.session.unshare.description": "停止分享此会话",
 
   "palette.search.placeholder": "搜索文件、命令和会话",
   "palette.empty": "未找到结果",
@@ -433,15 +429,6 @@ export const dict = {
   "toast.file.listFailed.title": "列出文件失败",
   "toast.context.noLineSelection.title": "未选择行",
   "toast.context.noLineSelection.description": "请先在文件标签中选择行范围。",
-  "toast.session.share.copyFailed.title": "无法复制链接到剪贴板",
-  "toast.session.share.success.title": "会话已分享",
-  "toast.session.share.success.description": "分享链接已复制到剪贴板",
-  "toast.session.share.failed.title": "分享会话失败",
-  "toast.session.share.failed.description": "分享会话时发生错误",
-  "toast.session.unshare.success.title": "已取消分享会话",
-  "toast.session.unshare.success.description": "会话已成功取消分享",
-  "toast.session.unshare.failed.title": "取消分享失败",
-  "toast.session.unshare.failed.description": "取消分享会话时发生错误",
   "toast.session.listFailed.title": "无法加载 {{project}} 的会话",
   "toast.update.title": "有可用更新",
   "toast.update.description": "Numasec 有新版本 ({{version}}) 可安装。",
@@ -549,24 +536,10 @@ export const dict = {
   "status.popover.ariaLabel": "服务器配置",
   "status.popover.tab.servers": "服务器",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "插件",
   "status.popover.action.manageServers": "管理服务器",
 
-  "session.share.popover.title": "发布到网页",
-  "session.share.popover.description.shared": "此会话已在网页上公开。任何拥有链接的人都可以访问。",
-  "session.share.popover.description.unshared": "在网页上公开分享此会话。任何拥有链接的人都可以访问。",
-  "session.share.action.share": "分享",
-  "session.share.action.publish": "发布",
-  "session.share.action.publishing": "正在发布...",
-  "session.share.action.unpublish": "取消发布",
-  "session.share.action.unpublishing": "正在取消发布...",
-  "session.share.action.view": "查看",
-  "session.share.copy.copied": "已复制",
-  "session.share.copy.copyLink": "复制链接",
 
-  "lsp.tooltip.none": "没有 LSP 服务器",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "正在加载提示...",
 
@@ -604,17 +577,13 @@ export const dict = {
   "sidebar.project.viewAllSessions": "查看全部会话",
   "sidebar.project.clearNotifications": "清除通知",
 
-  "app.name.desktop": "Numasec Desktop",
+  "app.name": "Numasec",
 
-  "settings.section.desktop": "桌面",
+  "settings.section.application": "桌面",
   "settings.section.server": "服务器",
 
   "settings.tab.general": "通用",
   "settings.tab.shortcuts": "快捷键",
-
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "WSL 集成",
-  "settings.desktop.wsl.description": "在 Windows 的 WSL 环境中运行 Numasec 服务器。",
 
   "settings.general.section.appearance": "外观",
   "settings.general.section.notifications": "系统通知",
@@ -801,7 +770,6 @@ export const dict = {
   "session.delete.confirm": '删除会话 "{{name}}"？',
   "session.delete.button": "删除会话",
 
-  "workspace.new": "新建工作区",
   "workspace.type.local": "本地",
   "workspace.type.sandbox": "沙盒",
   "workspace.create.failed.title": "创建工作区失败",

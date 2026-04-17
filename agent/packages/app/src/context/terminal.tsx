@@ -3,7 +3,6 @@ import { createSimpleContext } from "@numasec/ui/context"
 import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { useSDK } from "./sdk"
-import type { Platform } from "./platform"
 import { defaultTitle, titleNumber } from "./terminal-title"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 
@@ -110,14 +109,14 @@ const trimTerminal = (pty: LocalPTY) => {
   }
 }
 
-export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[], platform?: Platform) {
+export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[]) {
   const key = getWorkspaceTerminalCacheKey(dir)
   for (const cache of caches) {
     const entry = cache.get(key)
     entry?.value.clear()
   }
 
-  removePersisted(Persist.workspace(dir, "terminal"), platform)
+  removePersisted(Persist.workspace(dir, "terminal"))
 
   const legacy = new Set(getLegacyTerminalStorageKeys(dir))
   for (const id of sessionIDs ?? []) {
@@ -126,7 +125,7 @@ export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[], plat
     }
   }
   for (const key of legacy) {
-    removePersisted({ key }, platform)
+    removePersisted({ key })
   }
 }
 

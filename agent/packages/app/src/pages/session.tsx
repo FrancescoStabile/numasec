@@ -556,7 +556,6 @@ export default function Page() {
   const reviewDiffs = createMemo(() => (store.changes === "session" ? diffs() : turnDiffs()))
 
   const newSessionWorktree = createMemo(() => {
-    if (store.newSessionWorktree === "create") return "create"
     const project = sync.project
     if (project && sdk.directory !== project.worktree) return sdk.directory
     return "main"

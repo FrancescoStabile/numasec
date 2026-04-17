@@ -26,6 +26,38 @@ const IMPACT_MAP: Record<string, string> = {
   info: "Informational finding",
 }
 
+function canonicalTitle(input: string) {
+  const value = input
+    .replace(/\s+(in|on|at)\s+.*$/i, "")
+    .trim()
+  if (/^default credentials work for\s+/i.test(value)) return "Default credentials work"
+  if (/^common credentials work for\s+/i.test(value)) return "Credentials work"
+  if (/^mass assignment accepted protected field\s+/i.test(value)) return "Mass assignment accepted protected field"
+  return value
+}
+
+function signature(input: Finding) {
+  return [
+    input.tool_used || "",
+    input.cwe_id || "",
+    input.method || "",
+    canonicalTitle(input.title).toLowerCase(),
+  ].join("|")
+}
+
+function representatives(input: Finding[]) {
+  const out: Finding[] = []
+  const seen = new Set<string>()
+  const ranked = [...input].sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 5) - (SEVERITY_ORDER[b.severity] ?? 5))
+  for (const item of ranked) {
+    const key = signature(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out
+}
+
 /** Build attack chain groups from a list of findings. */
 export function buildChainGroups(findings: Finding[]): ChainGroup[] {
   // Group by URL base path
@@ -49,21 +81,20 @@ export function buildChainGroups(findings: Finding[]): ChainGroup[] {
   let chainIdx = 0
 
   for (const [_path, group] of pathGroups) {
-    if (group.length < 2) continue
+    const items = representatives(group)
+    if (items.length < 2) continue
 
     chainIdx++
-    group.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 5) - (SEVERITY_ORDER[b.severity] ?? 5))
-
-    const titles = group.map((f) => f.title.replace(/\s+(in|on|at)\s+.*$/i, ""))
+    const titles = items.map((f) => canonicalTitle(f.title))
     const uniqueTitles = [...new Set(titles)]
     const chainTitle = uniqueTitles.slice(0, 3).join(" → ")
 
     chains.push({
       id: `CHAIN-${String(chainIdx).padStart(3, "0")}`,
       title: chainTitle,
-      findings: group,
-      severity: group[0].severity,
-      impact: IMPACT_MAP[group[0].severity] ?? "Unknown impact",
+      findings: items,
+      severity: items[0].severity,
+      impact: IMPACT_MAP[items[0].severity] ?? "Unknown impact",
     })
   }
 

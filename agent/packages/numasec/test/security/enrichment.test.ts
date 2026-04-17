@@ -65,6 +65,12 @@ describe("generateFindingId", () => {
     expect(id1).not.toBe(id2)
   })
 
+  test("session id scopes otherwise identical findings", () => {
+    const id1 = generateFindingId({ title: "SQL Injection", severity: "high", url: "http://a.com", sessionID: "sess-a" })
+    const id2 = generateFindingId({ title: "SQL Injection", severity: "high", url: "http://a.com", sessionID: "sess-b" })
+    expect(id1).not.toBe(id2)
+  })
+
   test("missing optional fields use empty strings", () => {
     const id = generateFindingId({ title: "Test Finding", severity: "info" })
     expect(id).toMatch(/^SSEC-/)

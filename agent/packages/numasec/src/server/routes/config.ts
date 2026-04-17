@@ -7,6 +7,7 @@ import { mapValues } from "remeda"
 import { errors } from "../error"
 import { Log } from "../../util/log"
 import { lazy } from "../../util/lazy"
+import { redactConfigInfo, redactProviderInfo } from "../secret-redaction"
 
 const log = Log.create({ service: "server" })
 
@@ -30,7 +31,7 @@ export const ConfigRoutes = lazy(() =>
         },
       }),
       async (c) => {
-        return c.json(await Config.get())
+        return c.json(redactConfigInfo(await Config.get()))
       },
     )
     .patch(
@@ -55,7 +56,7 @@ export const ConfigRoutes = lazy(() =>
       async (c) => {
         const config = c.req.valid("json")
         await Config.update(config)
-        return c.json(config)
+        return c.json(redactConfigInfo(config))
       },
     )
     .get(
@@ -83,9 +84,10 @@ export const ConfigRoutes = lazy(() =>
       async (c) => {
         using _ = log.time("providers")
         const providers = await Provider.list().then((x) => mapValues(x, (item) => item))
+        const visible = mapValues(providers, (item) => redactProviderInfo(item))
         return c.json({
-          providers: Object.values(providers),
-          default: mapValues(providers, (item) => Provider.sort(Object.values(item.models))[0].id),
+          providers: Object.values(visible),
+          default: mapValues(visible, (item) => Provider.sort(Object.values(item.models))[0].id),
         })
       },
     ),

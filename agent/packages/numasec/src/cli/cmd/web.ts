@@ -2,7 +2,6 @@ import { Server } from "../../server/server"
 import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
-import { Flag } from "../../flag/flag"
 import open from "open"
 import { networkInterfaces } from "os"
 
@@ -33,11 +32,17 @@ export const WebCommand = cmd({
   builder: (yargs) => withNetworkOptions(yargs),
   describe: "start numasec server and open web interface",
   handler: async (args) => {
-    if (!Flag.NUMASEC_SERVER_PASSWORD) {
-      UI.println(UI.Style.TEXT_WARNING_BOLD + "!  " + "NUMASEC_SERVER_PASSWORD is not set; server is unsecured.")
-    }
     const opts = await resolveNetworkOptions(args)
     const server = Server.listen(opts)
+    if (server.auth) {
+      UI.println(UI.Style.TEXT_INFO_BOLD + "  Server auth:       ", UI.Style.TEXT_NORMAL, `enabled (${server.auth.username})`)
+    }
+    if (!server.auth && server.authPolicy.explicitInsecureNoAuth) {
+      UI.println(
+        UI.Style.TEXT_WARNING_BOLD + "!  ",
+        "External server auth explicitly disabled via NUMASEC_SERVER_INSECURE_NO_AUTH=1.",
+      )
+    }
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()

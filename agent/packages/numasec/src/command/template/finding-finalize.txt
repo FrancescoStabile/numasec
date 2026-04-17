@@ -1,0 +1,17 @@
+Finalize a finding through the closure path.
+
+Arguments: $ARGUMENTS
+
+1. Call `report_status` and inspect blocker objects first.
+2. Match the argument against a blocker or finding by:
+   - exact `SSEC-*` id
+   - exact provisional blocker `finding_id`
+   - title substring when the match is unambiguous
+3. If no argument is provided, use the first `provisional_finding` blocker.
+4. Call `finalize_finding` with:
+   - `finding_id` from the matched blocker or finding
+   - only additional overrides that are truly needed
+5. Then summarize:
+   - whether the finding is now verified or still provisional
+   - any remaining missing contract parts
+   - the next operator command if more closure work is still required

@@ -31,13 +31,14 @@ export const JsAnalyzeTool = Tool.define("js_analyze", {
     await ctx.ask({
       permission: "js_analyze",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url } as Record<string, any>,
     })
 
     const profile = await runObserveSurfaceProfile(
       {
         target: params.url,
+        sessionID: ctx.sessionID,
         modes: ["js"],
       },
       {

@@ -83,10 +83,6 @@ export const dict = {
   "command.session.compact.description": "สรุปเซสชันเพื่อลดขนาดบริบท",
   "command.session.fork": "แตกแขนงจากข้อความ",
   "command.session.fork.description": "สร้างเซสชันใหม่จากข้อความก่อนหน้า",
-  "command.session.share": "แชร์เซสชัน",
-  "command.session.share.description": "แชร์เซสชันนี้และคัดลอก URL ไปยังคลิปบอร์ด",
-  "command.session.unshare": "ยกเลิกการแชร์เซสชัน",
-  "command.session.unshare.description": "หยุดการแชร์เซสชันนี้",
 
   "palette.search.placeholder": "ค้นหาไฟล์ คำสั่ง และเซสชัน",
   "palette.empty": "ไม่พบผลลัพธ์",
@@ -425,16 +421,7 @@ export const dict = {
   "toast.context.noLineSelection.title": "ไม่มีการเลือกบรรทัด",
   "toast.context.noLineSelection.description": "เลือกช่วงบรรทัดในแท็บไฟล์ก่อน",
 
-  "toast.session.share.copyFailed.title": "ไม่สามารถคัดลอก URL ไปยังคลิปบอร์ด",
-  "toast.session.share.success.title": "แชร์เซสชันแล้ว",
-  "toast.session.share.success.description": "คัดลอก URL แชร์ไปยังคลิปบอร์ดแล้ว!",
-  "toast.session.share.failed.title": "ไม่สามารถแชร์เซสชัน",
-  "toast.session.share.failed.description": "เกิดข้อผิดพลาดระหว่างการแชร์เซสชัน",
 
-  "toast.session.unshare.success.title": "ยกเลิกการแชร์เซสชันแล้ว",
-  "toast.session.unshare.success.description": "ยกเลิกการแชร์เซสชันสำเร็จ!",
-  "toast.session.unshare.failed.title": "ไม่สามารถยกเลิกการแชร์เซสชัน",
-  "toast.session.unshare.failed.description": "เกิดข้อผิดพลาดระหว่างการยกเลิกการแชร์เซสชัน",
 
   "toast.session.listFailed.title": "ไม่สามารถโหลดเซสชันสำหรับ {{project}}",
 
@@ -551,24 +538,10 @@ export const dict = {
   "status.popover.ariaLabel": "การกำหนดค่าเซิร์ฟเวอร์",
   "status.popover.tab.servers": "เซิร์ฟเวอร์",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "ปลั๊กอิน",
   "status.popover.action.manageServers": "จัดการเซิร์ฟเวอร์",
 
-  "session.share.popover.title": "เผยแพร่บนเว็บ",
-  "session.share.popover.description.shared": "เซสชันนี้เป็นสาธารณะบนเว็บ สามารถเข้าถึงได้โดยผู้ที่มีลิงก์",
-  "session.share.popover.description.unshared": "แชร์เซสชันสาธารณะบนเว็บ จะเข้าถึงได้โดยผู้ที่มีลิงก์",
-  "session.share.action.share": "แชร์",
-  "session.share.action.publish": "เผยแพร่",
-  "session.share.action.publishing": "กำลังเผยแพร่...",
-  "session.share.action.unpublish": "ยกเลิกการเผยแพร่",
-  "session.share.action.unpublishing": "กำลังยกเลิกการเผยแพร่...",
-  "session.share.action.view": "ดู",
-  "session.share.copy.copied": "คัดลอกแล้ว",
-  "session.share.copy.copyLink": "คัดลอกลิงก์",
 
-  "lsp.tooltip.none": "ไม่มีเซิร์ฟเวอร์ LSP",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "กำลังโหลดพร้อมท์...",
   "terminal.loading": "กำลังโหลดเทอร์มินัล...",
@@ -605,15 +578,12 @@ export const dict = {
   "sidebar.project.viewAllSessions": "ดูเซสชันทั้งหมด",
   "sidebar.project.clearNotifications": "ล้างการแจ้งเตือน",
 
-  "app.name.desktop": "Numasec Desktop",
+  "app.name": "Numasec",
 
-  "settings.section.desktop": "เดสก์ท็อป",
+  "settings.section.application": "เดสก์ท็อป",
   "settings.section.server": "เซิร์ฟเวอร์",
   "settings.tab.general": "ทั่วไป",
   "settings.tab.shortcuts": "ทางลัด",
-  "settings.desktop.section.wsl": "WSL",
-  "settings.desktop.wsl.title": "การรวม WSL",
-  "settings.desktop.wsl.description": "เรียกใช้เซิร์ฟเวอร์ Numasec ภายใน WSL บน Windows",
 
   "settings.general.section.appearance": "รูปลักษณ์",
   "settings.general.section.notifications": "การแจ้งเตือนระบบ",
@@ -803,7 +773,6 @@ export const dict = {
   "session.delete.confirm": 'ลบเซสชัน "{{name}}" หรือไม่?',
   "session.delete.button": "ลบเซสชัน",
 
-  "workspace.new": "พื้นที่ทำงานใหม่",
   "workspace.type.local": "ในเครื่อง",
   "workspace.type.sandbox": "แซนด์บ็อกซ์",
   "workspace.create.failed.title": "ไม่สามารถสร้างพื้นที่ทำงาน",

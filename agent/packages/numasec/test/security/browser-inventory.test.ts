@@ -134,6 +134,11 @@ function snapshot(): BrowserInventorySnapshot {
         content_type: "application/json",
         body: JSON.stringify({
           confirm: "1",
+          filters: {
+            owner: {
+              id: "7",
+            },
+          },
         }),
         label: "Archive project",
       },
@@ -146,7 +151,7 @@ function snapshot(): BrowserInventorySnapshot {
         initiator_url: "https://app.example.com/dashboard",
         resource_type: "fetch",
         content_type: "application/json",
-        body: '{"confirm":"1"}',
+        body: '{"confirm":"1","filters":{"owner":{"id":"7"}}}',
       },
       {
         url: "https://evil.example/api/leak",
@@ -222,14 +227,16 @@ describe("browser inventory", () => {
     expect(archive?.action_kind).toBe("archive")
     expect(archive?.action_target_state).toBe("archived")
     expect(archive?.request_content_type).toBe("application/json")
-    expect(archive?.request_body).toBe('{"confirm":"1"}')
+    expect(archive?.request_body).toBe('{"confirm":"1","filters":{"owner":{"id":"7"}}}')
+    expect(archive?.parameter_names).toEqual(expect.arrayContaining(["confirm", "filters.owner.id"]))
     const verify = routes.find((item) => item.url === "https://app.example.com/api/Projects/11/verify" && item.source_kind === "browser_network")
     expect(verify).toBeDefined()
     expect(verify?.action_kind).toBe("verify")
     expect(verify?.action_target_state).toBe("verified")
     expect(verify?.resource_url).toBe("https://app.example.com/api/Projects/11")
     expect(verify?.response_status).toBe(200)
-    expect(verify?.request_body).toBe('{"confirm":"1"}')
+    expect(verify?.request_body).toBe('{"confirm":"1","filters":{"owner":{"id":"7"}}}')
+    expect(verify?.parameter_names).toEqual(expect.arrayContaining(["confirm", "filters.owner.id"]))
     expect(routes.some((item) => String(item.url).includes("evil.example"))).toBe(false)
   })
 
@@ -267,12 +274,14 @@ describe("browser inventory", () => {
           action_kind: string
           resource_url: string
           request_content_type: string
+          parameter_names: string[]
         }>
       }>
       resources: Array<{
         source_kind: string
         url: string
         action_kind: string
+        parameter_names: string[]
       }>
     }
     const actor = body.by_actor.find((item) => item.actor_email === "spa-user@example.com")
@@ -280,10 +289,84 @@ describe("browser inventory", () => {
     expect(actor?.own_values).toContain("7")
     expect(actor?.unknown_values).toContain("11")
     expect(actor?.actions.some((item) => item.action_kind === "approve" && item.resource_url === "https://app.example.com/api/Projects/11")).toBe(true)
-    expect(actor?.actions.some((item) => item.action_kind === "archive" && item.request_content_type === "application/json")).toBe(true)
+    expect(
+      actor?.actions.some(
+        (item) =>
+          item.action_kind === "archive" &&
+          item.request_content_type === "application/json" &&
+          item.parameter_names.includes("filters.owner.id"),
+      ),
+    ).toBe(true)
     expect(actor?.actions.some((item) => item.action_kind === "verify" && item.resource_url === "https://app.example.com/api/Projects/11")).toBe(true)
     expect(body.resources.some((item) => item.source_kind === "browser_form" && item.url === "https://app.example.com/api/Projects/11/approve")).toBe(true)
     expect(body.resources.some((item) => item.source_kind === "browser_button" && item.url === "https://app.example.com/api/Projects/11/archive")).toBe(true)
-    expect(body.resources.some((item) => item.source_kind === "browser_network" && item.url === "https://app.example.com/api/Projects/11/verify")).toBe(true)
+    expect(
+      body.resources.some(
+        (item) =>
+          item.source_kind === "browser_network" &&
+          item.url === "https://app.example.com/api/Projects/11/verify" &&
+          item.parameter_names.includes("filters.owner.id"),
+      ),
+    ).toBe(true)
+  })
+
+  test("skips disabled actions while retaining generic state-changing labels", () => {
+    const base = snapshot()
+    const envelope = buildBrowserInventoryEnvelope({
+      ...base,
+      actions: [
+        {
+          url: "/api/Profile",
+          method: "POST",
+          source_kind: "browser_button",
+          label: "Save profile",
+        },
+        {
+          url: "/api/Reviews",
+          method: "POST",
+          source_kind: "browser_button",
+          label: "Send the review",
+        },
+        {
+          url: "/api/Reviews",
+          method: "POST",
+          source_kind: "browser_button",
+          label: "Send the review",
+          disabled: true,
+        },
+      ],
+      forms: [],
+      network: [],
+      resources: [],
+    })
+    const routes = envelope.observations.filter((item) => item.family === "resource_inventory")
+    const save = routes.find((item) => item.url === "https://app.example.com/api/Profile")
+    const send = routes.find((item) => item.url === "https://app.example.com/api/Reviews")
+    expect(save?.action_kind).toBe("save")
+    expect(save?.action_target_state).toBe("saved")
+    expect(send?.action_kind).toBe("send")
+    expect(send?.action_target_state).toBe("sent")
+    expect(routes.filter((item) => item.url === "https://app.example.com/api/Reviews")).toHaveLength(1)
+  })
+
+  test("does not treat JSON bodies with equals signs as form payloads", () => {
+    const base = snapshot()
+    const envelope = buildBrowserInventoryEnvelope({
+      ...base,
+      actions: [
+        {
+          url: "/api/Notes",
+          method: "POST",
+          source_kind: "browser_button",
+          label: "Save note",
+          body: '{"note":"value=123"}',
+        },
+      ],
+      forms: [],
+      network: [],
+      resources: [],
+    })
+    const note = envelope.observations.find((item) => item.family === "resource_inventory" && item.url === "https://app.example.com/api/Notes")
+    expect(note?.parameter_names).toEqual(["note"])
   })
 })

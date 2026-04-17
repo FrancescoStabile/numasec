@@ -7,7 +7,7 @@ Command migration note:
 Target: $1
 
 1. Confirm the target and scope for the current session before any active testing.
-2. Probe the target with http_request (GET to $1). Examine: status code, Server header, X-Powered-By, Content-Type, Set-Cookie, response body structure.
+2. Probe the target with http_request (GET to $1). This first target-aware request establishes the session scope. Examine: status code, Server header, X-Powered-By, Content-Type, Set-Cookie, response body structure.
 3. Run recon with checks="ports,tech" for port scanning, service detection, technology fingerprinting.
 4. Run crawl to discover endpoints, forms, JavaScript files, and API routes.
 

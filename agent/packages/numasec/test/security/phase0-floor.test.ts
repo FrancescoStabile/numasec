@@ -82,7 +82,7 @@ async function runTool(tool: Tool.Info, args: Record<string, unknown>, sessionID
 }
 
 describe("phase zero floor regressions", () => {
-  test("projector promotes default credentials, SQLi auth bypass, and verbose error disclosure", async () => {
+  test("projector promotes common credentials, SQLi auth bypass, and verbose error disclosure", async () => {
     const sessionID = "sess-phase0-floor-regression" as SessionID
     seedSession(sessionID)
 
@@ -150,7 +150,7 @@ describe("phase zero floor regressions", () => {
     )
 
     const verified = rows.filter((item) => item.tool_used === "finding_projector" && item.state === "verified")
-    expect(verified.some((item) => item.family === "auth" && item.title.toLowerCase().includes("default credentials"))).toBe(true)
+    expect(verified.some((item) => item.family === "auth" && item.title.toLowerCase().includes("common credentials"))).toBe(true)
     expect(verified.some((item) => item.family === "sql_injection" && item.title.toLowerCase().includes("authentication success"))).toBe(true)
     expect(verified.some((item) => item.family === "error_disclosure")).toBe(true)
   })

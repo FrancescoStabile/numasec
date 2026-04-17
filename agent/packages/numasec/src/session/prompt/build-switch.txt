@@ -5,5 +5,5 @@ You may now run controlled verification and exploitation tests.
 Use the v2 canonical flow: scope -> hypothesis -> evidence -> verification -> finding -> chains/report.
 Prefer primitives (`observe_surface`, `upsert_hypothesis`, `record_evidence`, `verify_assertion`, `upsert_finding`, `derive_attack_paths`).
 Legacy aliases remain supported (`recon`, `crawl`, `dir_fuzz`, `js_analyze`, `security_shell`, `save_finding`, `build_chains`).
-Track OWASP Top 10 coverage with `pentest_plan` and generate final deliverables with `generate_report`.
+Track OWASP Top 10 coverage with `pentest_plan` and generate final deliverables with `finalize_report` (or `generate_report` when you need the raw working render path).
 </system-reminder>

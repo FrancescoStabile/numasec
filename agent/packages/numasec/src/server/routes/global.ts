@@ -12,6 +12,7 @@ import { Log } from "../../util/log"
 import { lazy } from "../../util/lazy"
 import { Config } from "../../config/config"
 import { errors } from "../error"
+import { redactConfigInfo } from "../secret-redaction"
 
 const log = Log.create({ service: "server" })
 
@@ -195,7 +196,7 @@ export const GlobalRoutes = lazy(() =>
         },
       }),
       async (c) => {
-        return c.json(await Config.getGlobal())
+        return c.json(redactConfigInfo(await Config.getGlobal()))
       },
     )
     .patch(
@@ -220,7 +221,7 @@ export const GlobalRoutes = lazy(() =>
       async (c) => {
         const config = c.req.valid("json")
         const next = await Config.updateGlobal(config)
-        return c.json(next)
+        return c.json(redactConfigInfo(next))
       },
     )
     .post(
@@ -293,6 +294,9 @@ export const GlobalRoutes = lazy(() =>
           return c.json({ success: false, error: "Unknown installation method" }, 400)
         }
         const target = c.req.valid("json").target || (await Installation.latest(method))
+        if (target === Installation.VERSION) {
+          return c.json({ success: true as const, version: target })
+        }
         const result = await Installation.upgrade(method, target)
           .then(() => ({ success: true as const, version: target }))
           .catch((e) => ({ success: false as const, error: e instanceof Error ? e.message : String(e) }))

@@ -11,7 +11,7 @@ import fsNode from "fs/promises"
 import { NamedError } from "@numasec/util/error"
 import { Flag } from "../flag/flag"
 import { Auth } from "../auth"
-import { Env } from "../env"
+import { ProviderID } from "../provider/schema"
 import {
   type ParseError as JsoncParseError,
   applyEdits,
@@ -20,7 +20,6 @@ import {
   printParseErrorCode,
 } from "jsonc-parser"
 import { Instance, type InstanceContext } from "../project/instance"
-import { LSPServer } from "../lsp/server"
 import { BunProc } from "@/bun"
 import { Installation } from "@/installation"
 import { ConfigMarkdown } from "./markdown"
@@ -32,7 +31,6 @@ import { Glob } from "../util/glob"
 import { PackageRegistry } from "@/bun/registry"
 import { proxied } from "@/util/proxied"
 import { iife } from "@/util/iife"
-import { Account } from "@/account"
 import { ConfigPaths } from "./paths"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
@@ -40,7 +38,7 @@ import { Lock } from "@/util/lock"
 import { AppFileSystem } from "@/filesystem"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
-import { Duration, Effect, Layer, Option, ServiceMap } from "effect"
+import { Duration, Effect, Layer, ServiceMap } from "effect"
 
 export namespace Config {
   const ModelId = z.string().meta({ $ref: "https://models.dev/model-schema.json#/$defs/Model" })
@@ -489,7 +487,6 @@ export namespace Config {
           webfetch: PermissionAction.optional(),
           websearch: PermissionAction.optional(),
           codesearch: PermissionAction.optional(),
-          lsp: PermissionRule.optional(),
           doom_loop: PermissionAction.optional(),
           skill: PermissionRule.optional(),
         })
@@ -629,8 +626,6 @@ export namespace Config {
       stash_delete: z.string().optional().default("ctrl+d").describe("Delete stash entry"),
       model_provider_list: z.string().optional().default("ctrl+a").describe("Open provider list from model dialog"),
       model_favorite_toggle: z.string().optional().default("ctrl+f").describe("Toggle model favorite status"),
-      session_share: z.string().optional().default("none").describe("Share current session"),
-      session_unshare: z.string().optional().default("none").describe("Unshare current session"),
       session_interrupt: z.string().optional().default("escape").describe("Interrupt current session"),
       session_compact: z.string().optional().default("<leader>c").describe("Compact the session"),
       messages_page_up: z.string().optional().default("pageup,ctrl+alt+b").describe("Scroll messages up by one page"),
@@ -869,25 +864,18 @@ export namespace Config {
         .describe(
           "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
         ),
-      share: z
-        .enum(["manual", "auto", "disabled"])
-        .optional()
-        .describe(
-          "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
-        ),
-      autoshare: z
-        .boolean()
-        .optional()
-        .describe("@deprecated Use 'share' field instead. Share newly created sessions automatically"),
       autoupdate: z
         .union([z.boolean(), z.literal("notify")])
         .optional()
         .describe(
           "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
         ),
-      disabled_providers: z.array(z.string()).optional().describe("Disable providers that are loaded automatically"),
+      disabled_providers: z
+        .array(z.string().regex(ProviderID.pattern))
+        .optional()
+        .describe("Disable providers that are loaded automatically"),
       enabled_providers: z
-        .array(z.string())
+        .array(z.string().regex(ProviderID.pattern))
         .optional()
         .describe("When set, ONLY these providers will be enabled. All other providers will be ignored"),
       model: ModelId.describe("Model to use in the format of provider/model, eg anthropic/claude-2").optional(),
@@ -929,7 +917,7 @@ export namespace Config {
         .optional()
         .describe("Agent configuration, see https://numasec.ai/docs/agents"),
       provider: z
-        .record(z.string(), Provider)
+        .record(z.string().regex(ProviderID.pattern), Provider)
         .optional()
         .describe("Custom provider configurations and model overrides"),
       mcp: z
@@ -960,51 +948,10 @@ export namespace Config {
           ),
         ])
         .optional(),
-      lsp: z
-        .union([
-          z.literal(false),
-          z.record(
-            z.string(),
-            z.union([
-              z.object({
-                disabled: z.literal(true),
-              }),
-              z.object({
-                command: z.array(z.string()),
-                extensions: z.array(z.string()).optional(),
-                disabled: z.boolean().optional(),
-                env: z.record(z.string(), z.string()).optional(),
-                initialization: z.record(z.string(), z.any()).optional(),
-              }),
-            ]),
-          ),
-        ])
-        .optional()
-        .refine(
-          (data) => {
-            if (!data) return true
-            if (typeof data === "boolean") return true
-            const serverIds = new Set(Object.values(LSPServer).map((s) => s.id))
-
-            return Object.entries(data).every(([id, config]) => {
-              if (config.disabled) return true
-              if (serverIds.has(id)) return true
-              return Boolean(config.extensions)
-            })
-          },
-          {
-            error: "For custom LSP servers, 'extensions' array is required.",
-          },
-        ),
       instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
       layout: Layout.optional().describe("@deprecated Always uses stretch layout."),
       permission: Permission.optional(),
       tools: z.record(z.string(), z.boolean()).optional(),
-      enterprise: z
-        .object({
-          url: z.string().optional().describe("Enterprise URL"),
-        })
-        .optional(),
       compaction: z
         .object({
           auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
@@ -1140,13 +1087,12 @@ export namespace Config {
     }),
   )
 
-  export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Auth.Service | Account.Service> =
+  export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Auth.Service> =
     Layer.effect(
       Service,
       Effect.gen(function* () {
         const fs = yield* AppFileSystem.Service
         const authSvc = yield* Auth.Service
-        const accountSvc = yield* Account.Service
 
         const readConfigFile = Effect.fnUntraced(function* (filepath: string) {
           return yield* fs.readFileString(filepath).pipe(
@@ -1160,7 +1106,7 @@ export namespace Config {
 
         const loadConfig = Effect.fnUntraced(function* (
           text: string,
-          options: { path: string } | { dir: string; source: string },
+          options: { path: string } | { dir: string; source: string; env?: Record<string, string | undefined> },
         ) {
           const original = text
           const source = "path" in options ? options.path : options.source
@@ -1168,7 +1114,7 @@ export namespace Config {
           const data = yield* Effect.promise(() =>
             ConfigPaths.parseText(
               text,
-              "path" in options ? options.path : { source: options.source, dir: options.dir },
+              "path" in options ? options.path : { source: options.source, dir: options.dir, env: options.env },
             ),
           )
 
@@ -1176,11 +1122,21 @@ export namespace Config {
             if (!data || typeof data !== "object" || Array.isArray(data)) return data
             const copy = { ...(data as Record<string, unknown>) }
             const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
-            if (!hadLegacy) return copy
+            const hadRemoved = "share" in copy || "autoshare" in copy || "enterprise" in copy || "lsp" in copy
+            if (!hadLegacy && !hadRemoved) return copy
             delete copy.theme
             delete copy.keybinds
             delete copy.tui
-            log.warn("tui keys in numasec config are deprecated; move them to tui.json", { path: source })
+            delete copy.share
+            delete copy.autoshare
+            delete copy.enterprise
+            delete copy.lsp
+            if (hadLegacy) {
+              log.warn("tui keys in numasec config are deprecated; move them to tui.json", { path: source })
+            }
+            if (hadRemoved) {
+              log.warn("removed local-first incompatible config keys were ignored", { path: source })
+            }
             return copy
           })()
 
@@ -1272,7 +1228,6 @@ export namespace Config {
           for (const [key, value] of Object.entries(auth)) {
             if (value.type === "wellknown") {
               const url = key.replace(/\/+$/, "")
-              process.env[value.key] = value.token
               log.debug("fetching remote config", { url: `${url}/.well-known/numasec` })
               const response = yield* Effect.promise(() => fetch(`${url}/.well-known/numasec`))
               if (!response.ok) {
@@ -1286,6 +1241,9 @@ export namespace Config {
                 yield* loadConfig(JSON.stringify(remoteConfig), {
                   dir: path.dirname(`${url}/.well-known/numasec`),
                   source: `${url}/.well-known/numasec`,
+                  env: {
+                    [value.key]: value.token,
+                  },
                 }),
               )
               log.debug("loaded remote config from well-known", { url })
@@ -1354,39 +1312,6 @@ export namespace Config {
             log.debug("loaded custom config from NUMASEC_CONFIG_CONTENT")
           }
 
-          const active = Option.getOrUndefined(yield* accountSvc.active().pipe(Effect.orDie))
-          if (active?.active_org_id) {
-            yield* Effect.gen(function* () {
-              const [configOpt, tokenOpt] = yield* Effect.all(
-                [accountSvc.config(active.id, active.active_org_id!), accountSvc.token(active.id)],
-                { concurrency: 2 },
-              )
-              const token = Option.getOrUndefined(tokenOpt)
-              if (token) {
-                process.env["NUMASEC_CONSOLE_TOKEN"] = token
-                Env.set("NUMASEC_CONSOLE_TOKEN", token)
-              }
-
-              const config = Option.getOrUndefined(configOpt)
-              if (config) {
-                result = mergeConfigConcatArrays(
-                  result,
-                  yield* loadConfig(JSON.stringify(config), {
-                    dir: path.dirname(`${active.url}/api/config`),
-                    source: `${active.url}/api/config`,
-                  }),
-                )
-              }
-            }).pipe(
-              Effect.catch((err) => {
-                log.debug("failed to fetch remote account config", {
-                  error: err instanceof Error ? err.message : String(err),
-                })
-                return Effect.void
-              }),
-            )
-          }
-
           if (existsSync(managedDir)) {
             for (const file of ["numasec.jsonc", "numasec.json"]) {
               result = mergeConfigConcatArrays(result, yield* loadFile(path.join(managedDir, file)))
@@ -1420,10 +1345,6 @@ export namespace Config {
           }
 
           if (!result.username) result.username = os.userInfo().username
-
-          if (result.autoshare === true && !result.share) {
-            result.share = "auto"
-          }
 
           if (Flag.NUMASEC_DISABLE_AUTOCOMPACT) {
             result.compaction = { ...result.compaction, auto: false }
@@ -1518,7 +1439,6 @@ export namespace Config {
   export const defaultLayer = layer.pipe(
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(Auth.layer),
-    Layer.provide(Account.defaultLayer),
   )
 
   const { runPromise } = makeRuntime(Service, defaultLayer)

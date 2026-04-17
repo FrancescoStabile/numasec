@@ -37,7 +37,6 @@ import type {
   FileReadResponses,
   FileStatusResponses,
   FindFilesResponses,
-  FindSymbolsResponses,
   FindTextResponses,
   FormatterStatusResponses,
   GlobalConfigGetResponses,
@@ -50,7 +49,6 @@ import type {
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeResponses,
-  LspStatusResponses,
   McpAddErrors,
   McpAddResponses,
   McpAuthAuthenticateErrors,
@@ -107,6 +105,16 @@ import type {
   QuestionRejectResponses,
   QuestionReplyErrors,
   QuestionReplyResponses,
+  SecurityChainsResponses,
+  SecurityChainsSyncResponses,
+  SecurityEvidenceEdgesResponses,
+  SecurityEvidenceEdgesSyncResponses,
+  SecurityEvidenceNodesResponses,
+  SecurityEvidenceNodesSyncResponses,
+  SecurityFindingsResponses,
+  SecurityFindingsSyncResponses,
+  SecurityReadResponses,
+  SecurityReadSummaryResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -136,8 +144,6 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
-  SessionShareErrors,
-  SessionShareResponses,
   SessionShellErrors,
   SessionShellResponses,
   SessionStatusErrors,
@@ -148,8 +154,6 @@ import type {
   SessionTodoResponses,
   SessionUnrevertErrors,
   SessionUnrevertResponses,
-  SessionUnshareErrors,
-  SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
   SubtaskPartInput,
@@ -176,16 +180,6 @@ import type {
   TuiShowToastResponses,
   TuiSubmitPromptResponses,
   VcsGetResponses,
-  WorktreeCreateErrors,
-  WorktreeCreateInput,
-  WorktreeCreateResponses,
-  WorktreeListResponses,
-  WorktreeRemoveErrors,
-  WorktreeRemoveInput,
-  WorktreeRemoveResponses,
-  WorktreeResetErrors,
-  WorktreeResetInput,
-  WorktreeResetResponses,
 } from "./types.gen.js"
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<
@@ -1147,149 +1141,6 @@ export class Experimental extends HeyApiClient {
   }
 }
 
-export class Worktree extends HeyApiClient {
-  /**
-   * Remove worktree
-   *
-   * Remove a git worktree and delete its branch.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      worktreeRemoveInput?: WorktreeRemoveInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "worktreeRemoveInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<WorktreeRemoveResponses, WorktreeRemoveErrors, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * List worktrees
-   *
-   * List all sandbox worktrees for the current project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<WorktreeListResponses, unknown, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Create worktree
-   *
-   * Create a new git worktree for the current project and run any configured startup scripts.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      worktreeCreateInput?: WorktreeCreateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "worktreeCreateInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<WorktreeCreateResponses, WorktreeCreateErrors, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Reset worktree
-   *
-   * Reset a worktree branch to the primary default branch.
-   */
-  public reset<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      worktreeResetInput?: WorktreeResetInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "worktreeResetInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<WorktreeResetResponses, WorktreeResetErrors, ThrowOnError>({
-      url: "/experimental/worktree/reset",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -1682,70 +1533,6 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionAbortResponses, SessionAbortErrors, ThrowOnError>({
       url: "/session/{sessionID}/abort",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Unshare session
-   *
-   * Remove the shareable link for a session, making it private again.
-   */
-  public unshare<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<SessionUnshareResponses, SessionUnshareErrors, ThrowOnError>({
-      url: "/session/{sessionID}/share",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Share session
-   *
-   * Create a shareable link for a session, allowing others to view the conversation.
-   */
-  public share<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionShareResponses, SessionShareErrors, ThrowOnError>({
-      url: "/session/{sessionID}/share",
       ...options,
       ...params,
     })
@@ -2326,6 +2113,7 @@ export class Permission extends HeyApiClient {
       directory?: string
       workspace?: string
       response?: "once" | "always" | "reject"
+      message?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2339,6 +2127,7 @@ export class Permission extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "response" },
+            { in: "body", key: "message" },
           ],
         },
       ],
@@ -2424,6 +2213,402 @@ export class Permission extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+}
+
+export class Read extends HeyApiClient {
+  /**
+   * Read security sync summary
+   *
+   * Returns canonical security summary with projection checkpoints for polling and incremental sync loops.
+   */
+  public summary<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      since?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "since" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityReadSummaryResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/read/summary",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Findings extends HeyApiClient {
+  /**
+   * Read findings sync projection
+   *
+   * Returns findings with cursor and since support for incremental synchronization.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: number
+      since?: number
+      cursor?: string
+      severity?: "critical" | "high" | "medium" | "low" | "info"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "severity" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityFindingsSyncResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/findings/sync",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Chains extends HeyApiClient {
+  /**
+   * Read attack chain sync projection
+   *
+   * Returns derived chains with cursor and since support for incremental synchronization.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: number
+      since?: number
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityChainsSyncResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/chains/sync",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Nodes extends HeyApiClient {
+  /**
+   * Read evidence node sync projection
+   *
+   * Returns evidence nodes with cursor and since support for incremental synchronization.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: number
+      since?: number
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityEvidenceNodesSyncResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/evidence/nodes/sync",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Edges extends HeyApiClient {
+  /**
+   * Read evidence edge sync projection
+   *
+   * Returns evidence edges with cursor and since support for incremental synchronization.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: number
+      since?: number
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "since" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityEvidenceEdgesSyncResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/evidence/edges/sync",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Evidence extends HeyApiClient {
+  /**
+   * Read evidence nodes
+   *
+   * Returns evidence graph nodes for a session when graph read is enabled.
+   */
+  public nodes<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityEvidenceNodesResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/evidence/nodes",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read evidence edges
+   *
+   * Returns evidence graph edges for a session when graph read is enabled.
+   */
+  public edges<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityEvidenceEdgesResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/evidence/edges",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _nodes?: Nodes
+  get nodes2(): Nodes {
+    return (this._nodes ??= new Nodes({ client: this.client }))
+  }
+
+  private _edges?: Edges
+  get edges2(): Edges {
+    return (this._edges ??= new Edges({ client: this.client }))
+  }
+}
+
+export class Security extends HeyApiClient {
+  /**
+   * Read canonical security state
+   *
+   * Returns canonical security read model with scope, hypotheses, evidence, findings, chains, and coverage.
+   */
+  public read<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityReadResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/read",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read findings projection
+   *
+   * Returns findings projection for a session.
+   */
+  public findings<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      severity?: "critical" | "high" | "medium" | "low" | "info"
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "severity" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityFindingsResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/findings",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read attack chain projection
+   *
+   * Returns attack chain projection derived from findings.
+   */
+  public chains<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SecurityChainsResponses, unknown, ThrowOnError>({
+      url: "/security/{sessionID}/chains",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _read?: Read
+  get read2(): Read {
+    return (this._read ??= new Read({ client: this.client }))
+  }
+
+  private _findings?: Findings
+  get findings2(): Findings {
+    return (this._findings ??= new Findings({ client: this.client }))
+  }
+
+  private _chains?: Chains
+  get chains2(): Chains {
+    return (this._chains ??= new Chains({ client: this.client }))
+  }
+
+  private _evidence?: Evidence
+  get evidence(): Evidence {
+    return (this._evidence ??= new Evidence({ client: this.client }))
   }
 }
 
@@ -2757,38 +2942,6 @@ export class Find extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<FindFilesResponses, unknown, ThrowOnError>({
       url: "/find/file",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Find symbols
-   *
-   * Search for workspace symbols like functions, classes, and variables using LSP.
-   */
-  public symbols<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      query: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "query" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FindSymbolsResponses, unknown, ThrowOnError>({
-      url: "/find/symbol",
       ...options,
       ...params,
     })
@@ -3880,38 +4033,6 @@ export class App extends HeyApiClient {
   }
 }
 
-export class Lsp extends HeyApiClient {
-  /**
-   * Get LSP status
-   *
-   * Get LSP server status
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<LspStatusResponses, unknown, ThrowOnError>({
-      url: "/lsp",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Formatter extends HeyApiClient {
   /**
    * Get formatter status
@@ -3987,11 +4108,6 @@ export class NumasecClient extends HeyApiClient {
     return (this._experimental ??= new Experimental({ client: this.client }))
   }
 
-  private _worktree?: Worktree
-  get worktree(): Worktree {
-    return (this._worktree ??= new Worktree({ client: this.client }))
-  }
-
   private _session?: Session2
   get session(): Session2 {
     return (this._session ??= new Session2({ client: this.client }))
@@ -4005,6 +4121,11 @@ export class NumasecClient extends HeyApiClient {
   private _permission?: Permission
   get permission(): Permission {
     return (this._permission ??= new Permission({ client: this.client }))
+  }
+
+  private _security?: Security
+  get security(): Security {
+    return (this._security ??= new Security({ client: this.client }))
   }
 
   private _question?: Question
@@ -4065,11 +4186,6 @@ export class NumasecClient extends HeyApiClient {
   private _app?: App
   get app(): App {
     return (this._app ??= new App({ client: this.client }))
-  }
-
-  private _lsp?: Lsp
-  get lsp(): Lsp {
-    return (this._lsp ??= new Lsp({ client: this.client }))
   }
 
   private _formatter?: Formatter

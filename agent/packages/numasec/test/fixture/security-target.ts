@@ -159,7 +159,29 @@ export function startSecurityTarget(): SecurityTargetFixture {
       const origin = req.headers.get("origin") ?? ""
 
       if (path === "/") {
-        return new Response("<html><body>fixture</body></html>", {
+        return new Response(
+          `<html><head><script src="/app.js"></script></head><body><a href="/app/projects/1">Project</a><form method="POST" action="/api/Projects/1/approve"><input name="confirm" type="hidden" value="1" /></form>fixture</body></html>`,
+          {
+            headers: {
+              "content-type": "text/html",
+            },
+          },
+        )
+      }
+
+      if (path === "/app.js") {
+        return new Response(
+          `fetch('/api/Projects/1/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: '1', filters: { owner: { id: '1' } } }) });`,
+          {
+            headers: {
+              "content-type": "application/javascript",
+            },
+          },
+        )
+      }
+
+      if (path === "/app/projects/1") {
+        return new Response("<html><body>project</body></html>", {
           headers: {
             "content-type": "text/html",
           },

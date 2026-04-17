@@ -23,8 +23,16 @@ interface FetchDecompressionError extends Error {
 }
 
 export namespace MessageV2 {
+  export const COMPACTED_TOOL_OUTPUT = "[Old tool result content cleared]"
+
   export function isMedia(mime: string) {
     return mime.startsWith("image/") || mime === "application/pdf"
+  }
+
+  export function toolOutput(part: ToolPart) {
+    if (part.state.status !== "completed") return undefined
+    if (part.state.time.compacted) return COMPACTED_TOOL_OUTPUT
+    return part.state.output
   }
 
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
@@ -700,7 +708,7 @@ export namespace MessageV2 {
           if (part.type === "tool") {
             toolNames.add(part.tool)
             if (part.state.status === "completed") {
-              const outputText = part.state.time.compacted ? "[Old tool result content cleared]" : part.state.output
+              const outputText = MessageV2.toolOutput(part) ?? ""
               const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
 
               // For providers that don't support media in tool results, extract media files

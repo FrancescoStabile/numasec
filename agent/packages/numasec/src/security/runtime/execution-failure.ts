@@ -2,6 +2,7 @@ import type { HttpResponse } from "../http-client"
 
 export type ExecutionFailureCode =
   | "browser_dependency_missing"
+  | "out_of_scope"
   | "origin_uninitialized"
   | "auth_stale"
   | "csrf_missing"
@@ -106,6 +107,14 @@ export function classifyBrowserFailure(error: unknown): ExecutionFailure {
       strategy: "none",
     }
   }
+  if (/out of scope|err_blocked_by_client/i.test(message)) {
+    return {
+      code: "out_of_scope",
+      message,
+      retryable: false,
+      strategy: "none",
+    }
+  }
   if (/net::err_name_not_resolved|net::err_connection_refused|net::err_connection_reset|net::err_connection_closed|net::err_internet_disconnected|net::err_network_changed|net::err_address_unreachable|chrome-error:\/\/chromewebdata/i.test(message)) {
     return {
       code: "transient_network",
@@ -152,6 +161,15 @@ export function classifyHttpFailure(input: {
 }) {
   const response = input.response
   if (response.status === 0) {
+    if (/^Out of scope:/i.test(response.statusText) || /not in scope|No scope defined/i.test(response.statusText)) {
+      return {
+        code: "out_of_scope",
+        message: response.statusText.replace(/^Out of scope:\s*/i, "") || "Target is out of scope",
+        retryable: false,
+        strategy: "none",
+        status: response.status,
+      } satisfies ExecutionFailure
+    }
     return {
       code: "transient_network",
       message: response.statusText || "HTTP request failed",

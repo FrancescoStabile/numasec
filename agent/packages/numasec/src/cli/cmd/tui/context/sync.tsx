@@ -9,7 +9,6 @@ import type {
   Command,
   PermissionRequest,
   QuestionRequest,
-  LspStatus,
   McpStatus,
   McpResource,
   FormatterStatus,
@@ -25,10 +24,16 @@ import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import { Log } from "@/util/log"
 import type { Path } from "@numasec/sdk"
 import type { Workspace } from "@numasec/sdk/v2"
+import {
+  disposeSyncMessage,
+  disposeSyncSession,
+  resetSyncRuntime,
+  resetSyncStore,
+} from "./sync-lifecycle"
 import {
   emptySecurityState,
   mergeChains,
@@ -37,6 +42,7 @@ import {
   readNextCursor,
   type SecurityChain,
   type SecurityCoverage,
+  type SecurityEngagement,
   type SecurityFinding,
   type SecurityState,
   type SecuritySyncPage,
@@ -88,7 +94,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       security: {
         [sessionID: string]: SecurityState
       }
-      lsp: LspStatus[]
       mcp: {
         [key: string]: McpStatus
       }
@@ -124,12 +129,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       message_history: {},
       part: {},
       security: {},
-      lsp: [],
       mcp: {},
       mcp_resource: {},
       formatter: [],
       vcs: undefined,
-      path: { state: "", config: "", worktree: "", directory: "" },
+      path: { state: "", config: "", worktree: "", directory: "", home: "" },
       workspaceList: [],
     })
 
@@ -147,11 +151,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         findings: { count: number; changed: boolean }
         chains: { count: number; changed: boolean }
         coverage: { count: number; changed: boolean }
+        engagement: { count: number; changed: boolean }
       }
     }
 
     type SecurityRead = {
       coverage: SecurityCoverage[]
+      engagement?: SecurityEngagement
     }
 
     type SecurityClient = {
@@ -177,6 +183,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (value.findings !== undefined) draft.findings = value.findings
           if (value.chains !== undefined) draft.chains = value.chains
           if (value.coverage !== undefined) draft.coverage = value.coverage
+          if ("engagement" in value) draft.engagement = value.engagement
           if (value.updated !== undefined) draft.updated = value.updated
           if ("error" in value) draft.error = value.error
         }),
@@ -237,6 +244,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         const findingDelta = summary.checkpoints.findings.changed
         const chainDelta = summary.checkpoints.chains.changed
         const coverageDelta = summary.checkpoints.coverage.changed
+        const engagementDelta = summary.checkpoints.engagement.changed
         const initial = force || current.updated === 0
 
         let findings = current.findings
@@ -259,9 +267,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         let coverage = current.coverage
         const fullCoverage = initial || coverageLimit
-        if (fullCoverage || coverageDelta) {
+        let engagement = current.engagement
+        if (fullCoverage || coverageDelta || initial || engagementDelta) {
           const read = await get<SecurityRead>(`/security/${sessionID}/read`, workspaceID)
           coverage = read.coverage ?? []
+          engagement = read.engagement
         }
 
         patchSecurity(sessionID, {
@@ -269,6 +279,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           findings,
           chains,
           coverage,
+          engagement,
           updated: summary.generated_at,
           error: undefined,
         })
@@ -278,7 +289,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           error: error instanceof Error ? error.message : String(error),
         })
         const stale = store.security[sessionID] ?? current
-        const ready = stale.findings.length > 0 || stale.chains.length > 0 || stale.coverage.length > 0
+        const ready =
+          stale.findings.length > 0 ||
+          stale.chains.length > 0 ||
+          stale.coverage.length > 0 ||
+          stale.engagement !== undefined
         patchSecurity(sessionID, {
           status: ready ? "ready" : "error",
           error: error instanceof Error ? error.message : String(error),
@@ -287,6 +302,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     const securityQueue = new Map<string, ReturnType<typeof setTimeout>>()
+    const fullSyncedSessions = new Set<string>()
 
     function queueSecurity(sessionID: string) {
       if (securityQueue.has(sessionID)) return
@@ -301,6 +317,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       const event = e.details
       switch (event.type) {
         case "server.instance.disposed":
+          resetSyncRuntime({
+            securityQueue,
+            fullSyncedSessions,
+          })
+          setStore(
+            produce((draft) => {
+              resetSyncStore(draft)
+            }),
+          )
           bootstrap()
           break
         case "permission.replied": {
@@ -387,24 +412,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           break
 
         case "session.deleted": {
-          const result = Binary.search(store.session, event.properties.info.id, (s) => s.id)
-          if (result.found) {
-            setStore(
-              "session",
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
           setStore(
             produce((draft) => {
-              delete draft.todo[event.properties.info.id]
-              delete draft.session_diff[event.properties.info.id]
-              delete draft.message[event.properties.info.id]
-              delete draft.message_cursor[event.properties.info.id]
-              delete draft.message_loading[event.properties.info.id]
-              delete draft.message_history[event.properties.info.id]
-              delete draft.security[event.properties.info.id]
+              disposeSyncSession({
+                state: draft,
+                sessionID: event.properties.info.id,
+                securityQueue,
+                fullSyncedSessions,
+              })
             }),
           )
           break
@@ -471,17 +486,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           break
         }
         case "message.removed": {
-          const messages = store.message[event.properties.sessionID]
-          const result = Binary.search(messages, event.properties.messageID, (m) => m.id)
-          if (result.found) {
-            setStore(
-              "message",
-              event.properties.sessionID,
-              produce((draft) => {
-                draft.splice(result.index, 1)
-              }),
-            )
-          }
+          setStore(
+            produce((draft) => {
+              disposeSyncMessage({
+                state: draft,
+                sessionID: event.properties.sessionID,
+                messageID: event.properties.messageID,
+              })
+            }),
+          )
           break
         }
         case "message.part.updated": {
@@ -540,11 +553,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 draft.splice(result.index, 1)
               }),
             )
-          break
-        }
-
-        case "lsp.updated": {
-          sdk.client.lsp.status().then((x) => setStore("lsp", x.data!))
           break
         }
 
@@ -615,7 +623,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             sdk.client.command.list().then((x) => setStore("command", reconcile(x.data ?? []))),
-            sdk.client.lsp.status().then((x) => setStore("lsp", reconcile(x.data!))),
             sdk.client.mcp.status().then((x) => setStore("mcp", reconcile(x.data!))),
             sdk.client.experimental.resource.list().then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status().then((x) => setStore("formatter", reconcile(x.data!))),
@@ -643,8 +650,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     onMount(() => {
       bootstrap()
     })
-
-    const fullSyncedSessions = new Set<string>()
+    onCleanup(() => {
+      resetSyncRuntime({
+        securityQueue,
+        fullSyncedSessions,
+      })
+    })
     const result = {
       data: store,
       set: setStore,

@@ -4,13 +4,15 @@ import z from "zod"
 import { withStatics } from "@/util/schema"
 
 const providerIdSchema = Schema.String.pipe(Schema.brand("ProviderID"))
+const providerIdPattern = /^[a-z0-9][a-z0-9-_]*$/
 
 export type ProviderID = typeof providerIdSchema.Type
 
 export const ProviderID = providerIdSchema.pipe(
   withStatics((schema: typeof providerIdSchema) => ({
     make: (id: string) => schema.makeUnsafe(id),
-    zod: z.string().pipe(z.custom<ProviderID>()),
+    zod: z.string().regex(providerIdPattern).pipe(z.custom<ProviderID>()),
+    pattern: providerIdPattern,
     // Well-known providers
     numasec: schema.makeUnsafe("numasec"),
     anthropic: schema.makeUnsafe("anthropic"),

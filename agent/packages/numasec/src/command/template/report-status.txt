@@ -1,0 +1,20 @@
+Show current report readiness for the active security session.
+
+Command note:
+- Use this to inspect closure debt separately from rendering a report.
+- `/report generate` now renders a working report by default.
+- Use `/report finalize [format]` when you want the closure-aware final export path.
+- Use `/report generate [format] --final` only when you explicitly want the raw render path.
+
+Arguments: $ARGUMENTS
+
+Call `report_status`.
+
+Then summarize:
+- Current report state (`empty`, `working_draft`, `final_ready`)
+- Current operational phase (`explore`, `verify`, `close`, `report`)
+- Whether a working report can be generated now
+- Whether a final report can be generated now
+- Open hypotheses, provisional findings, and promotion gaps
+- Human-readable blocker summary with next operator commands (`/verify next`, `/finding finalize <id>`, `/report finalize`)
+- Recommended next command

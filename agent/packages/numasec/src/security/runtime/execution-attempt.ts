@@ -3,6 +3,7 @@ import { eq } from "../../storage/db"
 import type { SessionID } from "../../session/schema"
 import { SessionTable } from "../../session/session.sql"
 import { Database } from "../../storage/db"
+import { canonicalSecuritySessionID } from "../security-session"
 import {
   SecurityExecutionAttemptTable,
   type SecurityActorSessionID,
@@ -24,8 +25,9 @@ export interface ExecutionAttemptInput {
 }
 
 function id(input: ExecutionAttemptInput) {
+  const sessionID = canonicalSecuritySessionID(input.sessionID)
   const value = [
-    input.sessionID,
+    sessionID,
     input.toolName,
     input.action,
     input.status,
@@ -37,20 +39,21 @@ function id(input: ExecutionAttemptInput) {
 }
 
 export async function recordExecutionAttempt(input: ExecutionAttemptInput) {
+  const sessionID = canonicalSecuritySessionID(input.sessionID)
   Database.use((db) => {
     const session = db
-      .select({
-        id: SessionTable.id,
-      })
-      .from(SessionTable)
-      .where(eq(SessionTable.id, input.sessionID))
-      .get()
+        .select({
+          id: SessionTable.id,
+        })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get()
     if (!session) return
     db
       .insert(SecurityExecutionAttemptTable)
       .values({
         id: id(input),
-        session_id: input.sessionID,
+        session_id: sessionID,
         actor_session_id: input.actorSessionID as SecurityActorSessionID | undefined,
         browser_session_id: input.browserSessionID as SecurityBrowserSessionID | undefined,
         page_id: input.pageID as SecurityBrowserPageID | undefined,

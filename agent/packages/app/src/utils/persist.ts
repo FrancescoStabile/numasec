@@ -1,5 +1,4 @@
-import { Platform, usePlatform } from "@/context/platform"
-import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
+import { makePersisted, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@numasec/util/encode"
 import { createResource, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
@@ -19,7 +18,6 @@ type PersistTarget = {
   migrate?: (value: unknown) => unknown
 }
 
-const LEGACY_STORAGE = "default.dat"
 const GLOBAL_STORAGE = "numasec.global.dat"
 const LOCAL_PREFIX = "numasec."
 const fallback = new Map<string, boolean>()
@@ -324,13 +322,7 @@ export const Persist = {
   },
 }
 
-export function removePersisted(target: { storage?: string; key: string }, platform?: Platform) {
-  const isDesktop = platform?.platform === "desktop" && !!platform.storage
-
-  if (isDesktop) {
-    return platform.storage?.(target.storage)?.removeItem(target.key)
-  }
-
+export function removePersisted(target: { storage?: string; key: string }) {
   if (!target.storage) {
     localStorageDirect().removeItem(target.key)
     return
@@ -343,115 +335,50 @@ export function persisted<T>(
   target: string | PersistTarget,
   store: [Store<T>, SetStoreFunction<T>],
 ): PersistedWithReady<T> {
-  const platform = usePlatform()
   const config: PersistTarget = typeof target === "string" ? { key: target } : target
 
   const defaults = snapshot(store[0])
   const legacy = config.legacy ?? []
 
-  const isDesktop = platform.platform === "desktop" && !!platform.storage
+  const current: SyncStorage = config.storage ? localStorageWithPrefix(config.storage) : localStorageDirect()
+  const legacyStore: SyncStorage = localStorageDirect()
 
-  const currentStorage = (() => {
-    if (isDesktop) return platform.storage?.(config.storage)
-    if (!config.storage) return localStorageDirect()
-    return localStorageWithPrefix(config.storage)
-  })()
-
-  const legacyStorage = (() => {
-    if (!isDesktop) return localStorageDirect()
-    if (!config.storage) return platform.storage?.()
-    return platform.storage?.(LEGACY_STORAGE)
-  })()
-
-  const storage = (() => {
-    if (!isDesktop) {
-      const current = currentStorage as SyncStorage
-      const legacyStore = legacyStorage as SyncStorage
-
-      const api: SyncStorage = {
-        getItem: (key) => {
-          const raw = current.getItem(key)
-          if (raw !== null) {
-            const next = normalize(defaults, raw, config.migrate)
-            if (next === undefined) {
-              current.removeItem(key)
-              return null
-            }
-            if (raw !== next) current.setItem(key, next)
-            return next
-          }
-
-          for (const legacyKey of legacy) {
-            const legacyRaw = legacyStore.getItem(legacyKey)
-            if (legacyRaw === null) continue
-
-            const next = normalize(defaults, legacyRaw, config.migrate)
-            if (next === undefined) {
-              legacyStore.removeItem(legacyKey)
-              continue
-            }
-            current.setItem(key, next)
-            legacyStore.removeItem(legacyKey)
-            return next
-          }
-
-          return null
-        },
-        setItem: (key, value) => {
-          current.setItem(key, value)
-        },
-        removeItem: (key) => {
+  const storage: SyncStorage = {
+    getItem: (key) => {
+      const raw = current.getItem(key)
+      if (raw !== null) {
+        const next = normalize(defaults, raw, config.migrate)
+        if (next === undefined) {
           current.removeItem(key)
-        },
+          return null
+        }
+        if (raw !== next) current.setItem(key, next)
+        return next
       }
 
-      return api
-    }
+      for (const legacyKey of legacy) {
+        const legacyRaw = legacyStore.getItem(legacyKey)
+        if (legacyRaw === null) continue
 
-    const current = currentStorage as AsyncStorage
-    const legacyStore = legacyStorage as AsyncStorage | undefined
-
-    const api: AsyncStorage = {
-      getItem: async (key) => {
-        const raw = await current.getItem(key)
-        if (raw !== null) {
-          const next = normalize(defaults, raw, config.migrate)
-          if (next === undefined) {
-            await current.removeItem(key).catch(() => undefined)
-            return null
-          }
-          if (raw !== next) await current.setItem(key, next)
-          return next
+        const next = normalize(defaults, legacyRaw, config.migrate)
+        if (next === undefined) {
+          legacyStore.removeItem(legacyKey)
+          continue
         }
+        current.setItem(key, next)
+        legacyStore.removeItem(legacyKey)
+        return next
+      }
 
-        if (!legacyStore) return null
-
-        for (const legacyKey of legacy) {
-          const legacyRaw = await legacyStore.getItem(legacyKey)
-          if (legacyRaw === null) continue
-
-          const next = normalize(defaults, legacyRaw, config.migrate)
-          if (next === undefined) {
-            await legacyStore.removeItem(legacyKey).catch(() => undefined)
-            continue
-          }
-          await current.setItem(key, next)
-          await legacyStore.removeItem(legacyKey)
-          return next
-        }
-
-        return null
-      },
-      setItem: async (key, value) => {
-        await current.setItem(key, value)
-      },
-      removeItem: async (key) => {
-        await current.removeItem(key)
-      },
-    }
-
-    return api
-  })()
+      return null
+    },
+    setItem: (key, value) => {
+      current.setItem(key, value)
+    },
+    removeItem: (key) => {
+      current.removeItem(key)
+    },
+  }
 
   const [state, setState, init] = makePersisted(store, { name: config.key, storage })
 

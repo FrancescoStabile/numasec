@@ -7,9 +7,11 @@ import { SessionTable } from "../../src/session/session.sql"
 import { Database, eq } from "../../src/storage/db"
 import { SecurityActorSessionTable } from "../../src/security/runtime/runtime.sql"
 import {
+  ACTOR_SESSION_TTL_MS,
   actorSessionRequest,
   browserAuthMaterial,
   mergeActorSession,
+  readActorSession,
 } from "../../src/security/runtime/actor-session-store"
 import { AccessControlTestTool } from "../../src/security/tool/access-control-test"
 import { AuthTestTool } from "../../src/security/tool/auth-test"
@@ -330,5 +332,74 @@ describe("auth fabric unification", () => {
     expect(request.cookies).toContain("session=auth-7")
     expect(stored.actorEmail).toBe("browser-user@example.com")
     expect(stored.actorRole).toBe("customer")
+  })
+
+  test("evicts actor session material after the backing session is deleted", async () => {
+    const sessionID = "sess-auth-fabric-evict-deleted" as SessionID
+    seedSession(sessionID)
+
+    await mergeActorSession({
+      sessionID,
+      actorLabel: "cleanup-user",
+      material: browserAuthMaterial({
+        actorLabel: "cleanup-user",
+        pageURL: "https://app.example.com/profile",
+        cookies: [],
+      }),
+    })
+
+    expect(
+      await readActorSession({
+        sessionID,
+        actorLabel: "cleanup-user",
+      }),
+    ).toBeDefined()
+
+    Database.use((db) => db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run())
+
+    expect(
+      await readActorSession({
+        sessionID,
+        actorLabel: "cleanup-user",
+      }),
+    ).toBeUndefined()
+  })
+
+  test("evicts stale actor session material after the TTL window", async () => {
+    const sessionID = "sess-auth-fabric-evict-ttl" as SessionID
+    seedSession(sessionID)
+    const prev = Date.now
+    let now = 1_000_000
+    Date.now = () => now
+
+    try {
+      await mergeActorSession({
+        sessionID,
+        actorLabel: "ttl-user",
+        material: browserAuthMaterial({
+          actorLabel: "ttl-user",
+          pageURL: "https://app.example.com/dashboard",
+          cookies: [],
+        }),
+      })
+
+      expect(
+        await readActorSession({
+          sessionID,
+          actorLabel: "ttl-user",
+        }),
+      ).toBeDefined()
+
+      now += ACTOR_SESSION_TTL_MS + 1
+
+      expect(
+        await readActorSession({
+          sessionID,
+          actorLabel: "ttl-user",
+        }),
+      ).toBeUndefined()
+    } finally {
+      Date.now = prev
+    }
   })
 })

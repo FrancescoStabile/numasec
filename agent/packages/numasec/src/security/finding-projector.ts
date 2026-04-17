@@ -7,6 +7,7 @@ import { FindingEvaluators } from "./finding-evaluator/registry"
 import type { FindingCandidate } from "./finding-evaluator/base"
 import { passed, payload } from "./finding-evaluator/base"
 import { FindingTable } from "./security.sql"
+import { canonicalSecuritySessionID } from "./security-session"
 
 function stateRank(value: string) {
   if (value === "verified") return 0
@@ -32,43 +33,46 @@ function refs(value: string) {
 }
 
 export function projectFindings(sessionID: SessionID) {
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
   const nodes = Database.use((db) =>
     db
       .select()
       .from(EvidenceNodeTable)
-      .where(eq(EvidenceNodeTable.session_id, sessionID))
+      .where(eq(EvidenceNodeTable.session_id, currentSessionID))
       .all(),
   )
   const edges = Database.use((db) =>
     db
       .select()
       .from(EvidenceEdgeTable)
-      .where(eq(EvidenceEdgeTable.session_id, sessionID))
+      .where(eq(EvidenceEdgeTable.session_id, currentSessionID))
       .all(),
   )
   const rows = Database.use((db) =>
     db
       .select()
       .from(FindingTable)
-      .where(eq(FindingTable.session_id, sessionID))
+      .where(eq(FindingTable.session_id, currentSessionID))
       .all(),
   )
 
   const manual = rows.filter((row) => row.manual_override || row.tool_used !== "finding_projector")
   const manualRoots = new Set<string>()
+  const resolvedHypotheses = new Set<string>()
   const used = new Set<string>()
   for (const row of manual) {
     if (row.root_cause_key) manualRoots.add(row.root_cause_key)
+    if (row.source_hypothesis_id) resolvedHypotheses.add(row.source_hypothesis_id)
     for (const ref of refs(row.evidence)) used.add(ref)
   }
 
   const map = new Map<string, FindingCandidate>()
   for (const evaluator of FindingEvaluators) {
-    const list = evaluator.evaluate({
-      sessionID,
-      nodes,
-      edges,
-      findings: rows,
+      const list = evaluator.evaluate({
+        sessionID: currentSessionID,
+        nodes,
+        edges,
+        findings: rows,
     })
     for (const item of list) {
       if (manualRoots.has(item.root_cause_key)) continue
@@ -83,36 +87,44 @@ export function projectFindings(sessionID: SessionID) {
 
   const projected = Array.from(map.values())
   for (const item of projected) {
+    if (item.source_hypothesis_id) resolvedHypotheses.add(item.source_hypothesis_id)
     for (const nodeID of item.node_ids) used.add(nodeID)
     for (const ref of item.evidence_refs) used.add(ref)
     for (const ref of item.negative_control_refs) used.add(ref)
     for (const ref of item.impact_refs) used.add(ref)
   }
 
-  Database.use((db) =>
+  const verificationHypotheses = new Map<string, Set<string>>()
+  for (const edge of edges) {
+    if (edge.relation !== "verifies") continue
+    const list = verificationHypotheses.get(edge.to_node_id) ?? new Set<string>()
+    list.add(edge.from_node_id)
+    verificationHypotheses.set(edge.to_node_id, list)
+  }
+
+  Database.transaction((db) => {
     db
       .delete(FindingTable)
-      .where(and(eq(FindingTable.session_id, sessionID), eq(FindingTable.tool_used, "finding_projector")))
-      .run(),
-  )
+      .where(and(eq(FindingTable.session_id, currentSessionID), eq(FindingTable.tool_used, "finding_projector")))
+      .run()
 
-  for (const item of projected) {
-    const enriched = enrichFinding({
-      title: item.title,
-      severity: item.severity,
-      description: item.description,
-      url: item.url,
-      method: item.method,
-      parameter: item.parameter,
-      payload: item.payload,
-      confidence: item.confidence,
-    })
-    Database.use((db) =>
+    for (const item of projected) {
+      const enriched = enrichFinding({
+        sessionID: currentSessionID,
+        title: item.title,
+        severity: item.severity,
+        description: item.description,
+        url: item.url,
+        method: item.method,
+        parameter: item.parameter,
+        payload: item.payload,
+        confidence: item.confidence,
+      })
       db
         .insert(FindingTable)
         .values({
           id: enriched.id,
-          session_id: sessionID,
+          session_id: currentSessionID,
           title: item.title,
           severity: item.severity,
           description: item.description,
@@ -170,15 +182,15 @@ export function projectFindings(sessionID: SessionID) {
             time_updated: Date.now(),
           },
         })
-        .run(),
-    )
-  }
+        .run()
+    }
+  })
 
   const all = Database.use((db) =>
     db
       .select()
       .from(FindingTable)
-      .where(eq(FindingTable.session_id, sessionID))
+      .where(eq(FindingTable.session_id, currentSessionID))
       .all(),
   )
 
@@ -190,6 +202,14 @@ export function projectFindings(sessionID: SessionID) {
     })
     .map((row) => row.id)
     .filter((id) => !used.has(id))
+    .filter((id) => {
+      const linked = verificationHypotheses.get(id)
+      if (!linked || linked.size === 0) return true
+      for (const hypothesisID of linked) {
+        if (resolvedHypotheses.has(hypothesisID)) return false
+      }
+      return true
+    })
 
   const counts = {
     raw: all.length,

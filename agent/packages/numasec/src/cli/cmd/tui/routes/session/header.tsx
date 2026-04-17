@@ -11,11 +11,16 @@ import { Flag } from "@/flag/flag"
 import { useTerminalDimensions } from "@opentui/solid"
 import {
   OWASP_CATEGORIES,
+  emptyCoverage,
   fallbackCoverage,
   fallbackFindings,
   fallbackTarget,
+  reportStateLabel,
+  selectCurrentEndpoint,
   selectCoverage,
+  selectFindingSummary,
   selectFindings,
+  selectReportSummary,
   selectTarget,
 } from "../../security-view-model"
 
@@ -89,10 +94,28 @@ export function Header() {
     return `Workspace ${id} (${info.type})`
   })
 
-  const fallbackFindingList = createMemo(() => fallbackFindings(messages(), sync.data.part))
+  const legacy = createMemo(() => security() === undefined)
+  const fallbackFindingList = createMemo(() => {
+    if (!legacy()) return []
+    return fallbackFindings(messages(), sync.data.part)
+  })
   const findingList = createMemo(() => selectFindings(security(), fallbackFindingList()))
-  const targetUrl = createMemo(() => selectTarget(security(), fallbackTarget(messages(), sync.data.part)))
-  const coverageInfo = createMemo(() => selectCoverage(security(), fallbackCoverage(messages(), sync.data.part), findingList()))
+  const findingSummary = createMemo(() => selectFindingSummary(security(), findingList()))
+  const fallbackTargetUrl = createMemo(() => {
+    if (!legacy()) return
+    return fallbackTarget(messages(), sync.data.part)
+  })
+  const targetUrl = createMemo(() => selectTarget(security(), fallbackTargetUrl()))
+  const currentEndpointUrl = createMemo(() => selectCurrentEndpoint(security()))
+  const fallbackCoverageInfo = createMemo(() => {
+    if (!legacy()) return emptyCoverage()
+    return fallbackCoverage(messages(), sync.data.part)
+  })
+  const coverageInfo = createMemo(() => selectCoverage(security(), fallbackCoverageInfo(), findingList()))
+  const reportSummary = createMemo(() => selectReportSummary(security()))
+  const reportState = createMemo(() => {
+    return reportStateLabel(reportSummary())
+  })
 
   const { theme } = useTheme()
   const keybind = useKeybind()
@@ -180,27 +203,44 @@ export function Header() {
                 )}
                 <ContextInfo context={context} cost={cost} />
               </box>
-              <Show when={targetUrl() || coverageInfo().testedCount > 0}>
+              <Show when={targetUrl() || currentEndpointUrl() || coverageInfo().testedCount > 0 || reportSummary()}>
                 <box flexDirection={narrow() ? "column" : "row"} justifyContent="space-between" gap={1}>
-                  <Show when={targetUrl()}>
-                    <text fg={theme.textMuted} wrapMode="none" flexShrink={1}>
-                      ☠ {targetUrl()}
-                    </text>
-                  </Show>
-                  <Show when={coverageInfo().testedCount > 0}>
-                    <box flexDirection="row" gap={0} flexShrink={0}>
-                      <text fg={theme.textMuted} wrapMode="none">OWASP </text>
-                      {OWASP_CATEGORIES.map((cat) => {
-                        const info = coverageInfo()
-                        const isVuln = info.vulnerable.has(cat)
-                        const isTested = info.tested.has(cat)
-                        const color = isVuln ? "#ff4444" : isTested ? "#44ff44" : "#555555"
-                        const symbol = isVuln ? "■" : isTested ? "■" : "□"
-                        return <text fg={color} wrapMode="none">{symbol}</text>
-                      })}
-                      <text fg={theme.textMuted} wrapMode="none"> {coverageInfo().testedCount}/{coverageInfo().total}</text>
-                    </box>
-                  </Show>
+                  <box flexDirection="column" gap={0}>
+                    <Show when={targetUrl()}>
+                      <text fg={theme.textMuted} wrapMode="none" flexShrink={1}>
+                        ☠ {targetUrl()}
+                      </text>
+                    </Show>
+                    <Show when={currentEndpointUrl() && currentEndpointUrl() !== targetUrl()}>
+                      <text fg={theme.textMuted} wrapMode="none" flexShrink={1}>
+                        ⇢ {currentEndpointUrl()}
+                      </text>
+                    </Show>
+                  </box>
+                  <box flexDirection="row" gap={2} flexShrink={0}>
+                    <Show when={reportSummary()}>
+                      <text fg={theme.textMuted} wrapMode="none">
+                        {reportState()}{" "}
+                        <Show when={findingSummary().provisional > 0}>
+                          <span>({findingSummary().verified}+{findingSummary().provisional})</span>
+                        </Show>
+                      </text>
+                    </Show>
+                    <Show when={coverageInfo().testedCount > 0}>
+                      <box flexDirection="row" gap={0} flexShrink={0}>
+                        <text fg={theme.textMuted} wrapMode="none">OWASP </text>
+                        {OWASP_CATEGORIES.map((cat) => {
+                          const info = coverageInfo()
+                          const isVuln = info.vulnerable.has(cat)
+                          const isTested = info.tested.has(cat)
+                          const color = isVuln ? "#ff4444" : isTested ? "#44ff44" : "#555555"
+                          const symbol = isVuln ? "■" : isTested ? "■" : "□"
+                          return <text fg={color} wrapMode="none">{symbol}</text>
+                        })}
+                        <text fg={theme.textMuted} wrapMode="none"> {coverageInfo().testedCount}/{coverageInfo().total}</text>
+                      </box>
+                    </Show>
+                  </box>
                 </box>
               </Show>
             </box>

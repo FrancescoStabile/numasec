@@ -63,6 +63,32 @@ done
 command -v bun >/dev/null 2>&1 || fail "bun is required. Install via https://bun.sh"
 [[ -d "$AGENT_DIR" ]] || fail "agent/ directory not found at $AGENT_DIR"
 
+PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+case "$ARCH" in
+x86_64) ARCH="x64" ;;
+aarch64) ARCH="arm64" ;;
+esac
+
+supports_avx2() {
+  [[ "$ARCH" == "x64" ]] || return 1
+  if [[ "$PLATFORM" == "linux" ]]; then
+    grep -qiE '(^|[[:space:]])avx2([[:space:]]|$)' /proc/cpuinfo 2>/dev/null
+    return $?
+  fi
+  if [[ "$PLATFORM" == "darwin" ]]; then
+    [[ "$(sysctl -n hw.optional.avx2_0 2>/dev/null || echo 0)" == "1" ]]
+    return $?
+  fi
+  return 1
+}
+
+uses_musl() {
+  [[ "$PLATFORM" == "linux" ]] || return 1
+  [[ -f /etc/alpine-release ]] && return 0
+  ldd --version 2>&1 | grep -qi "musl"
+}
+
 info "Installing dependencies..."
 cd "$AGENT_DIR"
 bun install --frozen-lockfile || bun install
@@ -92,20 +118,28 @@ fi
 
 info "Building numasec binary..."
 cd "$PKG_DIR"
-bun run build
+BUILD_ARGS=(--single)
+if uses_musl; then
+  BUILD_ARGS=(--musl-only)
+fi
+if [[ "$ARCH" == "x64" ]] && ! supports_avx2 && ! uses_musl; then
+  BUILD_ARGS+=(--baseline)
+fi
+info "Build flags: ${BUILD_ARGS[*]}"
+NUMASEC_CHANNEL=local NUMASEC_VERSION=local bun run build "${BUILD_ARGS[@]}"
 ok "Build complete"
 
-PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-case "$ARCH" in
-x86_64) ARCH="x64" ;;
-aarch64) ARCH="arm64" ;;
-esac
-
 DIST_NAME="numasec-${PLATFORM}-${ARCH}"
+if uses_musl; then
+  DIST_NAME="${DIST_NAME}-musl"
+fi
 BINARY="$PKG_DIR/dist/${DIST_NAME}/bin/numasec"
-if [[ ! -f "$BINARY" ]]; then
+if [[ ! -f "$BINARY" ]] && [[ "$ARCH" == "x64" ]] && ! supports_avx2; then
   BINARY="$PKG_DIR/dist/${DIST_NAME}-baseline/bin/numasec"
+fi
+
+if [[ ! -f "$BINARY" ]] && uses_musl && [[ "$ARCH" == "x64" ]] && ! supports_avx2; then
+  BINARY="$PKG_DIR/dist/numasec-${PLATFORM}-${ARCH}-baseline-musl/bin/numasec"
 fi
 
 if [[ ! -f "$BINARY" ]]; then

@@ -1,12 +1,14 @@
-import { Effect, Layer, Schema, ServiceMap } from "effect"
-import { eq } from "../../storage/db"
+import { Cause, Duration, Effect, Layer, Schedule, Schema, ServiceMap } from "effect"
+import { eq, inArray } from "../../storage/db"
 import { makeRuntime } from "../../effect/run-service"
 import type { SessionID } from "../../session/schema"
 import { SessionTable } from "../../session/session.sql"
 import { Database } from "../../storage/db"
 import { inferActorIdentity, type ActorIdentity } from "../actor-inference"
 import { decodeJwt } from "../scanner/jwt-analyzer"
+import { canonicalSecuritySessionID } from "../security-session"
 import { browserActorSessionID } from "./browser-runtime"
+import { Log } from "../../util/log"
 import {
   SecurityActorSessionTable,
   type SecurityActorSessionID,
@@ -67,8 +69,17 @@ export interface MergeActorSessionInput extends ResolveActorSessionInput {
 }
 
 type State = {
-  sessions: Map<string, ActorSessionMaterial>
+  sessions: Map<string, SessionEntry>
 }
+
+type SessionEntry = {
+  sessionID: SessionID
+  material: ActorSessionMaterial
+}
+
+const log = Log.create({ service: "security.actor-session-store" })
+
+export const ACTOR_SESSION_TTL_MS = 15 * 60 * 1000
 
 const AUTH = [
   "authorization",
@@ -126,7 +137,37 @@ function origin(input: string) {
 }
 
 function pair(sessionID: SessionID, actorSessionID: string) {
-  return `${sessionID}:${actorSessionID}`
+  return `${canonicalSecuritySessionID(sessionID)}:${actorSessionID}`
+}
+
+function stale(input: ActorSessionMaterial, now = Date.now()) {
+  return now - input.timeUpdated > ACTOR_SESSION_TTL_MS
+}
+
+function cleanupState(state: State, now = Date.now()) {
+  if (state.sessions.size === 0) return
+  const seen = new Set<string>()
+  const ids: SessionID[] = []
+  for (const item of state.sessions.values()) {
+    if (seen.has(item.sessionID)) continue
+    seen.add(item.sessionID)
+    ids.push(item.sessionID)
+  }
+  const live = new Set(
+    Database.use((db) => {
+      if (ids.length === 0) return [] as SessionID[]
+      return db
+        .select({ id: SessionTable.id })
+        .from(SessionTable)
+        .where(inArray(SessionTable.id, ids))
+        .all()
+        .map((item) => item.id)
+    }),
+  )
+  for (const [item, value] of state.sessions) {
+    if (live.has(value.sessionID) && !stale(value.material, now)) continue
+    state.sessions.delete(item)
+  }
 }
 
 function same(left: SessionCookie, right: SessionCookie) {
@@ -635,47 +676,70 @@ const layer = Layer.effect(
   ActorSessionStoreApi,
   Effect.gen(function* () {
     const state = {
-      sessions: new Map<string, ActorSessionMaterial>(),
+      sessions: new Map<string, SessionEntry>(),
     } satisfies State
 
+    const cleanup = Effect.fn("ActorSessionStore.cleanup")(function* () {
+      cleanupState(state)
+    })
+
+    yield* cleanup().pipe(
+      Effect.catchCause((cause) => {
+        log.error("cleanup loop failed", { cause: Cause.pretty(cause) })
+        return Effect.void
+      }),
+      Effect.repeat(Schedule.spaced(Duration.minutes(1))),
+      Effect.delay(Duration.minutes(1)),
+      Effect.forkScoped,
+    )
+
     const read = Effect.fn("ActorSessionStore.read")(function* (input: ResolveActorSessionInput) {
-      const actorSessionID = browserActorSessionID(input.sessionID, input.actorLabel, input.actorSessionID)
-      return state.sessions.get(pair(input.sessionID, actorSessionID))
+      yield* cleanup()
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
+      const actorSessionID = browserActorSessionID(sessionID, input.actorLabel, input.actorSessionID)
+      return state.sessions.get(pair(sessionID, actorSessionID))?.material
     })
 
     const mergeOne = Effect.fn("ActorSessionStore.merge")(function* (input: MergeActorSessionInput) {
-      const actorSessionID = browserActorSessionID(input.sessionID, input.actorLabel, input.actorSessionID)
-      const current = state.sessions.get(pair(input.sessionID, actorSessionID)) || blank({
-        sessionID: input.sessionID,
+      yield* cleanup()
+      const sessionID = canonicalSecuritySessionID(input.sessionID)
+      const actorSessionID = browserActorSessionID(sessionID, input.actorLabel, input.actorSessionID)
+      const current = state.sessions.get(pair(sessionID, actorSessionID))?.material || blank({
+        sessionID,
         actorSessionID,
         actorLabel: input.actorLabel,
       })
       const next = merge(current, input.material)
-      state.sessions.set(pair(input.sessionID, actorSessionID), next)
+      const session = Database.use((db) =>
+        db
+          .select({
+            id: SessionTable.id,
+          })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get(),
+      )
+      if (!session) return next
+      state.sessions.set(pair(sessionID, actorSessionID), {
+        sessionID,
+        material: next,
+      })
       yield* Effect.try({
         try: () =>
           Database.use((db) => {
-            const session = db
-              .select({
-                id: SessionTable.id,
-              })
-              .from(SessionTable)
-              .where(eq(SessionTable.id, input.sessionID))
-              .get()
-            if (!session) return
             const current = db
               .select()
               .from(SecurityActorSessionTable)
               .where(eq(SecurityActorSessionTable.id, actorSessionID))
               .get()
             db
-              .insert(SecurityActorSessionTable)
-              .values({
-                id: actorSessionID,
-                session_id: input.sessionID,
-                actor_label: next.actorLabel,
-                browser_session_id: current?.browser_session_id || ("" as SecurityBrowserSessionID),
-                status: "active",
+                .insert(SecurityActorSessionTable)
+                .values({
+                  id: actorSessionID,
+                  session_id: sessionID,
+                  actor_label: next.actorLabel,
+                  browser_session_id: current?.browser_session_id || ("" as SecurityBrowserSessionID),
+                  status: "active",
                 last_origin: next.lastOrigin,
                 last_url: next.lastURL,
                 material_summary: actorSessionSummary(next),

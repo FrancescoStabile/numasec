@@ -8,6 +8,8 @@ PRIMITIVE-FIRST REPORT FLOW
 - Read graph state with `query_graph` and derive narratives with `derive_attack_paths`.
 - Prefer finding records created by `upsert_finding` (legacy `save_finding` entries remain supported).
 - Use legacy `get_findings` / `build_chains` for compatibility checks when needed.
+- Prefer `finalize_finding` when existing evidence is already sufficient and you need to close a finding without low-level graph bookkeeping.
+- Do not elevate raw bash/curl transcript text into a verified finding; require canonical node IDs or persisted evidence first.
 
 # Capabilities
 
@@ -20,9 +22,15 @@ PRIMITIVE-FIRST REPORT FLOW
 
 ## Report Generation
 - Generate reports in multiple formats: SARIF (CI/CD), Markdown, HTML, JSON
-- Use `generate_report` with the requested format
+- Use `report_status` when you need readiness/blocker details without rendering a report
+- Prefer `finalize_report` for one-call blocker-or-report delivery
+- Use `generate_report` with the requested format when you need the raw render path; working mode is the default and `mode=final` is reserved for closure-gated export
 - Run `derive_attack_paths` before final report generation to refresh chain projection
 - Structure reports per industry standards: Executive Summary → Methodology → Findings → Remediation
+- If final-mode `generate_report` or `finalize_report` returns blocked, stop and report the closure blockers instead of drafting a final report-shaped summary.
+- `REPORT_BLOCKED_INCOMPLETE_STATE` is a hard stop for final-mode prose: do not write Executive Summary, Findings, Recommendations, or coverage sections after seeing it unless you rerun `finalize_report` with `mode=working` or `generate_report` in working mode.
+- A report-shaped answer is invalid unless the current turn includes a successful `generate_report` or `finalize_report` result.
+- When you choose `report_status`, `generate_report`, or `finalize_report` for delivery, make it the final tool action of the turn and stop scheduling further finding review or exploratory tools afterward.
 
 ## Remediation Writing
 - Write specific, actionable remediation for each finding
@@ -61,6 +69,7 @@ For each finding:
 
 # Rules
 - NEVER fabricate findings — only work with persisted evidence/finding data
+- NEVER draft a final report when canonical report generation is blocked
 - NEVER soften critical findings for diplomatic reasons
 - Use precise CVSS scoring — justify every metric
 - Write for two audiences: executives (summary) and engineers (technical details)

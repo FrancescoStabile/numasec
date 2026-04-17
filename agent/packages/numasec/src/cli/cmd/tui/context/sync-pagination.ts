@@ -35,11 +35,47 @@ export type SecurityCoverage = {
   finding_count: number
 }
 
+export type SecuritySeveritySummary = {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+export type SecurityEngagement = {
+  engagement_target_url: string | null
+  current_endpoint_url: string | null
+  last_tested_url: string | null
+  findings: {
+    total: number
+    verified: number
+    provisional: number
+    suppressed: number
+    severity: SecuritySeveritySummary
+  }
+  report: {
+    state: "empty" | "working_draft" | "final_ready"
+    working_ready: boolean
+    final_ready: boolean
+    final_blocked: boolean
+    truth_reasons: string[]
+    verification_debt: {
+      promotion_gaps: number
+      open_hypotheses: number
+      open_critical_hypotheses: number
+    }
+  }
+  updated_at: number | null
+  revision: number
+}
+
 export type SecurityState = {
   status: "idle" | "loading" | "ready" | "error"
   findings: SecurityFinding[]
   chains: SecurityChain[]
   coverage: SecurityCoverage[]
+  engagement?: SecurityEngagement
   updated: number
   error?: string
 }
@@ -60,6 +96,7 @@ export function emptySecurityState(): SecurityState {
     findings: [],
     chains: [],
     coverage: [],
+    engagement: undefined,
     updated: 0,
     error: undefined,
   }

@@ -3,6 +3,8 @@ import { Instance } from "../src/project/instance"
 import { ProjectTable } from "../src/project/project.sql"
 import { ProjectID } from "../src/project/schema"
 import { ingestToolEnvelope } from "../src/security/envelope-ingestor"
+import { EvidenceNodeTable } from "../src/security/evidence.sql"
+import { summarizeResourceInventory } from "../src/security/resource-inventory-summary"
 import {
   SecurityActorSessionTable,
   SecurityBrowserSessionTable,
@@ -40,11 +42,6 @@ function value(input: unknown) {
   return input as Record<string, unknown>
 }
 
-function items(input: unknown) {
-  if (!Array.isArray(input)) return [] as Record<string, unknown>[]
-  return input.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Record<string, unknown>[]
-}
-
 function bool(input: string) {
   return input === "true" || input === "1" || input === "yes"
 }
@@ -64,6 +61,16 @@ function optional(name: string) {
   return process.env[name] ?? ""
 }
 
+function parseJSON(input: string): unknown {
+  const value = input.trim()
+  if (!value) return
+  try {
+    return JSON.parse(value)
+  } catch {
+    return
+  }
+}
+
 function session() {
   return `sess-runtime-live-${randomUUID()}` as SessionID
 }
@@ -78,6 +85,109 @@ function jsonBlock(input: string) {
   } catch {
     return {}
   }
+}
+
+function jsonValue(input: string) {
+  const object = input.indexOf("{")
+  const list = input.indexOf("[")
+  let index = -1
+  if (object >= 0 && list >= 0) index = Math.min(object, list)
+  if (object >= 0 && list < 0) index = object
+  if (list >= 0 && object < 0) index = list
+  if (index < 0) return
+  try {
+    return JSON.parse(input.slice(index))
+  } catch {
+    return
+  }
+}
+
+function render(input: string, identity: string, password: string) {
+  return input
+    .replaceAll("{{identity}}", identity)
+    .replaceAll("{{password}}", password)
+}
+
+function headers(input: string) {
+  const parsed = parseJSON(input)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+  const out: Record<string, string> = {}
+  for (const key of Object.keys(parsed)) {
+    const item = text((parsed as Record<string, unknown>)[key])
+    if (!item) continue
+    out[key] = item
+  }
+  return out
+}
+
+function request(
+  url: string,
+  method: string,
+  actor: string,
+  identity: string,
+  password: string,
+  body: string,
+  headerText: string,
+  follow: string,
+) {
+  const args: Record<string, unknown> = {
+    url,
+    method,
+    actor_label: actor,
+  }
+  const head = headers(headerText)
+  if (Object.keys(head).length > 0) args.headers = head
+  const payload = body ? render(body, identity, password) : ""
+  if (payload) args.body = payload
+  if (follow) args.follow_redirects = bool(follow)
+  return args
+}
+
+type BrowserStep = {
+  action: "navigate" | "click" | "fill" | "evaluate" | "get_cookies"
+  selector?: string
+  value?: string
+  url?: string
+  timeout?: number
+  wait_ms?: number
+  optional?: boolean
+}
+
+function browserSteps(input: string) {
+  const value = parseJSON(input)
+  if (!Array.isArray(value)) return [] as BrowserStep[]
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const row = item as Record<string, unknown>
+    const action = text(row.action)
+    if (action !== "navigate" && action !== "click" && action !== "fill" && action !== "evaluate" && action !== "get_cookies") return []
+    return [{
+      action,
+      selector: text(row.selector) || undefined,
+      value: text(row.value) || undefined,
+      url: text(row.url) || undefined,
+      timeout: number(row.timeout) || undefined,
+      wait_ms: number(row.wait_ms) || undefined,
+      optional: row.optional === true,
+    }]
+  })
+}
+
+function populated(input: unknown) {
+  if (typeof input === "string") return input.trim().length > 0
+  if (Array.isArray(input)) return input.length > 0
+  if (!input || typeof input !== "object") return false
+  return Object.keys(input as Record<string, unknown>).length > 0
+}
+
+function authCheckProof(output: string, identity: string, needle: string) {
+  const lower = output.toLowerCase()
+  if (needle && lower.includes(needle.toLowerCase())) return true
+  if (identity && lower.includes(identity.toLowerCase())) return true
+  const parsed = jsonValue(output)
+  if (populated(parsed)) return true
+  const body = jsonBlock(output)
+  return populated(body.data) || populated(body.user)
 }
 
 const directory = new URL("..", import.meta.url).pathname
@@ -232,6 +342,18 @@ function runtimeSummary(sessionID: SessionID) {
   }
 }
 
+function inventorySummary(sessionID: SessionID) {
+  const rows = Database.use((db) =>
+    db
+      .select()
+      .from(EvidenceNodeTable)
+      .where(eq(EvidenceNodeTable.session_id, sessionID))
+      .orderBy(EvidenceNodeTable.time_created)
+      .all(),
+  )
+  return summarizeResourceInventory(rows)
+}
+
 async function registerJuiceUser(sessionID: SessionID, target: string, actorLabel: string, steps: Record<string, unknown>[]) {
   const email = `numasec.runtime.${randomUUID().slice(0, 8)}@example.com`
   const password = "Passw0rd!123"
@@ -270,18 +392,60 @@ const target = required("NUMASEC_RUNTIME_LIVE_URL")
 const actorLabel = optional("NUMASEC_RUNTIME_LIVE_ACTOR") || "live-primary"
 const browserURL = optional("NUMASEC_RUNTIME_LIVE_BROWSER_URL") || target
 const skipBrowser = bool(optional("NUMASEC_RUNTIME_LIVE_SKIP_BROWSER"))
+const browserStepsEnv = optional("NUMASEC_RUNTIME_LIVE_BROWSER_STEPS")
+const defaultJuiceBrowserSteps: BrowserStep[] =
+  mode === "juice" && browserURL === target
+    ? [
+        {
+          action: "click",
+          selector: 'a[aria-label="dismiss cookie message"]',
+          wait_ms: 500,
+          optional: true,
+        },
+        {
+          action: "click",
+          selector: 'button[aria-label="Close Welcome Banner"]',
+          wait_ms: 500,
+          optional: true,
+        },
+        {
+          action: "click",
+          selector: "div.product",
+          wait_ms: 1000,
+        },
+      ]
+    : []
+const browserSequence = browserStepsEnv ? browserSteps(browserStepsEnv) : defaultJuiceBrowserSteps
 const juiceAutoRegisterInput = optional("NUMASEC_RUNTIME_LIVE_JUICE_AUTO_REGISTER")
 const juiceAutoRegister = juiceAutoRegisterInput ? bool(juiceAutoRegisterInput) : mode === "juice"
 const loginURL =
   optional("NUMASEC_RUNTIME_LIVE_LOGIN_URL") ||
   (mode === "juice" ? new URL("/rest/user/login", target).toString() : "")
-const loginEmail = optional("NUMASEC_RUNTIME_LIVE_LOGIN_EMAIL") || (mode === "juice" ? "admin@juice-sh.op" : "")
+const loginIdentity =
+  optional("NUMASEC_RUNTIME_LIVE_LOGIN_IDENTITY") ||
+  optional("NUMASEC_RUNTIME_LIVE_LOGIN_EMAIL") ||
+  (mode === "juice" ? "admin@juice-sh.op" : "")
 const loginPassword = optional("NUMASEC_RUNTIME_LIVE_LOGIN_PASSWORD") || (mode === "juice" ? "admin123" : "")
+const loginMethod = optional("NUMASEC_RUNTIME_LIVE_LOGIN_METHOD") || "POST"
+const loginBody =
+  optional("NUMASEC_RUNTIME_LIVE_LOGIN_BODY") || '{"email":"{{identity}}","password":"{{password}}"}'
+const loginHeaders =
+  optional("NUMASEC_RUNTIME_LIVE_LOGIN_HEADERS_JSON") || '{"content-type":"application/json"}'
+const loginFollowRedirects = optional("NUMASEC_RUNTIME_LIVE_LOGIN_FOLLOW_REDIRECTS")
+const registerURL = optional("NUMASEC_RUNTIME_LIVE_REGISTER_URL")
+const registerMethod = optional("NUMASEC_RUNTIME_LIVE_REGISTER_METHOD") || "POST"
+const registerIdentity = optional("NUMASEC_RUNTIME_LIVE_REGISTER_IDENTITY") || loginIdentity
+const registerPassword = optional("NUMASEC_RUNTIME_LIVE_REGISTER_PASSWORD") || loginPassword
+const registerBody = optional("NUMASEC_RUNTIME_LIVE_REGISTER_BODY")
+const registerHeaders = optional("NUMASEC_RUNTIME_LIVE_REGISTER_HEADERS_JSON")
+const registerFollowRedirects = optional("NUMASEC_RUNTIME_LIVE_REGISTER_FOLLOW_REDIRECTS")
+const registerFirst = bool(optional("NUMASEC_RUNTIME_LIVE_REGISTER_FIRST"))
 const authURL =
   optional("NUMASEC_RUNTIME_LIVE_AUTH_CHECK_URL") ||
-  (mode === "juice" ? new URL("/rest/user/whoami", target).toString() : "")
+  (mode === "juice" ? new URL("/api/Users", target).toString() : "")
 const authMethod = optional("NUMASEC_RUNTIME_LIVE_AUTH_CHECK_METHOD") || "GET"
 const authBody = optional("NUMASEC_RUNTIME_LIVE_AUTH_CHECK_BODY")
+const authProofNeedle = optional("NUMASEC_RUNTIME_LIVE_AUTH_PROOF_SUBSTRING")
 const workflowURL = optional("NUMASEC_RUNTIME_LIVE_WORKFLOW_URL")
 const workflowResourceURL = optional("NUMASEC_RUNTIME_LIVE_RESOURCE_URL")
 const outputPath = optional("NUMASEC_RUNTIME_LIVE_OUTPUT_PATH")
@@ -290,25 +454,46 @@ const sessionID = session()
 seedSession(sessionID)
 
 const steps: Record<string, unknown>[] = []
-let loginIdentity = loginEmail
+let proofIdentity = loginIdentity
 let liveActorLabel = actorLabel
 
+if (registerFirst && registerURL && registerBody) {
+  const register = await runTool(
+    HttpRequestTool,
+    request(
+      registerURL,
+      registerMethod,
+      liveActorLabel,
+      registerIdentity,
+      registerPassword,
+      registerBody,
+      registerHeaders,
+      registerFollowRedirects,
+    ),
+    sessionID,
+  )
+  steps.push(step("register", register))
+  const status = number(value(register.metadata).status)
+  if (status >= 400) {
+    throw new Error(`Live registration failed with status ${status}: ${register.output}`)
+  }
+  proofIdentity = registerIdentity
+}
+
 let login: Awaited<ReturnType<typeof runTool>> | undefined
-if (loginURL && loginEmail && loginPassword) {
+if (loginURL && proofIdentity && loginPassword) {
   login = await runTool(
     HttpRequestTool,
-    {
-      url: loginURL,
-      method: "POST",
-      actor_label: liveActorLabel,
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        email: loginIdentity,
-        password: loginPassword,
-      }),
-    },
+    request(
+      loginURL,
+      loginMethod,
+      liveActorLabel,
+      proofIdentity,
+      loginPassword,
+      loginBody,
+      loginHeaders,
+      loginFollowRedirects,
+    ),
     sessionID,
   )
   steps.push(step("login", login))
@@ -316,25 +501,23 @@ if (loginURL && loginEmail && loginPassword) {
   if (status >= 400 && juiceAutoRegister) {
     liveActorLabel = `${actorLabel}-registered`
     const registered = await registerJuiceUser(sessionID, target, liveActorLabel, steps)
-    loginIdentity = registered.email
     login = await runTool(
       HttpRequestTool,
-      {
-        url: loginURL,
-        method: "POST",
-        actor_label: liveActorLabel,
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          email: registered.email,
-          password: registered.password,
-        }),
-      },
+      request(
+        loginURL,
+        loginMethod,
+        liveActorLabel,
+        registered.email,
+        registered.password,
+        loginBody,
+        loginHeaders,
+        loginFollowRedirects,
+      ),
       sessionID,
     )
     steps.push(step("login:retry-registered", login))
     status = number(value(login.metadata).status)
+    proofIdentity = registered.email
   }
   if (status >= 400) {
     throw new Error(`Live login failed with status ${status}: ${login.output}`)
@@ -358,6 +541,48 @@ if (!skipBrowser) {
   const status = text(value(browser.envelope).status)
   if (status && status !== "ok") {
     throw new Error(`Live browser step failed with status ${status}: ${browser.output}`)
+  }
+
+  if (browserSequence.length > 0) await Bun.sleep(1000)
+  let index = 0
+  for (const item of browserSequence) {
+    index += 1
+    if (item.optional && item.selector && (item.action === "click" || item.action === "fill")) {
+      const exists = await runTool(
+        BrowserTool,
+        {
+          action: "evaluate",
+          actor_label: liveActorLabel,
+          value: `Boolean(document.querySelector(${JSON.stringify(item.selector)}))`,
+        },
+        sessionID,
+      )
+      const present = text(exists.output).trim() === "true"
+      if (!present) {
+        steps.push({
+          name: `browser:${item.action}:${index}`,
+          title: `Skipped optional ${item.action} ${item.selector}`,
+          status: "skipped",
+        })
+        continue
+      }
+    }
+    const args: Record<string, unknown> = {
+      action: item.action,
+      actor_label: liveActorLabel,
+    }
+    if (item.selector) args.selector = item.selector
+    if (item.value) args.value = item.value
+    if (item.url) args.url = item.url
+    if (item.timeout) args.timeout = item.timeout
+    const out = await runTool(BrowserTool, args, sessionID)
+    steps.push(step(`browser:${item.action}:${index}`, out))
+    const itemStatus = text(value(out.envelope).status)
+    if (itemStatus && itemStatus !== "ok") {
+      if (item.optional) continue
+      throw new Error(`Live browser ${item.action} step failed with status ${itemStatus}: ${out.output}`)
+    }
+    if (item.wait_ms) await Bun.sleep(item.wait_ms)
   }
 
   cookies = await runTool(
@@ -422,17 +647,15 @@ if (workflowURL) {
 const projection = await runTool(ProjectFindingsTool, {}, sessionID)
 steps.push(step("findings:project", projection))
 
-const inventoryData = jsonBlock(text(inventory.output))
-const resources = items(inventoryData.resources)
-const actors = items(inventoryData.actors)
-const groups = items(inventoryData.by_actor)
+const inventoryData = inventorySummary(sessionID)
+const resources = inventoryData.resources
+const actors = inventoryData.actors
 
 let networkResources = 0
 let networkActions = 0
 const actionSamples: string[] = []
 
-for (const item of resources) {
-  const row = value(item)
+for (const row of resources) {
   if (text(row.source_kind) !== "browser_network") continue
   networkResources += 1
   const kind = text(row.action_kind)
@@ -454,13 +677,18 @@ const loginActorSession = text(loginMeta.actorSessionID)
 const browserActorSession = text(browserMeta.actorSessionID)
 const cookieActorSession = text(cookieMeta.actorSessionID)
 const authActorSession = text(authMeta.actorSessionID)
+const authMeaningful = auth ? authCheckProof(text(auth.output), proofIdentity, authProofNeedle) : false
 const browserPersisted = skipBrowser
   ? "skipped"
   : browserActorSession && cookieActorSession && browserActorSession === cookieActorSession
     ? "ok"
     : "failed"
 const authPropagated = authURL
-  ? number(authMeta.status) < 400 && authActorSession && (!loginActorSession || authActorSession === loginActorSession) && (!browserActorSession || authActorSession === browserActorSession)
+  ? number(authMeta.status) < 400
+    && authMeaningful
+    && authActorSession
+    && (!loginActorSession || authActorSession === loginActorSession)
+    && (!browserActorSession || authActorSession === browserActorSession)
     ? "ok"
     : "failed"
   : "not_run"
@@ -471,13 +699,13 @@ const summary = {
   target,
   actor_label: liveActorLabel,
   requested_actor_label: actorLabel,
-  login_identity: loginIdentity,
+  login_identity: proofIdentity,
   steps,
   inventory: {
-    actor_count: number(value(inventory.metadata).actorCount),
-    resource_count: number(value(inventory.metadata).resourceCount),
-    actor_group_count: groups.length,
-    action_count: number(value(inventory.metadata).actionCount),
+    actor_count: inventoryData.metrics.actor_count,
+    resource_count: inventoryData.metrics.resource_count,
+    actor_group_count: inventoryData.metrics.actor_groups,
+    action_count: inventoryData.metrics.action_count,
     browser_network_resource_count: networkResources,
     browser_network_action_count: networkActions,
     browser_network_action_samples: actionSamples,
@@ -497,6 +725,7 @@ const summary = {
     actor_persistence: browserPersisted,
     auth_propagation: authPropagated,
     action_mining_yield: networkActions,
+    action_inventory_yield: inventoryData.metrics.action_count,
     verified_finding_yield: number(projectionMeta.verified),
     recovery_attempts: runtime.recovery_attempts,
     recovered_steps: runtime.recovered_steps,
@@ -514,16 +743,18 @@ console.log(
     `target=${target}`,
     `actor_label=${liveActorLabel}`,
     `requested_actor_label=${actorLabel}`,
-    `login_identity=${loginIdentity}`,
+    `login_identity=${proofIdentity}`,
     `login_actor_session=${loginActorSession}`,
     `browser_actor_session=${browserActorSession}`,
     `browser_cookie_actor_session=${cookieActorSession}`,
     `browser_cookie_count=${number(cookieMeta.count)}`,
     `auth_check_status=${number(authMeta.status)}`,
+    `auth_check_proven=${authMeaningful}`,
     `auth_check_actor_session=${authActorSession}`,
-    `inventory_actor_count=${number(value(inventory.metadata).actorCount)}`,
-    `inventory_resource_count=${number(value(inventory.metadata).resourceCount)}`,
-    `inventory_action_count=${number(value(inventory.metadata).actionCount)}`,
+    `inventory_actor_count=${inventoryData.metrics.actor_count}`,
+    `inventory_resource_count=${inventoryData.metrics.resource_count}`,
+    `inventory_actor_group_count=${inventoryData.metrics.actor_groups}`,
+    `inventory_action_count=${inventoryData.metrics.action_count}`,
     `browser_network_resource_count=${networkResources}`,
     `browser_network_action_count=${networkActions}`,
     `verified_findings=${number(projectionMeta.verified)}`,

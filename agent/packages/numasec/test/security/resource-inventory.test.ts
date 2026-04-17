@@ -150,4 +150,29 @@ describe("shared resource inventory", () => {
     expect(group.own_values.length).toBeGreaterThanOrEqual(1)
     expect(group.foreign_values).toContain("1")
   })
+
+  test("ingestToolEnvelope returns canonical node ids keyed for reuse", async () => {
+    const sessionID = "sess-envelope-node-ids" as SessionID
+    seedSession(sessionID)
+
+    const impl = await HttpRequestTool.init()
+    const out = await impl.execute(
+      {
+        url: `${app.baseUrl}/api/Products`,
+        method: "GET",
+      } as never,
+      toolContext(sessionID),
+    )
+
+    const ingest = await ingestToolEnvelope({
+      sessionID,
+      tool: HttpRequestTool.id,
+      title: out.title,
+      metadata: typeof out.metadata === "object" && out.metadata && !Array.isArray(out.metadata) ? (out.metadata as Record<string, unknown>) : {},
+      envelope: out.envelope as any,
+    })
+
+    expect(ingest.artifactNodeIDs.length).toBeGreaterThan(0)
+    expect(ingest.nodeIDsByKey.exchange).toBeString()
+  })
 })

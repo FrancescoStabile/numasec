@@ -21,6 +21,8 @@
     "test": "bun test --timeout 30000",
     "test:runtime": "bun run script/runtime-eval.ts",
     "test:runtime-live": "bun run script/runtime-live.ts",
+    "test:benchmark-proof": "bun run script/benchmark-proof.ts",
+    "test:release-proof": "bun test --timeout 30000 test/session/prompt.test.ts test/security/report-projection.test.ts test/security/semantic-closure-tools.test.ts test/command/taxonomy.test.ts test/command/resolve.test.ts test/installation/installation.test.ts && bun run test:runtime && bun run script/release-proof.ts",
     "build": "bun run script/build.ts",
     "dev": "bun run --conditions=browser ./src/index.ts",
     "db": "bun drizzle-kit"

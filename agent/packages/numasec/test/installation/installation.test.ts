@@ -3,6 +3,9 @@ import { Effect, Layer, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
 
 const encoder = new TextEncoder()
 
@@ -94,58 +97,65 @@ describe("installation", () => {
       expect(result).toBe("1.6.0")
     })
 
-    test("reads scoop manifest versions", async () => {
-      const layer = testLayer(() => jsonResponse({ version: "2.3.4" }))
+    test("uses the current version for source installs", async () => {
+      const layer = testLayer(() => jsonResponse({ tag_name: "v9.9.9" }), () => "")
 
       const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("scoop")).pipe(Effect.provide(layer)),
+        Installation.Service.use((svc) => svc.latest("source")).pipe(Effect.provide(layer)),
       )
-      expect(result).toBe("2.3.4")
+      expect(result).toBe(Installation.VERSION)
+    })
+  })
+
+  describe("method", () => {
+    test("detects source installs from a symlinked local binary", async () => {
+      if (process.platform === "win32") return
+
+      const prev = process.env.NUMASEC_TEST_HOME
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), "numasec-home-"))
+      const repo = path.join(home, "repo")
+      const target = path.join(repo, "agent", "packages", "numasec", "dist", "numasec-linux-x64", "bin", "numasec")
+      const link = path.join(home, ".local", "bin", "numasec")
+      try {
+        process.env.NUMASEC_TEST_HOME = home
+        await fs.mkdir(path.dirname(target), { recursive: true })
+        await fs.mkdir(path.join(repo, "agent"), { recursive: true })
+        await Bun.write(path.join(repo, "install.sh"), "#!/usr/bin/env bash\n")
+        await Bun.write(path.join(repo, "agent", "package.json"), "{}\n")
+        await Bun.write(target, "#!/usr/bin/env bash\n")
+        await fs.mkdir(path.dirname(link), { recursive: true })
+        await fs.symlink(target, link)
+
+        const layer = testLayer(() => jsonResponse({ tag_name: "v1.2.3" }), () => "")
+        const result = await Effect.runPromise(
+          Installation.Service.use((svc) => svc.method()).pipe(Effect.provide(layer)),
+        )
+
+        expect(result).toBe("source")
+      } finally {
+        if (prev === undefined) delete process.env.NUMASEC_TEST_HOME
+        else process.env.NUMASEC_TEST_HOME = prev
+        await fs.rm(home, { recursive: true, force: true })
+      }
     })
 
-    test("reads chocolatey feed versions", async () => {
-      const layer = testLayer(() => jsonResponse({ d: { results: [{ Version: "3.4.5" }] } }))
-
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("choco")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("3.4.5")
-    })
-
-    test("reads brew formulae API versions", async () => {
+    test("treats unsupported package-manager installs as unknown", async () => {
       const layer = testLayer(
-        () => jsonResponse({ versions: { stable: "2.0.0" } }),
+        () => jsonResponse({ tag_name: "v1.2.3" }),
         (cmd, args) => {
-          // getBrewFormula: return core formula (no tap)
-          if (cmd === "brew" && args.includes("--formula") && args.includes("anomalyco/tap/numasec")) return ""
-          if (cmd === "brew" && args.includes("--formula") && args.includes("numasec")) return "numasec"
+          if (cmd === "brew" && args.join(" ") === "list --formula numasec") return "numasec\n"
+          if (cmd === "scoop" && args.join(" ") === "list numasec") return "Installed apps:\nnumasec 1.2.3\n"
+          if (cmd === "choco" && args.join(" ") === "list --limit-output numasec") return "numasec|1.2.3\n"
+          if (cmd === "yarn" && args.join(" ") === "global list") return "info\n└─ numasec@1.2.3\n"
           return ""
         },
       )
 
       const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("brew")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("2.0.0")
-    })
-
-    test("reads brew tap info JSON via CLI", async () => {
-      const brewInfoJson = JSON.stringify({
-        formulae: [{ versions: { stable: "2.1.0" } }],
-      })
-      const layer = testLayer(
-        () => jsonResponse({}), // HTTP not used for tap formula
-        (cmd, args) => {
-          if (cmd === "brew" && args.includes("anomalyco/tap/numasec") && args.includes("--formula")) return "numasec"
-          if (cmd === "brew" && args.includes("--json=v2")) return brewInfoJson
-          return ""
-        },
+        Installation.Service.use((svc) => svc.method()).pipe(Effect.provide(layer)),
       )
 
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("brew")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("2.1.0")
+      expect(result).toBe("unknown")
     })
   })
 })

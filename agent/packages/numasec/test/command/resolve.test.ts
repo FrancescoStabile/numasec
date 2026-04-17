@@ -10,6 +10,18 @@ describe("resolveSlashCommand", () => {
     })
   })
 
+  test("matches nested finalize commands before shorter report prefixes", () => {
+    const value = resolveSlashCommand("/report finalize markdown --out report.md", [
+      "report",
+      "report generate",
+      "report finalize",
+    ])
+    expect(value).toEqual({
+      command: "report finalize",
+      arguments: "markdown --out report.md",
+    })
+  })
+
   test("keeps multiline arguments after command match", () => {
     const value = resolveSlashCommand("/scope set https://example.com\nnotes line", ["scope set"])
     expect(value).toEqual({

@@ -5,6 +5,7 @@ import { lookup } from "mime-types"
 import { Effect, FileSystem, Layer, Schema, ServiceMap } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { Glob } from "../util/glob"
+import { Filesystem as NodeFilesystem } from "../util/filesystem"
 
 export namespace AppFileSystem {
   export class FileSystemError extends Schema.TaggedErrorClass<FileSystemError>()("FileSystemError", {
@@ -51,9 +52,16 @@ export namespace AppFileSystem {
       })
 
       const writeJson = Effect.fn("FileSystem.writeJson")(function* (path: string, data: unknown, mode?: number) {
+        if (mode) {
+          yield* Effect.tryPromise({
+            try: () => NodeFilesystem.writeJson(path, data, mode),
+            catch: (cause) => new FileSystemError({ method: "writeJson", cause }),
+          })
+          return
+        }
+
         const content = JSON.stringify(data, null, 2)
         yield* fs.writeFileString(path, content)
-        if (mode) yield* fs.chmod(path, mode)
       })
 
       const ensureDir = Effect.fn("FileSystem.ensureDir")(function* (path: string) {
@@ -65,6 +73,14 @@ export namespace AppFileSystem {
         content: string | Uint8Array,
         mode?: number,
       ) {
+        if (mode) {
+          yield* Effect.tryPromise({
+            try: () => NodeFilesystem.write(path, content, mode),
+            catch: (cause) => new FileSystemError({ method: "writeWithDirs", cause }),
+          })
+          return
+        }
+
         const write = typeof content === "string" ? fs.writeFileString(path, content) : fs.writeFile(path, content)
 
         yield* write.pipe(
@@ -77,7 +93,6 @@ export namespace AppFileSystem {
               }),
           ),
         )
-        if (mode) yield* fs.chmod(path, mode)
       })
 
       const glob = Effect.fn("FileSystem.glob")(function* (pattern: string, options?: Glob.Options) {

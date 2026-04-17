@@ -1,6 +1,7 @@
 import z from "zod"
 import { Tool } from "../../tool/tool"
 import { deriveAttackPathProjection, persistAttackPathProjection } from "../chain-projection"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Derive attack paths from findings and persist chain projection.
@@ -15,13 +16,14 @@ export const DeriveAttackPathsTool = Tool.define("derive_attack_paths", {
     explain: z.boolean().optional().describe("Include pair score explainability and canonicalization details"),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const result = deriveAttackPathProjection({
-      sessionID: ctx.sessionID,
+      sessionID,
       severity: params.severity,
       confidenceThreshold: params.confidence_threshold,
       includeFalsePositive: params.include_false_positive,
     })
-    persistAttackPathProjection(ctx.sessionID, result)
+    persistAttackPathProjection(sessionID, result)
 
     if (result.chains.length === 0) {
       return {

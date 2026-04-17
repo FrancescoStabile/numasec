@@ -19,6 +19,10 @@ interface ReportContext {
   provisional?: Finding[]
   suppressed?: Finding[]
   promotion_gaps?: number
+  report_state?: "working_draft" | "final"
+  requested_mode?: "working" | "final"
+  note?: string
+  truth_reasons?: string[]
 }
 
 // ── SARIF 2.1.0 ──────────────────────────────────────────────
@@ -90,12 +94,15 @@ export function generateSarif(findings: Finding[], targetUrl: string, chains?: C
   if (context) {
     invocationProperties.reportTruth = {
       incomplete: context.incomplete ?? false,
-      incompleteReason: context.incomplete_reason || undefined,
+      reportState: context.report_state || "final",
+      requestedMode: context.requested_mode || "working",
       verifiedRiskScore: context.verified_risk_score,
       upperBoundRiskScore: context.upper_bound_risk_score,
       provisionalCount: context.provisional?.length ?? 0,
       suppressedCount: context.suppressed?.length ?? 0,
       promotionGaps: context.promotion_gaps ?? 0,
+      note: context.note || context.incomplete_reason || undefined,
+      truthReasons: context.truth_reasons ?? [],
     }
   }
 
@@ -126,6 +133,7 @@ export function generateSarif(findings: Finding[], targetUrl: string, chains?: C
 export function generateMarkdown(findings: Finding[], targetUrl: string, chains?: ChainGroup[], context?: ReportContext): string {
   const lines: string[] = []
   const now = new Date().toISOString().split("T")[0]
+  const note = context?.note ?? context?.incomplete_reason ?? ""
 
   lines.push(`# Security Assessment Report`)
   lines.push(``)
@@ -134,6 +142,13 @@ export function generateMarkdown(findings: Finding[], targetUrl: string, chains?
   lines.push(`**Tool:** numasec v${Installation.VERSION}`)
   lines.push(`**Findings:** ${findings.length}`)
   lines.push(``)
+
+  if (context?.report_state === "working_draft") {
+    lines.push(`> REPORT_WORKING_DRAFT`)
+    lines.push(`> This working report reflects the current verified state of the engagement.`)
+    lines.push(`> Final readiness is not yet satisfied; see Truthfulness Notice for remaining verification debt.`)
+    lines.push(``)
+  }
 
   if (context && (context.incomplete || (context.provisional?.length ?? 0) > 0 || (context.promotion_gaps ?? 0) > 0)) {
     lines.push(`## Truthfulness Notice`)
@@ -147,7 +162,11 @@ export function generateMarkdown(findings: Finding[], targetUrl: string, chains?
     if ((context.provisional?.length ?? 0) > 0) lines.push(`- Provisional reportable findings excluded from verified score: ${context.provisional?.length ?? 0}`)
     if ((context.suppressed?.length ?? 0) > 0) lines.push(`- Suppressed/refuted findings: ${context.suppressed?.length ?? 0}`)
     if ((context.promotion_gaps ?? 0) > 0) lines.push(`- Promotion gaps: ${context.promotion_gaps}`)
-    if (context.incomplete_reason) lines.push(`- Incomplete override reason: ${context.incomplete_reason}`)
+    for (const item of context.truth_reasons ?? []) {
+      if (!item.trim()) continue
+      lines.push(`- ${item}`)
+    }
+    if (note) lines.push(`- Report note: ${note}`)
     lines.push(``)
   }
 
@@ -294,6 +313,7 @@ const INLINE_CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:
 export function generateHtml(findings: Finding[], targetUrl: string, chains?: ChainGroup[], context?: ReportContext): string {
   const now = new Date().toISOString().split("T")[0]
   const riskScore = context?.verified_risk_score ?? calculateRiskScore(findings)
+  const note = context?.note ?? context?.incomplete_reason ?? ""
   const counts: Record<string, number> = {}
   for (const f of findings) counts[f.severity] = (counts[f.severity] ?? 0) + 1
 
@@ -340,13 +360,17 @@ export function generateHtml(findings: Finding[], targetUrl: string, chains?: Ch
   const roadmapHtml = generateHtmlRemediation(sorted)
   const truthHtml =
     context && (context.incomplete || (context.provisional?.length ?? 0) > 0 || (context.promotion_gaps ?? 0) > 0)
-      ? `<div class="card" style="margin-bottom:1rem;border-left:4px solid #dc3545"><div class="card-body"><h5>Truthfulness Notice</h5><p>This report scores only verified findings.</p><p><strong>Verified risk:</strong> ${context.verified_risk_score ?? riskScore}/100${
+      ? `<div class="card" style="margin-bottom:1rem;border-left:4px solid #dc3545"><div class="card-body">${
+          context.report_state === "working_draft"
+            ? `<h5>REPORT_WORKING_DRAFT</h5><p>This working report reflects the current verified state of the engagement.</p><p><strong>Final readiness is not yet satisfied.</strong></p>`
+            : ""
+        }<h5>Truthfulness Notice</h5><p>This report scores only verified findings.</p><p><strong>Verified risk:</strong> ${context.verified_risk_score ?? riskScore}/100${
           context.upper_bound_risk_score !== undefined && context.upper_bound_risk_score !== (context.verified_risk_score ?? riskScore)
             ? ` | <strong>Upper bound:</strong> ${context.upper_bound_risk_score}/100`
             : ""
         }</p><p><strong>Provisional:</strong> ${context.provisional?.length ?? 0} | <strong>Suppressed/refuted:</strong> ${context.suppressed?.length ?? 0} | <strong>Promotion gaps:</strong> ${context.promotion_gaps ?? 0}</p>${
-          context.incomplete_reason ? `<p><strong>Override reason:</strong> ${esc(context.incomplete_reason)}</p>` : ""
-        }</div></div>`
+          (context.truth_reasons ?? []).length > 0 ? `<p><strong>Remaining debt:</strong><br>${(context.truth_reasons ?? []).map((item) => `- ${esc(item)}`).join("<br>")}</p>` : ""
+        }${note ? `<p><strong>Report note:</strong> ${esc(note)}</p>` : ""}</div></div>`
       : ""
   const provisionalHtml =
     (context?.provisional?.length ?? 0) > 0
@@ -383,7 +407,9 @@ export function generateHtml(findings: Finding[], targetUrl: string, chains?: Ch
         <div class="card">
           <div class="card-body">
             <h5>Summary</h5>
-            <p>${findings.length} verified findings: ${severityBadges}</p>
+            <p>${findings.length} verified findings: ${severityBadges}${
+              context?.report_state === "working_draft" ? ` <span class="badge" style="background:#6c757d">WORKING DRAFT</span>` : ""
+            }</p>
           </div>
         </div>
       </div>

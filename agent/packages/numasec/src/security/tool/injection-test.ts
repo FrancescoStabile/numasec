@@ -111,7 +111,7 @@ export const InjectionTestTool = Tool.define("injection_test", {
     await ctx.ask({
       permission: "injection_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, parameter: params.parameter, types: params.types } as Record<string, any>,
     })
 
@@ -144,10 +144,25 @@ export const InjectionTestTool = Tool.define("injection_test", {
 
     for (const type of types) {
       if (type === "nosql") {
+        const position =
+          params.position === "query"
+            ? "query"
+            : params.position === "body" || params.position === "json"
+              ? "json"
+              : undefined
+        if (!position) {
+          results.push(`\n── NoSQL Injection: skipped (unsupported position ${params.position}) ──`)
+          continue
+        }
         ctx.metadata({ title: `Testing NoSQL injection on ${params.parameter}...` })
         const nosqlResult = await testNoSql(params.url, {
           parameters: [params.parameter],
+          position,
+          method: params.method,
+          headers: params.headers,
+          cookies: params.cookies,
           jsonBody: params.body ? JSON.parse(params.body) : undefined,
+          sessionID: ctx.sessionID,
         })
         if (nosqlResult.vulnerable) {
           totalVulnerable++
@@ -197,8 +212,10 @@ export const InjectionTestTool = Tool.define("injection_test", {
       ctx.metadata({ title: `Testing ${set.label} on ${params.parameter}...` })
       const scanResult = await testPayloads({
         ...testConfig,
+        sessionID: ctx.sessionID,
         payloads: set.payloads,
         successIndicators: set.indicators,
+        matchOn5xx: type !== "crlf",
       })
 
         if (scanResult.vulnerable) {

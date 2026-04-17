@@ -3,7 +3,6 @@ import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"
 import { GenerateCommand } from "./cli/cmd/generate"
 import { Log } from "./util/log"
-import { ConsoleCommand } from "./cli/cmd/account"
 import { ProvidersCommand } from "./cli/cmd/providers"
 import { AgentCommand } from "./cli/cmd/agent"
 import { UpgradeCommand } from "./cli/cmd/upgrade"
@@ -18,7 +17,6 @@ import { Filesystem } from "./util/filesystem"
 import { DebugCommand } from "./cli/cmd/debug"
 import { StatsCommand } from "./cli/cmd/stats"
 import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
 import { ExportCommand } from "./cli/cmd/export"
 import { ImportCommand } from "./cli/cmd/import"
 import { AttachCommand } from "./cli/cmd/tui/attach"
@@ -33,6 +31,7 @@ import path from "path"
 import { Global } from "./global"
 import { JsonMigration } from "./storage/json-migration"
 import { Database } from "./storage/db"
+import { Storage } from "./storage/storage"
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", {
@@ -83,10 +82,11 @@ const cli = yargs(hideBin(process.argv))
       args: process.argv.slice(2),
     })
 
-    const marker = Database.Path
-    if (!(await Filesystem.exists(marker))) {
+    await Storage.init()
+    const storageDir = path.join(Global.Path.data, "storage")
+    if ((await Filesystem.exists(storageDir)) && !(await JsonMigration.done())) {
       const tty = process.stderr.isTTY
-      process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)
+      process.stderr.write("Performing one-time legacy data migration, may take a few minutes..." + EOL)
       const width = 36
       const orange = "\x1b[38;5;214m"
       const muted = "\x1b[0;2m"
@@ -117,7 +117,7 @@ const cli = yargs(hideBin(process.argv))
           process.stderr.write(`sqlite-migration:done${EOL}`)
         }
       }
-      process.stderr.write("Database migration complete." + EOL)
+      process.stderr.write("Legacy data migration complete." + EOL)
     }
   })
   .usage("\n" + UI.logo())
@@ -129,7 +129,6 @@ const cli = yargs(hideBin(process.argv))
   .command(RunCommand)
   .command(GenerateCommand)
   .command(DebugCommand)
-  .command(ConsoleCommand)
   .command(ProvidersCommand)
   .command(AgentCommand)
   .command(UpgradeCommand)
@@ -140,7 +139,6 @@ const cli = yargs(hideBin(process.argv))
   .command(StatsCommand)
   .command(ExportCommand)
   .command(ImportCommand)
-  .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
   .command(DbCommand)

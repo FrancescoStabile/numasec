@@ -4,7 +4,6 @@ import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Config } from "../../src/config/config"
 import { Instance } from "../../src/project/instance"
 import { Auth } from "../../src/auth"
-import { AccessToken, Account, AccountID, OrgID } from "../../src/account"
 import { AppFileSystem } from "../../src/filesystem"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { tmpdir } from "../fixture/fixture"
@@ -21,10 +20,6 @@ import { Global } from "../../src/global"
 import { ProjectID } from "../../src/project/schema"
 import { Filesystem } from "../../src/util/filesystem"
 import { BunProc } from "../../src/bun"
-
-const emptyAccount = Layer.mock(Account.Service)({
-  active: () => Effect.succeed(Option.none()),
-})
 
 const emptyAuth = Layer.mock(Auth.Service)({
   all: () => Effect.succeed({}),
@@ -263,53 +258,6 @@ test("preserves env variables when adding $schema to config", async () => {
   }
 })
 
-test("resolves env templates in account config with account token", async () => {
-  const originalControlToken = process.env["NUMASEC_CONSOLE_TOKEN"]
-
-  const fakeAccount = Layer.mock(Account.Service)({
-    active: () =>
-      Effect.succeed(
-        Option.some({
-          id: AccountID.make("account-1"),
-          email: "user@example.com",
-          url: "https://control.example.com",
-          active_org_id: OrgID.make("org-1"),
-        }),
-      ),
-    config: () =>
-      Effect.succeed(
-        Option.some({
-          provider: { numasec: { options: { apiKey: "{env:NUMASEC_CONSOLE_TOKEN}" } } },
-        }),
-      ),
-    token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
-  })
-
-  const layer = Config.layer.pipe(
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(emptyAuth),
-    Layer.provide(fakeAccount),
-    Layer.provideMerge(infra),
-  )
-
-  try {
-    await provideTmpdirInstance(() =>
-      Config.Service.use((svc) =>
-        Effect.gen(function* () {
-          const config = yield* svc.get()
-          expect(config.provider?.["numasec"]?.options?.apiKey).toBe("st_test_token")
-        }),
-      ),
-    ).pipe(Effect.scoped, Effect.provide(layer), Effect.runPromise)
-  } finally {
-    if (originalControlToken !== undefined) {
-      process.env["NUMASEC_CONSOLE_TOKEN"] = originalControlToken
-    } else {
-      delete process.env["NUMASEC_CONSOLE_TOKEN"]
-    }
-  }
-})
-
 test("handles file inclusion substitution", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -469,7 +417,7 @@ test("handles command configuration", async () => {
   })
 })
 
-test("migrates autoshare to share field", async () => {
+test("ignores removed autoshare field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Filesystem.write(
@@ -485,8 +433,8 @@ test("migrates autoshare to share field", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await Config.get()
-      expect(config.share).toBe("auto")
-      expect(config.autoshare).toBe(true)
+      expect("share" in config).toBe(false)
+      expect("autoshare" in config).toBe(false)
     },
   })
 })
@@ -1198,7 +1146,7 @@ test("managed settings override user settings", async () => {
     fn: async () => {
       const config = await Config.get()
       expect(config.model).toBe("managed/model")
-      expect(config.share).toBe("disabled")
+      expect("share" in config).toBe(false)
       expect(config.username).toBe("testuser")
     },
   })
@@ -1635,7 +1583,6 @@ test("project config overrides remote well-known config", async () => {
   const layer = Config.layer.pipe(
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(fakeAuth),
-    Layer.provide(emptyAccount),
     Layer.provideMerge(infra),
   )
 
@@ -1690,7 +1637,6 @@ test("wellknown URL with trailing slash is normalized", async () => {
   const layer = Config.layer.pipe(
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(fakeAuth),
-    Layer.provide(emptyAccount),
     Layer.provideMerge(infra),
   )
 
@@ -1707,6 +1653,59 @@ test("wellknown URL with trailing slash is normalized", async () => {
     ).pipe(Effect.scoped, Effect.provide(layer), Effect.runPromise)
   } finally {
     globalThis.fetch = originalFetch
+  }
+})
+
+test("wellknown config substitutions use scoped auth env without mutating process.env", async () => {
+  const originalFetch = globalThis.fetch
+  const originalToken = process.env.TEST_TOKEN
+  delete process.env.TEST_TOKEN
+  globalThis.fetch = mock((url: string | URL | Request) => {
+    const urlStr = url.toString()
+    if (urlStr.includes(".well-known/numasec")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            config: {
+              username: "{env:TEST_TOKEN}",
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+    }
+    return originalFetch(url)
+  }) as unknown as typeof fetch
+
+  const fakeAuth = Layer.mock(Auth.Service)({
+    all: () =>
+      Effect.succeed({
+        "https://example.com": new Auth.WellKnown({ type: "wellknown", key: "TEST_TOKEN", token: "test-token" }),
+      }),
+  })
+
+  const layer = Config.layer.pipe(
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(fakeAuth),
+    Layer.provideMerge(infra),
+  )
+
+  try {
+    await provideTmpdirInstance(
+      () =>
+        Config.Service.use((svc) =>
+          Effect.gen(function* () {
+            const config = yield* svc.get()
+            expect(config.username).toBe("test-token")
+            expect(process.env.TEST_TOKEN).toBeUndefined()
+          }),
+        ),
+      { git: true },
+    ).pipe(Effect.scoped, Effect.provide(layer), Effect.runPromise)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalToken === undefined) delete process.env.TEST_TOKEN
+    if (originalToken !== undefined) process.env.TEST_TOKEN = originalToken
   }
 })
 

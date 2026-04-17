@@ -4,6 +4,7 @@ import { cmd } from "./cmd"
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"
 import { ACP } from "@/acp/agent"
 import { Server } from "@/server/server"
+import { serverAuthorizationHeader } from "@/server/auth"
 import { createNumasecClient } from "@numasec/sdk/v2"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 
@@ -27,6 +28,11 @@ export const AcpCommand = cmd({
 
       const sdk = createNumasecClient({
         baseUrl: `http://${server.hostname}:${server.port}`,
+        headers: server.auth
+          ? {
+              Authorization: serverAuthorizationHeader(server.auth),
+            }
+          : undefined,
       })
 
       const input = new WritableStream<Uint8Array>({

@@ -3,18 +3,31 @@ Generate a penetration test report.
 Command migration note:
 - Canonical command: `/report generate [format]`
 - Legacy alias: `/report [format]` (soft-deprecated, still supported in v1.x)
+- `/report status` shows readiness/blockers without rendering a report
 
 Arguments: $ARGUMENTS
 
 Parse arguments as:
 - `markdown|html|sarif` optional format (default: markdown)
 - `--out <path>` optional output file path
+- `--final` optional closure-gated final report
+- `--strict` optional alias for `--final`
+- `--note <text>` optional operator note to embed in the rendered report
+- `--incomplete` legacy alias for the default working report mode; do not require it
 
-Call `generate_report` with:
+If `--final` or `--strict` is present, prefer `finalize_report` with:
 - `format`
 - `output_path` when `--out` is present
+- `note` from `--note <text>` when present
+- default final-mode closure gating
+Otherwise call `generate_report` with:
+- `format`
+- `output_path` when `--out` is present
+- `note` from `--note <text>` when present
+- default working report mode
 Then display a summary of:
 - Target tested
+- Report state (`working draft` or `final`)
 - Duration
 - Findings by severity
 - OWASP Top 10 coverage

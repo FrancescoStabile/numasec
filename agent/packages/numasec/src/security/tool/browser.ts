@@ -39,6 +39,9 @@ import {
   resetBrowserSession,
   syncBrowserSession,
 } from "../runtime/browser-runtime"
+import { collectJsonLeafPaths } from "../scanner/json-path"
+import { Scope } from "../scope"
+import { persistEngagementTarget } from "../target-store"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Automate a headless browser for security testing. Use for:
@@ -98,6 +101,7 @@ export interface BrowserActionInput {
   body?: string
   label?: string
   fields?: BrowserFormFieldInput[]
+  disabled?: boolean
 }
 
 export interface BrowserNetworkInput {
@@ -373,6 +377,47 @@ function formBody(input: BrowserFormInput) {
   return fieldsBody(input.fields)
 }
 
+function parameterNames(
+  url: string,
+  contentType: string,
+  body: string,
+  fields?: BrowserFormFieldInput[],
+) {
+  const out = new Set<string>()
+  try {
+    const value = new URL(url)
+    for (const item of Array.from(value.searchParams.keys())) {
+      if (!item) continue
+      out.add(item)
+    }
+  } catch {}
+  const type = contentType.toLowerCase()
+  const textBody = body.trim()
+  const parsed = parseJson(textBody)
+  if ((type.includes("application/json") || (!type && parsed !== undefined)) && parsed !== undefined) {
+    for (const item of collectJsonLeafPaths(parsed)) {
+      if (!item) continue
+      out.add(item)
+    }
+  }
+  if (
+    type.includes("application/x-www-form-urlencoded") ||
+    type.includes("multipart/form-data") ||
+    (!type && parsed === undefined && textBody.includes("="))
+  ) {
+    const params = new URLSearchParams(textBody)
+    for (const item of Array.from(params.keys())) {
+      if (!item) continue
+      out.add(item)
+    }
+  }
+  for (const item of fields ?? []) {
+    if (!item.name) continue
+    out.add(item.name)
+  }
+  return Array.from(out)
+}
+
 export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot) {
   const observations: Record<string, any>[] = []
   const actor = inferBrowserActor(snapshot)
@@ -412,12 +457,13 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
     response_status: number
     initiator_url: string
     resource_type: string
-    failure: string
-    action_label: string
-    form_enctype: string
-    form_body: string
-    submit_label: string
-    form_fields: BrowserFormFieldInput[]
+      failure: string
+      action_label: string
+      form_enctype: string
+      form_body: string
+      submit_label: string
+      form_fields: BrowserFormFieldInput[]
+      parameter_names: string[]
   }>()
   const addRoute = (url: string, method: string, sourceKind: string, extra?: Partial<{
     action_kind: string
@@ -429,11 +475,12 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
       initiator_url: string
       resource_type: string
       failure: string
-      action_label: string
-      form_enctype: string
-      form_body: string
-      submit_label: string
-      form_fields: BrowserFormFieldInput[]
+       action_label: string
+       form_enctype: string
+       form_body: string
+       submit_label: string
+       form_fields: BrowserFormFieldInput[]
+       parameter_names: string[]
   }>) => {
     if (!url) return
     if (!sameOrigin(snapshot.page_url, url)) return
@@ -459,6 +506,9 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
       form_body: extra?.form_body ?? "",
       submit_label: extra?.submit_label ?? "",
       form_fields: extra?.form_fields ?? [],
+      parameter_names:
+        extra?.parameter_names ??
+        parameterNames(next, extra?.request_content_type ?? "", extra?.request_body ?? "", extra?.form_fields),
     }
     if (!current) {
       routes.set(key, row)
@@ -481,6 +531,7 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
       form_body: current.form_body || row.form_body,
       submit_label: current.submit_label || row.submit_label,
       form_fields: current.form_fields.length > 0 ? current.form_fields : row.form_fields,
+      parameter_names: Array.from(new Set([...current.parameter_names, ...row.parameter_names])),
     })
   }
 
@@ -505,6 +556,7 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
     })
   }
   for (const item of snapshot.actions ?? []) {
+    if (item.disabled) continue
     const actionUrl = normalizeUrl(snapshot.page_url, item.url)
     const label = text(item.label)
     const kind = text(item.action_kind) || inferActionKind(actionUrl || item.url, label)
@@ -582,6 +634,7 @@ export function buildBrowserInventoryEnvelope(snapshot: BrowserInventorySnapshot
       form_body: item.form_body || undefined,
       submit_label: item.submit_label || undefined,
       form_fields: item.form_fields.length > 0 ? item.form_fields : undefined,
+      parameter_names: item.parameter_names.length > 0 ? item.parameter_names : undefined,
     })
   }
 
@@ -700,33 +753,88 @@ async function collectSnapshot(
   network?: BrowserNetworkEvent[],
 ) {
   const title = await page.title().catch(() => "")
-  const values = await page.evaluate(() => {
-    const actionTarget = (kind: string) => {
-      if (kind === "approve") return "approved"
-      if (kind === "claim") return "claimed"
-      if (kind === "close") return "closed"
-      if (kind === "complete") return "completed"
-      if (kind === "delete") return "deleted"
-      if (kind === "publish") return "published"
-      if (kind === "verify") return "verified"
-      if (kind === "activate") return "active"
-      if (kind === "archive") return "archived"
-      return ""
-    }
-    const actionKind = (url: string, label: string) => {
-      const text = `${url} ${label}`.toLowerCase()
-      if (text.includes("approve")) return "approve"
-      if (text.includes("claim")) return "claim"
-      if (text.includes("close")) return "close"
-      if (text.includes("complete")) return "complete"
-      if (text.includes("delete")) return "delete"
-      if (text.includes("publish")) return "publish"
-      if (text.includes("verify")) return "verify"
-      if (text.includes("activate")) return "activate"
-      if (text.includes("archive")) return "archive"
+    const values = await page.evaluate(() => {
+      const actionTarget = (kind: string) => {
+        if (kind === "add") return "added"
+        if (kind === "approve") return "approved"
+        if (kind === "claim") return "claimed"
+        if (kind === "change") return "changed"
+        if (kind === "close") return "closed"
+        if (kind === "complete") return "completed"
+        if (kind === "create") return "created"
+        if (kind === "delete") return "deleted"
+        if (kind === "disable") return "disabled"
+        if (kind === "enable") return "enabled"
+        if (kind === "publish") return "published"
+        if (kind === "remove") return "removed"
+        if (kind === "save") return "saved"
+        if (kind === "send") return "sent"
+        if (kind === "submit") return "submitted"
+        if (kind === "update") return "updated"
+        if (kind === "verify") return "verified"
+        if (kind === "activate") return "active"
+        if (kind === "archive") return "archived"
+        return ""
+      }
+      const actionKind = (url: string, label: string) => {
+        const text = `${url} ${label}`.toLowerCase()
+        if (text.includes("add")) return "add"
+        if (text.includes("approve")) return "approve"
+        if (text.includes("claim")) return "claim"
+        if (text.includes("change")) return "change"
+        if (text.includes("close")) return "close"
+        if (text.includes("complete")) return "complete"
+        if (text.includes("create")) return "create"
+        if (text.includes("delete")) return "delete"
+        if (text.includes("disable")) return "disable"
+        if (text.includes("enable")) return "enable"
+        if (text.includes("publish")) return "publish"
+        if (text.includes("remove")) return "remove"
+        if (text.includes("save")) return "save"
+        if (text.includes("send")) return "send"
+        if (text.includes("submit")) return "submit"
+        if (text.includes("update")) return "update"
+        if (text.includes("verify")) return "verify"
+        if (text.includes("activate")) return "activate"
+        if (text.includes("archive")) return "archive"
       return ""
     }
     const data = (item: Element, name: string) => item.getAttribute(`data-${name}`) ?? ""
+    const disabled = (item: Element) => {
+      if (item.getAttribute("aria-disabled") === "true") return true
+      const value = item.getAttribute("class") ?? ""
+      const parts = value
+        .split(/\s+/)
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+      for (const part of parts) {
+        if (part === "disabled" || part === "is-disabled") return true
+        if (
+          (part.endsWith("-disabled") || part.endsWith("_disabled")) &&
+          !part.startsWith("not-") &&
+          !part.startsWith("not_") &&
+          !part.startsWith("un-") &&
+          !part.startsWith("un_")
+        ) return true
+      }
+      if ("disabled" in item) {
+        const row = item as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+        if (row.disabled) return true
+      }
+      return false
+    }
+    const label = (item: Element) => {
+      if (item instanceof HTMLButtonElement) {
+        return item.innerText.trim() || item.getAttribute("aria-label") || item.getAttribute("title") || data(item, "action")
+      }
+      if (item instanceof HTMLInputElement) {
+        return item.value || item.getAttribute("aria-label") || item.getAttribute("title") || data(item, "action")
+      }
+      if (item instanceof HTMLAnchorElement) {
+        return item.innerText.trim() || item.getAttribute("aria-label") || item.getAttribute("title") || data(item, "action")
+      }
+      return item.getAttribute("aria-label") || item.getAttribute("title") || data(item, "action")
+    }
     const readFields = (form: HTMLFormElement | null) => {
       const out: BrowserFormFieldInput[] = []
       if (!form) return out
@@ -808,20 +916,14 @@ async function collectSnapshot(
           })
       .filter((item) => item.action)
       .slice(0, 100)
-    const actions = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button'], a[href], [data-endpoint], [data-url], [data-href]"))
+    const actions = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button'], a[href], [role='button'], [data-endpoint], [data-url], [data-href]"))
       .map((item) => {
+        if (disabled(item)) return
         const form =
           item instanceof HTMLButtonElement || item instanceof HTMLInputElement
             ? item.form
             : item.closest("form")
-        const label =
-          item instanceof HTMLButtonElement
-            ? item.innerText.trim()
-            : item instanceof HTMLInputElement
-              ? item.value ?? ""
-              : item instanceof HTMLAnchorElement
-                ? item.innerText.trim()
-                : item.getAttribute("aria-label") ?? item.getAttribute("title") ?? data(item, "action")
+        const itemLabel = label(item)
         const url =
           item instanceof HTMLButtonElement || item instanceof HTMLInputElement
             ? item.formAction || data(item, "endpoint") || data(item, "url") || data(item, "href")
@@ -850,7 +952,7 @@ async function collectSnapshot(
           payloadJson ||
           payload ||
           (content.toLowerCase().includes("json") ? jsonBody(fields) : "")
-        const kind = data(item, "action") || actionKind(url, label)
+        const kind = data(item, "action") || actionKind(url, itemLabel)
         const explicit =
           !!payloadJson ||
           !!payload ||
@@ -870,7 +972,7 @@ async function collectSnapshot(
           resource_url: data(item, "resource-url"),
           content_type: content,
           body,
-          label,
+          label: itemLabel,
           fields: body ? [] : fields,
         }
       })
@@ -1093,6 +1195,14 @@ export const BrowserTool = Tool.define("browser", {
     const timeout = params.timeout ?? 30_000
     let session: Awaited<ReturnType<typeof prepareBrowserSession>>
     try {
+      if (params.url) {
+        Scope.ensure(ctx.sessionID, params.url)
+        persistEngagementTarget({
+          sessionID: ctx.sessionID,
+          url: params.url,
+          source: "browser",
+        })
+      }
       session = await prepareBrowserSession({
         sessionID: ctx.sessionID,
         actorSessionID: params.actor_session_id,

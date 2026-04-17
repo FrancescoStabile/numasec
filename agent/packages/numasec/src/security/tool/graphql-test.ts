@@ -34,7 +34,7 @@ export const GraphqlTestTool = Tool.define("graphql_test", {
     await ctx.ask({
       permission: "graphql_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url } as Record<string, any>,
     })
 
@@ -42,6 +42,7 @@ export const GraphqlTestTool = Tool.define("graphql_test", {
     const result = await testGraphql(params.url, {
       headers: params.headers,
       cookies: params.cookies,
+      sessionID: ctx.sessionID,
     })
 
     const parts: string[] = [`── GraphQL Analysis ──`]

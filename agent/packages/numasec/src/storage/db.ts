@@ -10,6 +10,7 @@ import { NamedError } from "@numasec/util/error"
 import z from "zod"
 import path from "path"
 import { readFileSync, readdirSync, existsSync } from "fs"
+import { chmodSync } from "fs"
 import { Installation } from "../installation"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
@@ -29,7 +30,7 @@ const log = Log.create({ service: "db" })
 export namespace Database {
   export function getChannelPath() {
     const channel = Installation.CHANNEL
-    if (["latest", "beta"].includes(channel) || Flag.NUMASEC_DISABLE_CHANNEL_DB)
+    if (["latest", "beta", "local"].includes(channel) || Flag.NUMASEC_DISABLE_CHANNEL_DB)
       return path.join(Global.Path.data, "numasec.db")
     const safe = channel.replace(/[^a-zA-Z0-9._-]/g, "-")
     return path.join(Global.Path.data, `numasec-${safe}.db`)
@@ -45,9 +46,10 @@ export namespace Database {
 
   export type Transaction = SQLiteTransaction<"sync", void>
 
-  type Client = SQLiteBunDatabase
+  type Client = ReturnType<typeof init>
 
   type Journal = { sql: string; timestamp: number; name: string }[]
+  const core = ["project", "session", "message", "part"] as const
 
   function time(tag: string) {
     const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(tag)
@@ -82,10 +84,47 @@ export namespace Database {
     return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
+  function tables(db: Client) {
+    return db.$client.query("select name from sqlite_master where type='table'").all() as { name: string }[]
+  }
+
+  export function assertSkip(db: Client, entries: Journal) {
+    const names = new Set(tables(db).map((row) => row.name))
+    const missing = core.filter((name) => !names.has(name))
+    if (missing.length > 0) {
+      throw new Error(
+        `NUMASEC_SKIP_MIGRATIONS requires an existing database schema; missing tables: ${missing.join(", ")}`,
+      )
+    }
+    if (!names.has("__drizzle_migrations")) {
+      throw new Error("NUMASEC_SKIP_MIGRATIONS requires an existing drizzle migration journal")
+    }
+    const row = db.$client.query("select count(*) as count from __drizzle_migrations").get() as { count: number } | null
+    const count = Number(row?.count ?? 0)
+    if (count < entries.length) {
+      throw new Error(
+        `NUMASEC_SKIP_MIGRATIONS requires a fully migrated database; applied ${count} of ${entries.length} migrations`,
+      )
+    }
+  }
+
+  function harden(path: string, mode: number) {
+    if (process.platform === "win32") return
+    if (!existsSync(path)) return
+    chmodSync(path, mode)
+  }
+
+  function hardenDatabaseArtifacts(path: string) {
+    harden(path, 0o600)
+    harden(`${path}-wal`, 0o600)
+    harden(`${path}-shm`, 0o600)
+  }
+
   export const Client = lazy(() => {
     log.info("opening database", { path: Path })
 
     const db = init(Path)
+    hardenDatabaseArtifacts(Path)
 
     db.run("PRAGMA journal_mode = WAL")
     db.run("PRAGMA synchronous = NORMAL")
@@ -105,12 +144,18 @@ export namespace Database {
         mode: typeof NUMASEC_MIGRATIONS !== "undefined" ? "bundled" : "dev",
       })
       if (Flag.NUMASEC_SKIP_MIGRATIONS) {
-        for (const item of entries) {
-          item.sql = "select 1;"
-        }
+        assertSkip(db, entries)
+        log.warn("skipping migrations on an already-migrated database", {
+          count: entries.length,
+          path: Path,
+        })
       }
-      migrate(db, entries)
+      if (!Flag.NUMASEC_SKIP_MIGRATIONS) {
+        migrate(db, entries)
+      }
     }
+
+    hardenDatabaseArtifacts(Path)
 
     return db
   })

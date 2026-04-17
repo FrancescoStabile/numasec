@@ -20,6 +20,8 @@ export { ObserveSurfaceTool } from "./tool/observe-surface"
 export { UpsertHypothesisTool } from "./tool/upsert-hypothesis"
 export { UpsertFindingTool } from "./tool/upsert-finding"
 export { ConfirmFindingTool } from "./tool/confirm-finding"
+export { CreateControlCaseTool } from "./tool/create-control-case"
+export { FinalizeFindingTool } from "./tool/finalize-finding"
 export { DeriveAttackPathsTool } from "./tool/derive-attack-paths"
 export { PlanNextTool } from "./tool/plan-next"
 export { BatchReplayTool } from "./tool/batch-replay"
@@ -44,6 +46,8 @@ export { GetFindingsTool } from "./tool/get-findings"
 export { ProjectFindingsTool } from "./tool/project-findings"
 export { BuildChainsTool } from "./tool/build-chains"
 export { GenerateReportTool } from "./tool/generate-report"
+export { ReportStatusTool } from "./tool/report-status"
+export { FinalizeReportTool } from "./tool/finalize-report"
 
 // Intelligence tools
 export { KbSearchTool } from "./tool/kb-search"
@@ -99,6 +103,8 @@ import { ObserveSurfaceTool } from "./tool/observe-surface"
 import { UpsertHypothesisTool } from "./tool/upsert-hypothesis"
 import { UpsertFindingTool } from "./tool/upsert-finding"
 import { ConfirmFindingTool } from "./tool/confirm-finding"
+import { CreateControlCaseTool } from "./tool/create-control-case"
+import { FinalizeFindingTool } from "./tool/finalize-finding"
 import { DeriveAttackPathsTool } from "./tool/derive-attack-paths"
 import { PlanNextTool } from "./tool/plan-next"
 import { BatchReplayTool } from "./tool/batch-replay"
@@ -119,6 +125,8 @@ import { GetFindingsTool } from "./tool/get-findings"
 import { ProjectFindingsTool } from "./tool/project-findings"
 import { BuildChainsTool } from "./tool/build-chains"
 import { GenerateReportTool } from "./tool/generate-report"
+import { ReportStatusTool } from "./tool/report-status"
+import { FinalizeReportTool } from "./tool/finalize-report"
 import { KbSearchTool } from "./tool/kb-search"
 import { PentestPlanTool } from "./tool/pentest-plan"
 
@@ -139,6 +147,8 @@ export const SecurityTools = [
   UpsertHypothesisTool,
   UpsertFindingTool,
   ConfirmFindingTool,
+  CreateControlCaseTool,
+  FinalizeFindingTool,
   DeriveAttackPathsTool,
   PlanNextTool,
   BatchReplayTool,
@@ -161,6 +171,8 @@ export const SecurityTools = [
   ProjectFindingsTool,
   BuildChainsTool,
   GenerateReportTool,
+  ReportStatusTool,
+  FinalizeReportTool,
   // Intelligence
   KbSearchTool,
   PentestPlanTool,

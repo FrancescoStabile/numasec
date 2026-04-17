@@ -5,6 +5,7 @@ import { Tool } from "../../tool/tool"
 import { Database } from "../../storage/db"
 import { EvidenceNodeTable } from "../evidence.sql"
 import { EvidenceGraphStore } from "../evidence-store"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Create or update a hypothesis node in the evidence graph.
@@ -23,6 +24,7 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
     supersedes_node_id: z.string().optional().describe("Existing hypothesis node superseded by this one"),
   }),
   async execute(params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const hypotheses = params.hypothesis_id
       ? Database.use((db) =>
           db
@@ -33,7 +35,7 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
             .from(EvidenceNodeTable)
             .where(
               and(
-                eq(EvidenceNodeTable.session_id, ctx.sessionID),
+                eq(EvidenceNodeTable.session_id, sessionID),
                 eq(EvidenceNodeTable.type, "hypothesis"),
               ),
             )
@@ -44,7 +46,7 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
     const row = Effect.runSync(
       EvidenceGraphStore.use((store) =>
         store.upsertNode({
-          sessionID: ctx.sessionID,
+          sessionID,
           type: "hypothesis",
           confidence: params.confidence ?? 0.3,
           status: params.status ?? "open",
@@ -66,7 +68,7 @@ export const UpsertHypothesisTool = Tool.define("upsert_hypothesis", {
       Effect.runSync(
         EvidenceGraphStore.use((store) =>
           store.supersedeNode({
-            sessionID: ctx.sessionID,
+            sessionID,
             supersededNodeID: superseded,
             supersedingNodeID: row.id,
             reason: "hypothesis revision",

@@ -40,7 +40,7 @@ export const PrCommand = cmd({
           process.exit(1)
         }
 
-        // Fetch PR info for fork handling and session link detection
+        // Fetch PR info for fork handling
         const prInfoResult = await Process.text(
           [
             "gh",
@@ -48,12 +48,10 @@ export const PrCommand = cmd({
             "view",
             `${prNumber}`,
             "--json",
-            "headRepository,headRepositoryOwner,isCrossRepository,headRefName,body",
+            "headRepository,headRepositoryOwner,isCrossRepository,headRefName",
           ],
           { nothrow: true },
         )
-
-        let sessionId: string | undefined
 
         if (prInfoResult.code === 0) {
           const prInfoText = prInfoResult.text
@@ -76,33 +74,9 @@ export const PrCommand = cmd({
               }
 
               // Set upstream to the fork so pushes go there
-              const headRefName = prInfo.headRefName
-              await git(["branch", `--set-upstream-to=${remoteName}/${headRefName}`, localBranchName], {
+              await git(["branch", `--set-upstream-to=${remoteName}/${prInfo.headRefName}`, localBranchName], {
                 cwd: Instance.worktree,
               })
-            }
-
-            // Check for numasec session link in PR body
-            if (prInfo && prInfo.body) {
-              const sessionMatch = prInfo.body.match(/https:\/\/opncd\.ai\/s\/([a-zA-Z0-9_-]+)/)
-              if (sessionMatch) {
-                const sessionUrl = sessionMatch[0]
-                UI.println(`Found numasec session: ${sessionUrl}`)
-                UI.println(`Importing session...`)
-
-                const importResult = await Process.text(["numasec", "import", sessionUrl], {
-                  nothrow: true,
-                })
-                if (importResult.code === 0) {
-                  const importOutput = importResult.text.trim()
-                  // Extract session ID from the output (format: "Imported session: <session-id>")
-                  const sessionIdMatch = importOutput.match(/Imported session: ([a-zA-Z0-9_-]+)/)
-                  if (sessionIdMatch) {
-                    sessionId = sessionIdMatch[1]
-                    UI.println(`Session imported: ${sessionId}`)
-                  }
-                }
-              }
             }
           }
         }
@@ -112,8 +86,7 @@ export const PrCommand = cmd({
         UI.println("Starting numasec...")
         UI.println()
 
-        const numasecArgs = sessionId ? ["-s", sessionId] : []
-        const numasecProcess = Process.spawn(["numasec", ...numasecArgs], {
+        const numasecProcess = Process.spawn(["numasec"], {
           stdin: "inherit",
           stdout: "inherit",
           stderr: "inherit",

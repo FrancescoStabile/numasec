@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import path from "path"
 import fs from "fs/promises"
-import { readFileSync, readdirSync } from "fs"
+import { existsSync, readFileSync, readdirSync } from "fs"
 import { JsonMigration } from "../../src/storage/json-migration"
 import { Global } from "../../src/global"
 import { ProjectTable } from "../../src/project/project.sql"
@@ -101,11 +101,13 @@ describe("JSON to SQLite migration", () => {
   beforeEach(async () => {
     storageDir = await setupStorageDir()
     sqlite = createTestDb()
+    await fs.rm(JsonMigration.file(), { force: true })
   })
 
   afterEach(async () => {
     sqlite.close()
     await fs.rm(storageDir, { recursive: true, force: true })
+    await fs.rm(JsonMigration.file(), { force: true })
   })
 
   test("migrates project", async () => {
@@ -477,6 +479,43 @@ describe("JSON to SQLite migration", () => {
     const db = drizzle({ client: sqlite })
     const projects = db.select().from(ProjectTable).all()
     expect(projects.length).toBe(1) // Still only 1 due to onConflictDoNothing
+  })
+
+  test("writes a completion marker after a successful migration", async () => {
+    await writeProject(storageDir, {
+      id: "proj_test123abc",
+      worktree: "/",
+      time: { created: Date.now(), updated: Date.now() },
+      sandboxes: [],
+    })
+
+    await JsonMigration.run(sqlite)
+
+    expect(existsSync(JsonMigration.file())).toBe(true)
+    expect(await JsonMigration.done()).toBe(true)
+  })
+
+  test("rolls back partial writes when migration aborts", async () => {
+    await writeProject(storageDir, {
+      id: "proj_test123abc",
+      worktree: "/",
+      time: { created: Date.now(), updated: Date.now() },
+      sandboxes: [],
+    })
+
+    await expect(
+      JsonMigration.run(sqlite, {
+        progress: (event) => {
+          if (event.label === "projects") {
+            throw new Error("stop after first batch")
+          }
+        },
+      }),
+    ).rejects.toThrow("stop after first batch")
+
+    const db = drizzle({ client: sqlite })
+    expect(db.select().from(ProjectTable).all()).toHaveLength(0)
+    expect(existsSync(JsonMigration.file())).toBe(false)
   })
 
   test("migrates todos", async () => {

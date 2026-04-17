@@ -372,59 +372,6 @@ export default function Layout(props: ParentProps) {
     setLocale(next)
   }
 
-  const useUpdatePolling = () =>
-    onMount(() => {
-      if (!platform.checkUpdate || !platform.update || !platform.restart) return
-
-      let toastId: number | undefined
-      let interval: ReturnType<typeof setInterval> | undefined
-
-      const pollUpdate = () =>
-        platform.checkUpdate!().then(({ updateAvailable, version }) => {
-          if (!updateAvailable) return
-          if (toastId !== undefined) return
-          toastId = showToast({
-            persistent: true,
-            icon: "download",
-            title: language.t("toast.update.title"),
-            description: language.t("toast.update.description", { version: version ?? "" }),
-            actions: [
-              {
-                label: language.t("toast.update.action.installRestart"),
-                onClick: async () => {
-                  await platform.update!()
-                  await platform.restart!()
-                },
-              },
-              {
-                label: language.t("toast.update.action.notYet"),
-                onClick: "dismiss",
-              },
-            ],
-          })
-        })
-
-      createEffect(() => {
-        if (!settings.ready()) return
-
-        if (!settings.updates.startup()) {
-          if (interval === undefined) return
-          clearInterval(interval)
-          interval = undefined
-          return
-        }
-
-        if (interval !== undefined) return
-        void pollUpdate()
-        interval = setInterval(pollUpdate, 10 * 60 * 1000)
-      })
-
-      onCleanup(() => {
-        if (interval === undefined) return
-        clearInterval(interval)
-      })
-    })
-
   const useSDKNotificationToasts = () =>
     onMount(() => {
       const toastBySession = new Map<string, number>()
@@ -440,18 +387,6 @@ export default function Layout(props: ParentProps) {
       }
 
       const unsub = globalSDK.event.listen((e) => {
-        if (e.details?.type === "worktree.ready") {
-          setBusy(e.name, false)
-          WorktreeState.ready(e.name)
-          return
-        }
-
-        if (e.details?.type === "worktree.failed") {
-          setBusy(e.name, false)
-          WorktreeState.failed(e.name, e.details.properties?.message ?? language.t("common.requestFailed"))
-          return
-        }
-
         if (
           e.details?.type === "question.replied" ||
           e.details?.type === "question.rejected" ||
@@ -544,7 +479,6 @@ export default function Layout(props: ParentProps) {
       })
     })
 
-  useUpdatePolling()
   useSDKNotificationToasts()
 
   function scrollToSession(sessionId: string, sessionKey: string) {
@@ -1109,18 +1043,6 @@ export default function Layout(props: ParentProps) {
         },
       },
       {
-        id: "workspace.new",
-        title: language.t("workspace.new"),
-        category: language.t("command.category.workspace"),
-        keybind: "mod+shift+w",
-        disabled: !workspaceSetting(),
-        onSelect: () => {
-          const project = currentProject()
-          if (!project) return
-          return createWorkspace(project)
-        },
-      },
-      {
         id: "workspace.toggle",
         title: language.t("command.workspace.toggle"),
         description: language.t("command.workspace.toggle.description"),
@@ -1294,15 +1216,7 @@ export default function Layout(props: ParentProps) {
       if (!value) return false
       return dirs.some((item) => workspaceKey(item) === workspaceKey(value))
     }
-    const refreshDirs = async (target?: string) => {
-      if (!target || target === root || canOpen(target)) return canOpen(target)
-      const listed = await globalSDK.client.worktree
-        .list({ directory: root })
-        .then((x) => x.data ?? [])
-        .catch(() => [] as string[])
-      dirs = effectiveWorkspaceOrder(root, [root, ...listed], store.workspaceOrder[root])
-      return canOpen(target)
-    }
+    const refreshDirs = async (target?: string) => !target || target === root || canOpen(target)
     const openSession = async (target: { directory: string; id: string }) => {
       if (!canOpen(target.directory)) return false
       const [data] = globalSync.child(target.directory, { bootstrap: false })
@@ -1493,139 +1407,18 @@ export default function Layout(props: ParentProps) {
 
   const deleteWorkspace = async (root: string, directory: string, leaveDeletedWorkspace = false) => {
     if (directory === root) return
-
-    const current = currentDir()
-    const currentKey = workspaceKey(current)
-    const deletedKey = workspaceKey(directory)
-    const shouldLeave = leaveDeletedWorkspace || (!!params.dir && currentKey === deletedKey)
-    if (!leaveDeletedWorkspace && shouldLeave) {
-      navigateWithSidebarReset(`/${base64Encode(root)}/session`)
-    }
-
-    setBusy(directory, true)
-
-    const result = await globalSDK.client.worktree
-      .remove({ directory: root, worktreeRemoveInput: { directory } })
-      .then((x) => x.data)
-      .catch((err) => {
-        showToast({
-          title: language.t("workspace.delete.failed.title"),
-          description: errorMessage(err, language.t("common.requestFailed")),
-        })
-        return false
-      })
-
-    setBusy(directory, false)
-
-    if (!result) return
-
-    if (workspaceKey(store.lastProjectSession[root]?.directory ?? "") === workspaceKey(directory)) {
-      clearLastProjectSession(root)
-    }
-
-    globalSync.set(
-      "project",
-      produce((draft) => {
-        const project = draft.find((item) => item.worktree === root)
-        if (!project) return
-        project.sandboxes = (project.sandboxes ?? []).filter((sandbox) => sandbox !== directory)
-      }),
-    )
-    setStore("workspaceOrder", root, (order) => (order ?? []).filter((workspace) => workspace !== directory))
-
-    layout.projects.close(directory)
-    layout.projects.open(root)
-
-    if (shouldLeave) return
-
-    const nextCurrent = currentDir()
-    const nextKey = workspaceKey(nextCurrent)
-    const project = layout.projects.list().find((item) => item.worktree === root)
-    const dirs = project
-      ? effectiveWorkspaceOrder(root, [root, ...(project.sandboxes ?? [])], store.workspaceOrder[root])
-      : [root]
-    const valid = dirs.some((item) => workspaceKey(item) === nextKey)
-
-    if (params.dir && projectRoot(nextCurrent) === root && !valid) {
-      navigateWithSidebarReset(`/${base64Encode(root)}/session`)
-    }
+    void leaveDeletedWorkspace
+    showToast({
+      title: language.t("workspace.delete.failed.title"),
+      description: language.t("common.requestFailed"),
+    })
   }
 
   const resetWorkspace = async (root: string, directory: string) => {
     if (directory === root) return
-    setBusy(directory, true)
-
-    const progress = showToast({
-      persistent: true,
-      title: language.t("workspace.resetting.title"),
-      description: language.t("workspace.resetting.description"),
-    })
-    const dismiss = () => toaster.dismiss(progress)
-
-    const sessions: Session[] = await globalSDK.client.session
-      .list({ directory })
-      .then((x) => x.data ?? [])
-      .catch(() => [])
-
-    clearWorkspaceTerminals(
-      directory,
-      sessions.map((s) => s.id),
-      platform,
-    )
-    await globalSDK.client.instance.dispose({ directory }).catch(() => undefined)
-
-    const result = await globalSDK.client.worktree
-      .reset({ directory: root, worktreeResetInput: { directory } })
-      .then((x) => x.data)
-      .catch((err) => {
-        showToast({
-          title: language.t("workspace.reset.failed.title"),
-          description: errorMessage(err, language.t("common.requestFailed")),
-        })
-        return false
-      })
-
-    if (!result) {
-      setBusy(directory, false)
-      dismiss()
-      return
-    }
-
-    const archivedAt = Date.now()
-    await Promise.all(
-      sessions
-        .filter((session) => session.time.archived === undefined)
-        .map((session) =>
-          globalSDK.client.session
-            .update({
-              sessionID: session.id,
-              directory: session.directory,
-              time: { archived: archivedAt },
-            })
-            .catch(() => undefined),
-        ),
-    )
-
-    setBusy(directory, false)
-    dismiss()
-
     showToast({
-      title: language.t("workspace.reset.success.title"),
-      description: language.t("workspace.reset.success.description"),
-      actions: [
-        {
-          label: language.t("command.session.new"),
-          onClick: () => {
-            const href = `/${base64Encode(directory)}/session`
-            navigate(href)
-            layout.mobileSidebar.hide()
-          },
-        },
-        {
-          label: language.t("common.dismiss"),
-          onClick: "dismiss",
-        },
-      ],
+      title: language.t("workspace.reset.failed.title"),
+      description: language.t("common.requestFailed"),
     })
   }
 
@@ -1936,42 +1729,11 @@ export default function Layout(props: ParentProps) {
 
   const createWorkspace = async (project: LocalProject) => {
     clearSidebarHoverState()
-    const created = await globalSDK.client.worktree
-      .create({ directory: project.worktree })
-      .then((x) => x.data)
-      .catch((err) => {
-        showToast({
-          title: language.t("workspace.create.failed.title"),
-          description: errorMessage(err, language.t("common.requestFailed")),
-        })
-        return undefined
-      })
-
-    if (!created?.directory) return
-
-    setWorkspaceName(created.directory, created.branch, project.id, created.branch)
-
-    const local = project.worktree
-    const key = workspaceKey(created.directory)
-    const root = workspaceKey(local)
-
-    setBusy(created.directory, true)
-    WorktreeState.pending(created.directory)
-    setStore("workspaceExpanded", key, true)
-    if (key !== created.directory) {
-      setStore("workspaceExpanded", created.directory, true)
-    }
-    setStore("workspaceOrder", project.worktree, (prev) => {
-      const existing = prev ?? []
-      const next = existing.filter((item) => {
-        const id = workspaceKey(item)
-        return id !== root && id !== key
-      })
-      return [created.directory, ...next]
+    void project
+    showToast({
+      title: language.t("workspace.create.failed.title"),
+      description: language.t("common.requestFailed"),
     })
-
-    globalSync.child(created.directory)
-    navigateWithSidebarReset(`/${base64Encode(created.directory)}/session`)
   }
 
   const workspaceSidebarCtx: WorkspaceSidebarContext = {
@@ -1995,10 +1757,6 @@ export default function Layout(props: ParentProps) {
     isBusy,
     workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
     setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
-    showResetWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />),
-    showDeleteWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />),
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },
@@ -2257,20 +2015,6 @@ export default function Layout(props: ParentProps) {
                 }
               >
                 <>
-                  <div class="shrink-0 py-4">
-                    <Button
-                      size="large"
-                      icon="plus-small"
-                      class="w-full"
-                      onClick={() => {
-                        const item = project()
-                        if (!item) return
-                        createWorkspace(item)
-                      }}
-                    >
-                      {language.t("workspace.new")}
-                    </Button>
-                  </div>
                   <div class="relative flex-1 min-h-0">
                     <DragDropProvider
                       onDragStart={handleWorkspaceDragStart}
@@ -2370,7 +2114,7 @@ export default function Layout(props: ParentProps) {
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
-      onOpenHelp={() => platform.openLink("https://numasec.ai/desktop-feedback")}
+      onOpenHelp={() => platform.openLink("https://numasec.ai/feedback")}
       renderPanel={() =>
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }
@@ -2385,7 +2129,7 @@ export default function Layout(props: ParentProps) {
           <div class="size-full relative overflow-x-hidden">
             <nav
               aria-label={language.t("sidebar.nav.projectsAndSessions")}
-              data-component="sidebar-nav-desktop"
+              data-component="sidebar-nav"
               classList={{
                 "hidden xl:block": true,
                 "absolute inset-y-0 left-0": true,

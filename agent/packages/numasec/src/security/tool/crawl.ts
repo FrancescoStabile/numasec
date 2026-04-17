@@ -33,13 +33,14 @@ export const CrawlTool = Tool.define("crawl", {
     await ctx.ask({
       permission: "crawl",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url } as Record<string, any>,
     })
 
     const profile = await runObserveSurfaceProfile(
       {
         target: params.url,
+        sessionID: ctx.sessionID,
         modes: params.fuzz === false ? ["crawl"] : ["crawl", "dir_fuzz"],
         max_urls: params.max_urls,
         max_depth: params.max_depth,

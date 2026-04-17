@@ -9,6 +9,7 @@
 import z from "zod"
 import { Tool } from "../../tool/tool"
 import { deriveAttackPathProjection } from "../chain-projection"
+import { canonicalSecuritySessionID } from "../security-session"
 import { makeToolResultEnvelope } from "./result-envelope"
 
 const DESCRIPTION = `Build attack chains from saved findings.
@@ -23,8 +24,9 @@ export const BuildChainsTool = Tool.define("build_chains", {
   description: DESCRIPTION,
   parameters: z.object({}),
   async execute(_params, ctx) {
+    const sessionID = canonicalSecuritySessionID(ctx.sessionID)
     const result = deriveAttackPathProjection({
-      sessionID: ctx.sessionID,
+      sessionID,
       includeFalsePositive: true,
     })
     const findings = result.findings

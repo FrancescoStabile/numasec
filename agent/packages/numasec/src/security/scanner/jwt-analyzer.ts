@@ -5,8 +5,9 @@
  * secrets, algorithm confusion (RS256→HS256), alg:none bypass.
  */
 
-import { httpRequest } from "../http-client"
 import { createHmac } from "crypto"
+import { httpRequest } from "../http-client"
+import type { SessionID } from "../../session/schema"
 
 export interface JwtAnalysisResult {
   decoded: JwtDecoded | null
@@ -208,9 +209,9 @@ export function analyzeJwt(token: string): JwtAnalysisResult {
 export async function testJwtAuth(
   url: string,
   token: string,
-  options: { timeout?: number } = {},
+  options: { timeout?: number; sessionID?: SessionID | string } = {},
 ): Promise<{ weaknesses: JwtWeakness[]; algNoneAccepted: boolean; expiredAccepted: boolean }> {
-  const { timeout = 10_000 } = options
+  const { timeout = 10_000, sessionID } = options
   const weaknesses: JwtWeakness[] = []
   let algNoneAccepted = false
   let expiredAccepted = false
@@ -220,6 +221,7 @@ export async function testJwtAuth(
   const noneResp = await httpRequest(url, {
     headers: { Authorization: `Bearer ${noneToken}` },
     timeout,
+    sessionID,
   })
   if (noneResp.status >= 200 && noneResp.status < 400) {
     algNoneAccepted = true
@@ -235,6 +237,7 @@ export async function testJwtAuth(
   const resp = await httpRequest(url, {
     headers: { Authorization: `Bearer ${token}` },
     timeout,
+    sessionID,
   })
   const decoded = decodeJwt(token)
   if (decoded?.expired && resp.status >= 200 && resp.status < 400) {

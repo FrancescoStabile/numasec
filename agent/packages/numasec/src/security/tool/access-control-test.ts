@@ -12,6 +12,7 @@ import type { HttpRequestOptions } from "../http-client"
 import { inferActorIdentity, type ActorIdentity } from "../actor-inference"
 import { EvidenceNodeTable } from "../evidence.sql"
 import { detectCollectionExposure, detectResourceExposure } from "../resource-inference"
+import { canonicalSecuritySessionID } from "../security-session"
 import {
   actorIdentityFromMaterial,
   actorSessionRequest,
@@ -99,6 +100,13 @@ function workflowTransition(body?: string) {
 function actorLabel(input: "primary" | "secondary") {
   if (input === "secondary") return "secondary"
   return "primary"
+}
+
+function authContext(input?: Actor) {
+  if (!input) return false
+  if (input.cookies) return true
+  if (!input.headers) return false
+  return Object.keys(input.headers).some((item) => /(authorization|auth|token|session|jwt|api[-_]?key)/i.test(item))
 }
 
 type Actor = {
@@ -283,11 +291,12 @@ async function send(ctx: Tool.Context, actor: Actor | undefined, url: string, ac
 }
 
 function workflowCandidate(sessionID: Tool.Context["sessionID"], url: string, actor?: ActorIdentity) {
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
   const rows = Database.use((db) =>
     db
       .select()
       .from(EvidenceNodeTable)
-      .where(eq(EvidenceNodeTable.session_id, sessionID))
+      .where(eq(EvidenceNodeTable.session_id, currentSessionID))
       .all(),
   )
   let fallback: Record<string, unknown> | undefined
@@ -523,7 +532,7 @@ export const AccessControlTestTool = Tool.define("access_control_test", {
     await ctx.ask({
       permission: "access_control_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url, test_type: params.test_type } as Record<string, any>,
     })
 
@@ -650,11 +659,6 @@ export const AccessControlTestTool = Tool.define("access_control_test", {
         })
 
         if (resp.status >= 200 && resp.status < 400) {
-          parts.push(`\n── ⚠ Potential CSRF ──`)
-          parts.push(`  ${method} ${params.url} accepted cross-origin request`)
-          parts.push(`  Status: ${resp.status}`)
-          parts.push(`  No CSRF token validation detected`)
-          totalFindings++
           const item = `csrf-${method.toLowerCase()}-${slug(new URL(params.url).pathname || "root")}`
           artifacts.push({
             key: item,
@@ -664,18 +668,38 @@ export const AccessControlTestTool = Tool.define("access_control_test", {
             status: resp.status,
             response_preview: resp.body.slice(0, 300),
           })
-          verifications.push({
-            key: `${item}-verified`,
-            family: "csrf",
-            kind: "cross_origin_state_change",
-            title: "Potential CSRF on state-changing endpoint",
-            technical_severity: "medium",
-            passed: true,
-            control: "positive",
-            url: params.url,
-            method,
-            evidence_keys: [item],
-          })
+          if (authContext(primary)) {
+            parts.push(`\n── ⚠ Potential CSRF ──`)
+            parts.push(`  ${method} ${params.url} accepted cross-origin request`)
+            parts.push(`  Status: ${resp.status}`)
+            parts.push(`  No CSRF token validation detected`)
+            totalFindings++
+            verifications.push({
+              key: `${item}-verified`,
+              family: "csrf",
+              kind: "cross_origin_state_change",
+              title: "Potential CSRF on authenticated state-changing endpoint",
+              technical_severity: "medium",
+              passed: true,
+              control: "positive",
+              url: params.url,
+              method,
+              evidence_keys: [item],
+            })
+          } else {
+            parts.push(`\n── Cross-origin unauthenticated state change accepted ──`)
+            parts.push(`  ${method} ${params.url} accepted cross-origin request without victim auth context`)
+            parts.push(`  Status: ${resp.status}`)
+            parts.push(`  This is weaker than classic CSRF because no authenticated session or token was exercised`)
+            observations.push({
+              key: `${item}-observation`,
+              family: "csrf",
+              kind: "cross_origin_unauthenticated_state_change",
+              url: params.url,
+              method,
+              status: resp.status,
+            })
+          }
         } else {
           parts.push(`\n── CSRF: ${method} request rejected (status ${resp.status}) ──`)
         }

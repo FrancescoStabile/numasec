@@ -3,6 +3,7 @@ import { and, eq } from "../../storage/db"
 import type { SessionID } from "../../session/schema"
 import { SessionTable } from "../../session/session.sql"
 import { Database } from "../../storage/db"
+import { canonicalSecuritySessionID } from "../security-session"
 import {
   SecurityTargetProfileTable,
   type SecurityTargetProfileID,
@@ -23,7 +24,8 @@ export interface TargetExecutionProfile {
 }
 
 function id(sessionID: SessionID, origin: string) {
-  return `TPRF-${createHash("sha256").update(`${sessionID}:${origin}`).digest("hex").slice(0, 12).toUpperCase()}` as SecurityTargetProfileID
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
+  return `TPRF-${createHash("sha256").update(`${currentSessionID}:${origin}`).digest("hex").slice(0, 12).toUpperCase()}` as SecurityTargetProfileID
 }
 
 function origin(input: string) {
@@ -37,11 +39,12 @@ function origin(input: string) {
 }
 
 function profile(input: SessionID, url: string) {
+  const sessionID = canonicalSecuritySessionID(input)
   const value = origin(url)
   if (!value) return
   return {
-    id: id(input, value),
-    session_id: input,
+    id: id(sessionID, value),
+    session_id: sessionID,
     origin: value,
     status: "baseline",
     concurrency_budget: 1,
@@ -113,21 +116,22 @@ function next(current: TargetExecutionProfile, signal: string, browserPreferred?
 }
 
 export async function ensureTargetProfile(sessionID: SessionID, url: string) {
-  const seed = profile(sessionID, url)
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
+  const seed = profile(currentSessionID, url)
   if (!seed) return
   return Database.use((db) => {
     const session = db
-      .select({
-        id: SessionTable.id,
-      })
-      .from(SessionTable)
-      .where(eq(SessionTable.id, sessionID))
-      .get()
+        .select({
+          id: SessionTable.id,
+        })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, currentSessionID))
+        .get()
     if (!session) return seed
     const current = db
       .select()
       .from(SecurityTargetProfileTable)
-      .where(and(eq(SecurityTargetProfileTable.session_id, sessionID), eq(SecurityTargetProfileTable.origin, seed.origin)))
+      .where(and(eq(SecurityTargetProfileTable.session_id, currentSessionID), eq(SecurityTargetProfileTable.origin, seed.origin)))
       .get()
     if (current) return current satisfies TargetExecutionProfile
     db.insert(SecurityTargetProfileTable).values(seed).run()
@@ -136,17 +140,18 @@ export async function ensureTargetProfile(sessionID: SessionID, url: string) {
 }
 
 export async function noteTargetSignal(sessionID: SessionID, url: string, signal: string, browserPreferred?: boolean) {
+  const currentSessionID = canonicalSecuritySessionID(sessionID)
   const current = await ensureTargetProfile(sessionID, url)
   if (!current) return
   const updated = next(current, signal, browserPreferred)
   Database.use((db) => {
     const session = db
-      .select({
-        id: SessionTable.id,
-      })
-      .from(SessionTable)
-      .where(eq(SessionTable.id, sessionID))
-      .get()
+        .select({
+          id: SessionTable.id,
+        })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, currentSessionID))
+        .get()
     if (!session) return
     db
       .insert(SecurityTargetProfileTable)

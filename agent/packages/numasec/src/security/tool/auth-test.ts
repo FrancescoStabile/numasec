@@ -57,19 +57,37 @@ function tokenFromHeaders(input?: Record<string, string>) {
   return ""
 }
 
+function pathname(input: string) {
+  try {
+    return new URL(input).pathname.toLowerCase()
+  } catch {
+    return input.toLowerCase()
+  }
+}
+
+function registrationEndpoint(input: string) {
+  const path = pathname(input)
+  if (/(register|signup|sign-up|create-account|create_user|create-user)/.test(path)) return true
+  return /\/(users|customers|accounts)\/?$/.test(path)
+}
+
+function authProof(input: ReturnType<typeof httpAuthMaterial>) {
+  return Boolean(input.headers.authorization) || input.cookies.length > 0
+}
+
 const DESCRIPTION = `Test authentication and authorization mechanisms.
-Covers: JWT analysis (decode, crack, alg:none, expiration), default credentials,
+Covers: JWT analysis (decode, crack, alg:none, expiration), common/default credentials,
 authentication bypass, session management.
 
 Requires: target URL. Optionally provide a JWT token for analysis.
 
 CHAIN POTENTIAL: Auth weaknesses lead to:
 - Cracked JWT → forge tokens for any user → full account takeover
-- Default credentials → admin access → data exfiltration
+- Weak/common credentials → admin access → data exfiltration
 - Session fixation → hijack other users' sessions
 - Auth bypass → access all protected endpoints`
 
-const DEFAULT_CREDS = [
+const COMMON_CREDS = [
   { username: "admin", password: "admin" },
   { username: "admin", password: "password" },
   { username: "admin", password: "admin123" },
@@ -85,7 +103,7 @@ export const AuthTestTool = Tool.define("auth_test", {
   parameters: z.object({
     url: z.string().describe("Target URL (login endpoint or protected resource)"),
     jwt: z.string().optional().describe("JWT token to analyze"),
-    test_defaults: z.boolean().optional().describe("Test default credentials (default true)"),
+    test_defaults: z.boolean().optional().describe("Test common/default credentials (default true)"),
     username_field: z.string().optional().describe("Username field name (default 'username' or 'email')"),
     password_field: z.string().optional().describe("Password field name (default 'password')"),
     cookies: z.string().optional().describe("Session cookies"),
@@ -96,7 +114,7 @@ export const AuthTestTool = Tool.define("auth_test", {
     await ctx.ask({
       permission: "auth_test",
       patterns: [params.url],
-      always: ["*"] as string[],
+      always: [] as string[],
       metadata: { url: params.url } as Record<string, any>,
     })
 
@@ -217,7 +235,9 @@ export const AuthTestTool = Tool.define("auth_test", {
 
       // Test JWT auth endpoint
       ctx.metadata({ title: "Testing JWT auth bypass..." })
-      const authResult = await testJwtAuth(params.url, jwt)
+      const authResult = await testJwtAuth(params.url, jwt, {
+        sessionID: ctx.sessionID,
+      })
       for (const w of authResult.weaknesses) {
         parts.push(`  [${w.severity.toUpperCase()}] ${w.description}`)
         parts.push(`  Evidence: ${w.evidence}`)
@@ -237,40 +257,46 @@ export const AuthTestTool = Tool.define("auth_test", {
       }
     }
 
-    // Default credential testing
+    // Common/default credential testing
     if (params.test_defaults !== false) {
-      ctx.metadata({ title: "Testing default credentials..." })
-      const userField = params.username_field ?? "email"
-      const passField = params.password_field ?? "password"
+      if (registrationEndpoint(params.url)) {
+        parts.push("Skipped common/default credential checks on an account-creation endpoint.")
+      } else {
+        ctx.metadata({ title: "Testing common/default credentials..." })
+        const userField = params.username_field ?? "email"
+        const passField = params.password_field ?? "password"
 
-      for (const cred of DEFAULT_CREDS) {
-        const body = JSON.stringify({ [userField]: cred.username, [passField]: cred.password })
-        const attempt = await executeHttpWithRecovery({
-          sessionID: ctx.sessionID,
-          toolName: "auth_test",
-          action: "default_credentials",
-          actorSessionID: seeded.actorSessionID,
-          url: params.url,
-          request: {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body,
-            cookies: auth.cookies || undefined,
-          },
-        })
-        const resp = attempt.response
+        for (const cred of COMMON_CREDS) {
+          const body = JSON.stringify({ [userField]: cred.username, [passField]: cred.password })
+          const attempt = await executeHttpWithRecovery({
+            sessionID: ctx.sessionID,
+            toolName: "auth_test",
+            action: "common_credentials",
+            actorSessionID: seeded.actorSessionID,
+            url: params.url,
+            request: {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+              cookies: auth.cookies || undefined,
+            },
+          })
+          const resp = attempt.response
+          const material = httpAuthMaterial({
+            actorLabel: params.actor_label || cred.username,
+            url: resp.url,
+            requestHeaders: {
+              "content-type": "application/json",
+            },
+            responseHeaders: resp.headers,
+            responseBody: resp.body,
+            setCookies: resp.setCookies,
+          })
 
-        // Check if login succeeded
-        const lower = resp.body.toLowerCase()
-        const isSuccess =
-          (resp.status >= 200 && resp.status < 300 && !lower.includes("invalid") && !lower.includes("error") && !lower.includes("fail")) ||
-          lower.includes("token") ||
-          lower.includes("session") ||
-          lower.includes("welcome")
+          if (!authProof(material)) continue
 
-        if (isSuccess) {
           parts.push("")
-          parts.push(`⚠ DEFAULT CREDENTIALS WORK: ${cred.username}:${cred.password}`)
+          parts.push(`⚠ COMMON CREDENTIALS WORK: ${cred.username}:${cred.password}`)
           parts.push(`  Status: ${resp.status}`)
           parts.push(`  Response: ${resp.body.slice(0, 300)}`)
           totalFindings++
@@ -296,8 +322,8 @@ export const AuthTestTool = Tool.define("auth_test", {
           verifications.push({
             key: `default-creds-${slug(cred.username)}-${slug(cred.password)}-verified`,
             family: "auth",
-            kind: "default_credentials",
-            title: `Default credentials work for ${cred.username}`,
+            kind: "common_credentials",
+            title: `Common credentials work for ${cred.username}`,
             technical_severity: "high",
             passed: true,
             control: "positive",
@@ -308,17 +334,7 @@ export const AuthTestTool = Tool.define("auth_test", {
             sessionID: ctx.sessionID,
             actorSessionID: seeded.actorSessionID,
             actorLabel: params.actor_label || cred.username,
-            material: httpAuthMaterial({
-              actorLabel: params.actor_label || cred.username,
-              url: resp.url,
-              requestHeaders: {
-                "content-type": "application/json",
-              },
-              requestCookies: auth.cookies,
-              responseHeaders: resp.headers,
-              responseBody: resp.body,
-              setCookies: resp.setCookies,
-            }),
+            material,
           })
           try {
             const parsed = JSON.parse(resp.body) as Record<string, unknown>
@@ -334,7 +350,7 @@ export const AuthTestTool = Tool.define("auth_test", {
                 actor_email: actor.email,
                 actor_role: actor.role,
                 privileged: /(admin|root|super|staff|support|manager|operator|internal)/i.test(actor.role),
-                source: "default_credentials",
+                source: "common_credentials",
                 actor_session_id: merged.actorSessionID,
                 url: params.url,
               })

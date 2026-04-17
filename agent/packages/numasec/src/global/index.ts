@@ -26,12 +26,19 @@ export namespace Global {
   }
 }
 
+async function ensureDirectory(path: string, mode: number) {
+  await fs.mkdir(path, { recursive: true, mode })
+  if (process.platform === "win32") return
+  await fs.chmod(path, mode)
+}
+
 await Promise.all([
-  fs.mkdir(Global.Path.data, { recursive: true }),
-  fs.mkdir(Global.Path.config, { recursive: true }),
-  fs.mkdir(Global.Path.state, { recursive: true }),
-  fs.mkdir(Global.Path.log, { recursive: true }),
-  fs.mkdir(Global.Path.bin, { recursive: true }),
+  ensureDirectory(Global.Path.data, 0o700),
+  ensureDirectory(Global.Path.config, 0o700),
+  ensureDirectory(Global.Path.state, 0o700),
+  ensureDirectory(Global.Path.log, 0o700),
+  ensureDirectory(Global.Path.cache, 0o700),
+  ensureDirectory(Global.Path.bin, 0o700),
 ])
 
 const CACHE_VERSION = "21"

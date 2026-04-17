@@ -372,7 +372,7 @@ export namespace ACP {
                   })
                 }
 
-                if (part.tool === "todowrite") {
+                if (part.tool === "todowrite" && !part.state.time.compacted) {
                   const parsedTodos = z.array(Todo.Info).safeParse(JSON.parse(part.state.output))
                   if (parsedTodos.success) {
                     await this.connection
@@ -887,7 +887,7 @@ export namespace ACP {
                 })
               }
 
-              if (part.tool === "todowrite") {
+              if (part.tool === "todowrite" && !part.state.time.compacted) {
                 const parsedTodos = z.array(Todo.Info).safeParse(JSON.parse(part.state.output))
                 if (parsedTodos.success) {
                   await this.connection
@@ -1595,7 +1595,7 @@ export namespace ACP {
 
     if (specified) return specified
 
-    return { providerID: ProviderID.numasec, modelID: ModelID.make("big-pickle") }
+    throw new Error("no providers found: connect a provider or explicitly enable numasec public access")
   }
 
   function parseUri(
