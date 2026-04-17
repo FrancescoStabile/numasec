@@ -1,23 +1,23 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { UI } from "../ui"
-import { Operation, OperationActive } from "@/core/operation"
-import { Kind, type KindId } from "@/core/kind"
+import { Operation, type OperationKind } from "@/core/operation"
 
 function workspace(): string {
   return process.cwd()
 }
 
+const KINDS: ReadonlyArray<OperationKind> = ["pentest", "ctf", "bughunt", "osint", "research"] as const
+
 function formatTable(ops: Awaited<ReturnType<typeof Operation.list>>): string {
   if (ops.length === 0) return "no operations yet — create one with `numasec operation new`"
-  const rows = ops.map((o) => {
-    const pack = Kind.byId(o.kind)
-    const glyph = pack?.glyph ?? "·"
-    const status = o.status === "archived" ? "archived" : "active"
-    const sessions = o.sessions.length
-    return [glyph, o.slug, pack?.short ?? o.kind, o.label, `${sessions} sess`, status].join("  ")
-  })
-  return rows.join("\n")
+  return ops
+    .map((o) => {
+      const mark = o.active ? "◆" : "·"
+      const target = o.target ? ` · ${o.target}` : ""
+      return `${mark}  ${o.slug}  [${o.kind}]  ${o.label}${target}  (${o.lines} lines)`
+    })
+    .join("\n")
 }
 
 export const OperationListCommand = cmd({
@@ -36,9 +36,7 @@ export const OperationListCommand = cmd({
       UI.println(JSON.stringify(ops, null, 2))
       return
     }
-    const active = await OperationActive.getActiveSlug(workspace())
     UI.println(formatTable(ops))
-    if (active) UI.println(`\nactive: ${active}`)
   },
 })
 
@@ -47,52 +45,48 @@ export const OperationNewCommand = cmd({
   describe: "create a new operation",
   builder: (yargs: Argv) =>
     yargs
-      .positional("label", { type: "string", describe: "human label (defaults to slug)" })
+      .positional("label", { type: "string", describe: "human label" })
       .option("kind", {
         alias: "k",
-        describe: "kind pack",
+        describe: "kind of engagement",
         type: "string",
-        choices: ["security", "pentest", "appsec", "osint", "hacking"],
-        default: "security",
+        choices: KINDS as unknown as string[],
+        default: "pentest",
       })
-      .option("slug", { type: "string", describe: "slug override" })
-      .option("activate", {
-        type: "boolean",
-        default: true,
-        describe: "set as active operation",
-      }),
+      .option("target", { type: "string", describe: "optional target URL" }),
   handler: async (args) => {
-    const label = args.label ?? args.slug ?? `new ${args.kind} op`
-    const info = await Operation.create(workspace(), {
+    const label = args.label ?? `new ${args.kind} op`
+    const info = await Operation.create({
+      workspace: workspace(),
       label,
-      kind: args.kind as KindId,
-      slug: args.slug,
+      kind: args.kind as OperationKind,
+      target: args.target,
     })
-    if (args.activate) await OperationActive.setActive(workspace(), info.slug)
     UI.println(
       UI.Style.TEXT_SUCCESS_BOLD +
         `created ${info.slug} [${info.kind}] ${info.label}` +
         UI.Style.TEXT_NORMAL,
     )
+    UI.println(`file: .numasec/operation/${info.slug}/numasec.md`)
   },
 })
 
 export const OperationShowCommand = cmd({
   command: "show [slug]",
-  describe: "show operation details (defaults to active)",
+  describe: "print the operation's numasec.md (defaults to active)",
   builder: (yargs: Argv) => yargs.positional("slug", { type: "string" }),
   handler: async (args) => {
-    const slug = args.slug ?? (await OperationActive.getActiveSlug(workspace()))
+    const slug = args.slug ?? (await Operation.activeSlug(workspace()))
     if (!slug) {
       UI.error("no active operation")
       process.exit(1)
     }
-    const info = await Operation.get(workspace(), slug)
-    if (!info) {
+    const content = await Operation.readMarkdown(workspace(), slug)
+    if (!content) {
       UI.error(`operation not found: ${slug}`)
       process.exit(1)
     }
-    UI.println(JSON.stringify(info, null, 2))
+    UI.println(content)
   },
 })
 
@@ -101,29 +95,27 @@ export const OperationUseCommand = cmd({
   describe: "set the active operation",
   builder: (yargs: Argv) => yargs.positional("slug", { type: "string", demandOption: true }),
   handler: async (args) => {
-    const info = await Operation.get(workspace(), args.slug)
+    const info = await Operation.read(workspace(), args.slug)
     if (!info) {
       UI.error(`operation not found: ${args.slug}`)
       process.exit(1)
     }
-    await OperationActive.setActive(workspace(), info.slug)
+    await Operation.activate(workspace(), info.slug)
     UI.println(`active → ${info.slug} [${info.kind}] ${info.label}`)
   },
 })
 
 export const OperationArchiveCommand = cmd({
   command: "archive <slug>",
-  describe: "archive an operation",
+  describe: "deactivate an operation (files remain on disk)",
   builder: (yargs: Argv) => yargs.positional("slug", { type: "string", demandOption: true }),
   handler: async (args) => {
-    const info = await Operation.get(workspace(), args.slug)
+    const info = await Operation.read(workspace(), args.slug)
     if (!info) {
       UI.error(`operation not found: ${args.slug}`)
       process.exit(1)
     }
     await Operation.archive(workspace(), args.slug)
-    const active = await OperationActive.getActiveSlug(workspace())
-    if (active === args.slug) await OperationActive.clearActive(workspace())
     UI.println(`archived ${args.slug}`)
   },
 })

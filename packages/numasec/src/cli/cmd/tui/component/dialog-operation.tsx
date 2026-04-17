@@ -2,8 +2,15 @@ import { createResource, createSignal, Show } from "solid-js"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
 import { useProject } from "@tui/context/project"
-import { Kind } from "@/core/kind"
-import { Operation, OperationActive } from "@/core/operation"
+import { Operation, type OperationKind } from "@/core/operation"
+
+const KIND_GLYPHS: Record<OperationKind, string> = {
+  pentest: "◆",
+  ctf: "▲",
+  bughunt: "✦",
+  osint: "●",
+  research: "◇",
+}
 
 export function DialogOperation() {
   const dialog = useDialog()
@@ -17,11 +24,11 @@ export function DialogOperation() {
     try {
       const dir = project.instance.directory()
       if (!dir) return { ops: [], active: undefined as string | undefined }
-      const [ops, active] = await Promise.all([
+      const [ops, activeSlug] = await Promise.all([
         Operation.list(dir).catch(() => []),
-        OperationActive.getActiveSlug(dir).catch(() => undefined),
+        Operation.activeSlug(dir).catch(() => undefined),
       ])
-      return { ops, active }
+      return { ops, active: activeSlug }
     } finally {
       inflight = false
     }
@@ -30,15 +37,12 @@ export function DialogOperation() {
   return (
     <Show when={data()} fallback={<DialogSelect title="Operations" options={[]} />}>
       {(d) => {
-        const options = d().ops.map((op) => {
-          const pack = Kind.byId(op.kind)
-          return {
-            value: op.slug,
-            title: `${pack?.glyph ?? "◆"} ${op.label}`,
-            description: `${op.kind} · ${op.slug} · ${op.sessions.length} runs · ${op.status}`,
-            category: op.status === "active" ? "Active" : "Archived",
-          }
-        })
+        const options = d().ops.map((op) => ({
+          value: op.slug,
+          title: `${KIND_GLYPHS[op.kind] ?? "◆"} ${op.label}`,
+          description: `${op.kind} · ${op.slug} · ${op.lines} lines${op.target ? ` · ${op.target}` : ""}`,
+          category: op.active ? "Active" : "Available",
+        }))
         return (
           <DialogSelect
             title="Select operation"
@@ -47,13 +51,13 @@ export function DialogOperation() {
             onSelect={async (option) => {
               const dir = project.instance.directory()
               if (!dir) return dialog.clear()
-              await OperationActive.setActive(dir, option.value)
+              await Operation.activate(dir, option.value)
               setTick((v) => !v)
               dialog.clear()
             }}
             keybind={[
               {
-                title: "archive",
+                title: "deactivate",
                 onTrigger: async (option) => {
                   const dir = project.instance.directory()
                   if (!dir) return

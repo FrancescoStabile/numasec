@@ -1,4 +1,10 @@
-import { OperationActive } from "@/core/operation"
+// Boundary guard — reads scope from the active operation's numasec.md.
+//
+// This module is intentionally thin: it locates the active op, parses its
+// Scope block, and delegates matching to `evaluate`. No state, no cache.
+
+import { Operation } from "@/core/operation"
+import { parseScope } from "@/core/operation/scope"
 import { evaluate } from "./evaluate"
 import type { Decision, Request } from "./schema"
 
@@ -22,9 +28,11 @@ export class ScopeDeniedError extends Error {
 export async function resolveActiveBoundary(
   workspace: string,
 ): Promise<{ slug: string; boundary: unknown } | undefined> {
-  const info = await OperationActive.resolveActive(workspace).catch(() => undefined)
-  if (!info) return undefined
-  return { slug: info.slug, boundary: info.boundary }
+  const slug = await Operation.activeSlug(workspace).catch(() => undefined)
+  if (!slug) return undefined
+  const markdown = await Operation.readMarkdown(workspace, slug).catch(() => undefined)
+  if (!markdown) return undefined
+  return { slug, boundary: parseScope(markdown) }
 }
 
 export async function check(workspace: string, request: Request): Promise<Decision> {

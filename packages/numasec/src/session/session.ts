@@ -29,7 +29,7 @@ import type { Provider } from "@/provider"
 import { Permission } from "@/permission"
 import { Global } from "@/global"
 import { Effect, Layer, Option, Context } from "effect"
-import { Operation, OperationActive } from "@/core/operation"
+import { Operation } from "@/core/operation"
 
 const log = Log.create({ service: "session" })
 
@@ -419,9 +419,9 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
 
       yield* Effect.sync(() => {
         void (async () => {
-          const slug = await OperationActive.getActiveSlug(input.directory).catch(() => undefined)
+          const slug = await Operation.activeSlug(input.directory).catch(() => undefined)
           if (!slug) return
-          await Operation.attachSession(input.directory, slug, result.id).catch(() => undefined)
+          await Operation.touch(input.directory, slug).catch(() => undefined)
         })()
       })
 

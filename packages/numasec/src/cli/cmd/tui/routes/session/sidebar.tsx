@@ -5,7 +5,6 @@ import { useTuiConfig } from "../../context/tui-config"
 import { InstallationVersion } from "@/installation/version"
 import { TuiPluginRuntime } from "../../plugin"
 import { BRAND } from "../../component/glyph"
-import { OperatorHud } from "../../component/operator-hud"
 
 import { getScrollAcceleration } from "../../util/scroll"
 
@@ -55,7 +54,6 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 </Show>
               </box>
             </TuiPluginRuntime.Slot>
-            <OperatorHud />
             <TuiPluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />
           </box>
         </scrollbox>

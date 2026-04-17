@@ -1,4 +1,4 @@
-export * as Operation from "./store"
-export * as OperationActive from "./active"
-export { Info as OperationInfo } from "./info"
-export type { Event as OperationEvent } from "./events"
+export * as Operation from "./operation"
+export * as OperationMigration from "./migration"
+export * as OperationScope from "./scope"
+export type { Info as OperationInfo, Kind as OperationKind } from "./operation"

@@ -21,7 +21,6 @@ import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
-import { OperationsBar } from "@tui/component/operations-bar"
 import { FRAME, STATUS } from "@tui/component/glyph"
 import { selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
@@ -1058,7 +1057,6 @@ export function Session() {
       }}
     >
       <box flexDirection="column" flexGrow={1}>
-        <OperationsBar sessionID={route.sessionID} />
         <box flexDirection="row" flexGrow={1}>
         <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
