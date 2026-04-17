@@ -104,7 +104,7 @@ Switch agent with `/mode` or `Tab`:
 - **Real browser.** Playwright-driven Chromium. Navigate, click, fill, screenshot, evaluate JS, intercept requests, diff the DOM between states.
 - **Attack surface recon.** Crawl, directory fuzz, JS static analysis, port scanning, service fingerprinting as first-class primitives.
 - **OOB callbacks, secrets, crypto, net probes, auth profiles.** The pieces a real operator needs that stock chat assistants don't have.
-- **Operations.** An event-sourced engagement fascicule (target, scope, OPSEC mode, runs) that carries across sessions and produces signable report bundles. Runtime scope enforcement means the agent *cannot* touch hosts you didn't authorize. See `docs/` for the details.
+- **Operations.** A per-engagement markdown fascicule (`numasec.md`) auto-loaded as a system instruction so the agent remembers target, scope, findings, and failed attempts across sessions. Runtime scope enforcement means the agent *cannot* touch hosts you didn't authorize. See [`docs/OPERATIONS.md`](./docs/OPERATIONS.md).
 - **Any LLM.** Anthropic, OpenAI, Google, xAI, OpenRouter, Bedrock, GitHub Models, Ollama, any OpenAI-compatible endpoint. The model is the brain, numasec is the hands.
 
 <!-- ATTACK-CHAIN GIF — 10–15s showing numasec discovering an IDOR, chaining it
@@ -132,6 +132,7 @@ It's loaded automatically. No flags, no env var, no config. It's just there.
 
 - [`AGENTS.md`](./AGENTS.md) — what each built-in agent is, how it thinks
 - [`docs/MANIFESTO.md`](./docs/MANIFESTO.md) — what numasec is *for*, and what it refuses to be
+- [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) — per-engagement memory (`numasec.md`), scope enforcement, finding workflow
 - [`docs/PROMPTS.md`](./docs/PROMPTS.md) — the operational prompts that make the agents act like operators, not chatbots
 - [`docs/TOOLS.md`](./docs/TOOLS.md) — every tool the agent can call
 - [`docs/PLUGINS.md`](./docs/PLUGINS.md) — how to extend with your own tools
