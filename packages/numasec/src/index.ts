@@ -31,6 +31,7 @@ import { PlanCommand } from "./cli/cmd/plan"
 import { BoundaryCommand } from "./cli/cmd/boundary"
 import { ObservationCommand } from "./cli/cmd/observation"
 import { EvidenceCommand } from "./cli/cmd/evidence"
+import { ReportCommand } from "./cli/cmd/report"
 import { DbCommand } from "./cli/cmd/db"
 import path from "path"
 import { Global } from "./global"
@@ -174,6 +175,7 @@ const cli = yargs(args)
   .command(BoundaryCommand)
   .command(ObservationCommand)
   .command(EvidenceCommand)
+  .command(ReportCommand)
   .command(PluginCommand)
   .command(DbCommand)
   .fail((msg, err) => {
