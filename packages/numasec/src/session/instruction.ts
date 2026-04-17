@@ -7,6 +7,7 @@ import { InstanceState } from "@/effect"
 import { Flag } from "@/flag/flag"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { Operation } from "@/core/operation"
 import { Global } from "../global"
 import { Instance } from "../project/instance"
 import { Log } from "../util"
@@ -21,7 +22,7 @@ const FILES = [
   "CONTEXT.md", // deprecated
 ]
 
-const NUMASEC_FILES = [".numasec.md"]
+const NUMASEC_FILES = ["numasec.md", ".numasec.md"]
 
 function globalFiles() {
   const files = []
@@ -143,6 +144,16 @@ export namespace Instruction {
             for (const file of NUMASEC_FILES) {
               const p = path.join(dotDir, file)
               if (yield* fs.existsSafe(p)) paths.add(path.resolve(p))
+            }
+
+            // Active operation's numasec.md — per-engagement persistent memory.
+            const activeSlug = yield* Effect.tryPromise({
+              try: () => Operation.activeSlug(Instance.directory),
+              catch: () => undefined,
+            }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            if (activeSlug) {
+              const opFile = path.join(dotDir, "operation", activeSlug, "numasec.md")
+              if (yield* fs.existsSafe(opFile)) paths.add(path.resolve(opFile))
             }
           }
 
