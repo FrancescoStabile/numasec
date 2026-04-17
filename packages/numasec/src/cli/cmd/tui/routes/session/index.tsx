@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -21,6 +22,7 @@ import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { OperationsBar } from "@tui/component/operations-bar"
+import { FRAME, STATUS } from "@tui/component/glyph"
 import { selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -1734,6 +1736,71 @@ function InlineTool(props: {
   )
 }
 
+function formatToolElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  const total = Math.round(ms / 1000)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}m${String(s).padStart(2, "0")}s`
+}
+
+function ToolFrameHeader(props: { tool?: string; part?: ToolPart; running?: boolean; pending?: boolean }) {
+  const { theme } = useTheme()
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!props.running) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(t))
+  })
+
+  const status = createMemo(() => props.part?.state.status)
+  const color = createMemo(() => {
+    const s = status()
+    if (s === "error") return theme.error
+    if (s === "completed") return theme.success
+    if (s === "running") return theme.warning
+    return theme.textMuted
+  })
+  const verb = createMemo(() => {
+    const s = status()
+    if (s === "error") return STATUS.fail
+    if (s === "completed") return STATUS.ok
+    if (s === "running") return STATUS.running
+    return STATUS.pending
+  })
+  const elapsed = createMemo(() => {
+    const st = props.part?.state
+    if (!st || st.status === "pending") return undefined
+    if (st.status === "running") return formatToolElapsed(now() - st.time.start)
+    return formatToolElapsed(st.time.end - st.time.start)
+  })
+  const toolName = createMemo(() => props.tool ?? props.part?.tool ?? "tool")
+
+  return (
+    <text fg={color()}>
+      <span>{FRAME.topLeft}</span>
+      <span>{FRAME.horizontal}</span>
+      <span style={{ bold: true }}>
+        {" "}
+        {verb()} RUN {toolName()}{" "}
+      </span>
+      <span>{FRAME.horizontal}</span>
+      <Show when={elapsed()}>
+        {(e) => (
+          <>
+            <span> </span>
+            <span>{e()}</span>
+            <span> </span>
+            <span>{FRAME.horizontal}</span>
+          </>
+        )}
+      </Show>
+    </text>
+  )
+}
+
 function BlockTool(props: {
   title: string
   children: JSX.Element
@@ -1745,38 +1812,48 @@ function BlockTool(props: {
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
+  const status = createMemo(() => props.part?.state.status)
+  const borderColor = createMemo(() => {
+    const s = status()
+    if (s === "error") return theme.error
+    if (s === "completed") return theme.success
+    if (s === "running") return theme.warning
+    return theme.background
+  })
   return (
-    <box
-      border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
-      marginTop={1}
-      gap={1}
-      backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
-      customBorderChars={SplitBorder.customBorderChars}
-      borderColor={theme.background}
-      onMouseOver={() => props.onClick && setHover(true)}
-      onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
-        if (renderer.getSelection()?.getSelectedText()) return
-        props.onClick?.()
-      }}
-    >
-      <Show
-        when={props.spinner}
-        fallback={
-          <text paddingLeft={3} fg={theme.textMuted}>
-            {props.title}
-          </text>
-        }
+    <box flexDirection="column" marginTop={1}>
+      <ToolFrameHeader part={props.part} running={status() === "running"} />
+      <box
+        border={["left"]}
+        paddingTop={1}
+        paddingBottom={1}
+        paddingLeft={2}
+        gap={1}
+        backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
+        customBorderChars={SplitBorder.customBorderChars}
+        borderColor={borderColor()}
+        onMouseOver={() => props.onClick && setHover(true)}
+        onMouseOut={() => setHover(false)}
+        onMouseUp={() => {
+          if (renderer.getSelection()?.getSelectedText()) return
+          props.onClick?.()
+        }}
       >
-        <Spinner color={theme.textMuted}>{props.title.replace(/^# /, "")}</Spinner>
-      </Show>
-      {props.children}
-      <Show when={error()}>
-        <text fg={theme.error}>{error()}</text>
-      </Show>
+        <Show
+          when={props.spinner}
+          fallback={
+            <text paddingLeft={3} fg={theme.textMuted}>
+              {props.title}
+            </text>
+          }
+        >
+          <Spinner color={theme.textMuted}>{props.title.replace(/^# /, "")}</Spinner>
+        </Show>
+        {props.children}
+        <Show when={error()}>
+          <text fg={theme.error}>{error()}</text>
+        </Show>
+      </box>
     </box>
   )
 }
