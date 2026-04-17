@@ -2,6 +2,7 @@ import { createMemo } from "solid-js"
 import { useLocal } from "@tui/context/local"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
+import { Kind } from "@/core/kind"
 
 export function DialogAgent() {
   const local = useLocal()
@@ -9,6 +10,15 @@ export function DialogAgent() {
 
   const options = createMemo(() =>
     local.agent.list().map((item) => {
+      const pack = Kind.byId(item.name)
+      if (pack) {
+        return {
+          value: item.name,
+          title: `${pack.glyph} ${pack.label}`,
+          description: pack.tagline,
+          category: pack.id === "security" || pack.id === "hacking" ? "Conversational" : "Structured engagement",
+        }
+      }
       return {
         value: item.name,
         title: item.name,
@@ -19,7 +29,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title="Select agent"
+      title="Select kind"
       current={local.agent.current()?.name}
       options={options()}
       onSelect={(option) => {
