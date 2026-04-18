@@ -40,7 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   })
 
-  context.subscriptions.push(openTerminalDisposable, addFilepathDisposable)
+  context.subscriptions.push(openTerminalDisposable, openNewTerminalDisposable, addFilepathDisposable)
 
   async function openTerminal() {
     // Create a new terminal in split screen
@@ -70,12 +70,16 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Wait for the terminal to be ready
+    // Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues on macOS
     let tries = 10
     let connected = false
     do {
       await new Promise((resolve) => setTimeout(resolve, 200))
       try {
-        await fetch(`http://localhost:${port}/app`)
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 1000)
+        await fetch(`http://127.0.0.1:${port}/app`, { signal: controller.signal })
+        clearTimeout(timeout)
         connected = true
         break
       } catch (e) {}
@@ -91,13 +95,19 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   async function appendPrompt(port: number, text: string) {
-    await fetch(`http://localhost:${port}/tui/append-prompt`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text }),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    try {
+      await fetch(`http://127.0.0.1:${port}/tui/append-prompt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+        signal: controller.signal,
+      })
+    } catch (e) {}
+    clearTimeout(timeout)
   }
 
   function getActiveFile() {
