@@ -33,6 +33,9 @@ import { CVETool } from "./cve"
 import { PlayTool } from "./play"
 import { PwnBootstrapTool } from "./pwn-bootstrap"
 import { ScannerTool } from "./scanner"
+import { OpsecTool } from "./opsec"
+import { RemediateTool } from "./remediate"
+import { ShareTool } from "./share"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
 import * as Truncate from "./truncate"
@@ -136,6 +139,8 @@ export const layer: Layer.Layer<
     const pwnBootstrapTool = yield* PwnBootstrapTool
     const scannerTool = yield* ScannerTool
     const opsecTool = yield* OpsecTool
+    const shareTool = yield* ShareTool
+    const remediateTool = yield* RemediateTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -224,7 +229,10 @@ export const layer: Layer.Layer<
           play: Tool.init(playTool),
           pwn_bootstrap: Tool.init(pwnBootstrapTool),
           scanner: Tool.init(scannerTool),
+          opsec: Tool.init(opsecTool),
+          share: Tool.init(shareTool),
           methodology: Tool.init(methodologyTool),
+          remediate: Tool.init(remediateTool),
         })
 
         return {
@@ -257,7 +265,9 @@ export const layer: Layer.Layer<
             tool.pwn_bootstrap,
             tool.scanner,
             tool.opsec,
+            tool.share,
             tool.methodology,
+            tool.remediate,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,

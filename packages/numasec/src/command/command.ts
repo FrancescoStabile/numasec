@@ -15,6 +15,8 @@ import PROMPT_DOCTOR from "./template/doctor.txt"
 import PROMPT_PLAY from "./template/play.txt"
 import PROMPT_PWN from "./template/pwn.txt"
 import PROMPT_OPSEC from "./template/opsec.txt"
+import PROMPT_SHARE from "./template/share.txt"
+import PROMPT_REMEDIATE from "./template/remediate.txt"
 
 type State = {
   commands: Record<string, Info>
@@ -69,6 +71,9 @@ export const Default = {
   DOCTOR: "doctor",
   PLAY: "play",
   PWN: "pwn",
+  OPSEC: "opsec",
+  SHARE: "share",
+  REMEDIATE: "remediate",
 } as const
 
 export interface Interface {
@@ -153,6 +158,24 @@ export const layer = Layer.effect(
           return PROMPT_OPSEC
         },
         hints: hints(PROMPT_OPSEC),
+      }
+      commands[Default.SHARE] = {
+        name: Default.SHARE,
+        description: "bundle the active operation into a signed, redacted, shareable tarball",
+        source: "command",
+        get template() {
+          return PROMPT_SHARE
+        },
+        hints: hints(PROMPT_SHARE),
+      }
+      commands[Default.REMEDIATE] = {
+        name: Default.REMEDIATE,
+        description: "propose a reviewable fix for an observation (patch or advice, disposable branch)",
+        source: "command",
+        get template() {
+          return PROMPT_REMEDIATE
+        },
+        hints: hints(PROMPT_REMEDIATE),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
