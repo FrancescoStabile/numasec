@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, join, relative, resolve as pathResolve } from "path"
+import { dirname, isAbsolute, join, relative, resolve as pathResolve } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -231,6 +231,9 @@ export namespace AppFileSystem {
   }
 
   export function contains(parent: string, child: string) {
-    return !relative(parent, child).startsWith("..")
+    const rel = relative(parent, child)
+    // On Windows, relative() returns the absolute `to` path when paths are on different
+    // drives (e.g. project on D:\ vs file on C:\). isAbsolute catches that case.
+    return !rel.startsWith("..") && !isAbsolute(rel)
   }
 }

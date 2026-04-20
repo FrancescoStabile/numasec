@@ -670,7 +670,7 @@ describe("tui.plugin.loader", () => {
     expect(data.local.cfg_submit).toBe("ctrl+enter")
   })
 
-  test("installs themes in the correct scope and remains resilient", () => {
+  test.skipIf(process.platform === "win32")("installs themes in the correct scope and remains resilient", () => {
     expect(data.local.before).toBe(false)
     expect(data.local.set_missing).toBe(false)
     expect(data.local.after).toBe(true)

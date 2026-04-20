@@ -83,7 +83,8 @@ describe("tool/vault", () => {
 
       const vaultFile = path.join(xdg, "numasec", "vault.json")
       const stat = await fs.stat(vaultFile)
-      expect(stat.mode & 0o777).toBe(0o600)
+      // Windows chmod() is a no-op; skip mode check
+      if (process.platform !== "win32") expect(stat.mode & 0o777).toBe(0o600)
     })
   })
 

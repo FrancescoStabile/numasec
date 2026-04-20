@@ -5,8 +5,11 @@ import { Operation } from "../../src/core/operation"
 import { run as share } from "../../src/tool/share"
 import { tmpdir } from "../fixture/fixture"
 
+// tar-based share tests rely on POSIX tar behavior; skip on Windows.
+const skipWindows = test.skipIf(process.platform === "win32")
+
 describe("tool/share", () => {
-  test("default run emits a redacted, unsigned tarball with manifest inside", async () => {
+  skipWindows("default run emits a redacted, unsigned tarball with manifest inside", async () => {
     await using fixture = await tmpdir()
     const op = await Operation.create({
       workspace: fixture.path,
@@ -71,7 +74,7 @@ describe("tool/share", () => {
     }
   })
 
-  test("sign:true without a key gracefully degrades (signed=false + warning)", async () => {
+  skipWindows("sign:true without a key gracefully degrades (signed=false + warning)", async () => {
     await using fixture = await tmpdir()
     await Operation.create({
       workspace: fixture.path,

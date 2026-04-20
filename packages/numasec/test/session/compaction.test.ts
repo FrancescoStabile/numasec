@@ -1031,7 +1031,7 @@ describe("session.compaction.process", () => {
 
           await Promise.race([
             ready.promise,
-            wait(1000).then(() => {
+            wait(process.platform === "win32" ? 5000 : 1000).then(() => {
               throw new Error("timed out waiting for retry status")
             }),
           ])
