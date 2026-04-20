@@ -39,13 +39,13 @@ numasec is the third option. A **terminal-native AI agent** that reasons about a
 
 ---
 
-## What's inside
+## Capabilities
 
 <table>
 <tr>
-<td width="50%" valign="top">
+<td valign="top">
 
-### 🛠️ 9 hero slash commands
+### 9 slash commands
 All workflows start in the TUI with one keystroke:
 
 | Command | What it does |
@@ -61,9 +61,11 @@ All workflows start in the TUI with one keystroke:
 | `/review` | AppSec review of the repo you're sitting in |
 
 </td>
-<td width="50%" valign="top">
+</tr>
+<tr>
+<td valign="top">
 
-### 🧠 7 specialised agents
+### 7 specialised agents
 
 Switch with `Tab` or `/mode`:
 
@@ -81,7 +83,7 @@ Each one ships its own prompt, tool permissions, and default playbook.
 </tr>
 </table>
 
-### 📚 Offline methodology & CVE knowledge
+### Offline methodology & CVE knowledge
 
 numasec ships with a **fully-offline** corpus of MITRE ATT&CK (enterprise + ICS), PTES, OWASP WSTG, and a compact NVD CVE index refreshed weekly via GitHub Actions. Zero API keys, zero internet required for knowledge lookups.
 
@@ -90,15 +92,15 @@ numasec ships with a **fully-offline** corpus of MITRE ATT&CK (enterprise + ICS)
 ✔ Loaded PTES §5 into session. 14 techniques, 6 tool recommendations.
 ```
 
-### 🎯 Operations — real per-engagement memory
+### Operations — real per-engagement memory
 
 Every engagement is a file (`.numasec/operation/<slug>/numasec.md`) auto-loaded as a system instruction. Target, scope, findings, failed attempts — it all persists across sessions. When `/opsec strict` is on, the runtime guard refuses HTTP/browser requests to out-of-scope hosts **before** they leave the tool.
 
-### 🔀 Plays — versioned, shareable runbooks
+### Plays — versioned, shareable runbooks
 
 Think "GitHub Actions for pentest workflows". A Play is a YAML-ish script that drives the agent through a reproducible attack/defense flow with parameters, gates, and artefacts. 5 ship in the box (`web-surface`, `appsec-triage`, `pwn`, `osint-passive`, `remediation-loop`) — write your own in any plugin.
 
-### 📟 Sidebar widgets — situational awareness, always visible
+### Sidebar widgets — situational awareness, always visible
 
 <!-- SIDEBAR GIF — 8s pan across the right column showing Pulse → Plan → Activity → Doctor.
      Drop at assets/sidebar.gif. -->
@@ -112,11 +114,11 @@ Think "GitHub Actions for pentest workflows". A Play is a YAML-ish script that d
 - **Activity** — tool calls streaming in real time
 - **Doctor** — green/red dots for every dependency, OPSEC flag, model health
 
-### 🏁 Benchmark harness
+### Benchmark harness
 
 Reproducible benchmark runs against a disposable OWASP Juice Shop instance — `web-surface`, `appsec-triage`, `pwn` scenarios — wired into a `bench` GitHub Action so every tag ships with numbers we stand behind.
 
-### 🔐 Honest secrets, honest permissions
+### Honest secrets, honest permissions
 
 Merged the old `secrets` + `auth-as` palette-cruft into a single `vault` tool backed by a **mode 0600** JSON file. External shell mutations escalate to an explicit `external_directory_mutation` approval — no durable auto-allow. No telemetry, ever.
 
