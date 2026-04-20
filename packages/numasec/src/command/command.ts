@@ -11,6 +11,7 @@ import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_TEACH from "./template/teach.txt"
+import PROMPT_DOCTOR from "./template/doctor.txt"
 
 type State = {
   commands: Record<string, Info>
@@ -62,6 +63,7 @@ export const Default = {
   INIT: "init",
   REVIEW: "review",
   TEACH: "teach",
+  DOCTOR: "doctor",
 } as const
 
 export interface Interface {
@@ -110,6 +112,15 @@ export const layer = Layer.effect(
           return PROMPT_TEACH
         },
         hints: hints(PROMPT_TEACH),
+      }
+      commands[Default.DOCTOR] = {
+        name: Default.DOCTOR,
+        description: "environment self-check — runtime, tools on PATH, vault, workspace",
+        source: "command",
+        get template() {
+          return PROMPT_DOCTOR
+        },
+        hints: hints(PROMPT_DOCTOR),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {

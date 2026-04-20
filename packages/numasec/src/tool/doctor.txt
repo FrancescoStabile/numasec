@@ -1,0 +1,8 @@
+Run a local environment probe for numasec. Reports:
+- node/bun runtime + OS/arch
+- presence of security tools on PATH (curl, jq, git, rg, nmap, nuclei, subfinder, ffuf, amass, httpx, gobuster, sqlmap, zap, burpsuite) — missing tools are listed but never fail the probe
+- vault status at ~/.config/numasec/secrets.json (presence + file mode only, never values)
+- CVE bundle presence (assets/cve/latest.json)
+- whether the current workspace is writable
+
+Takes no arguments. Returns a human-readable markdown report. Use when the operator asks `/doctor`, reports environment issues, or you need to decide whether to reach for a tool that depends on a specific binary.

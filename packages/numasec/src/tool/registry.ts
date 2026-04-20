@@ -28,6 +28,7 @@ import { NetTool } from "./net"
 import { SecretsTool } from "./secrets"
 import { AuthAsTool } from "./auth-as"
 import { InteractTool } from "./interact"
+import { DoctorTool } from "./doctor"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
 import * as Truncate from "./truncate"
@@ -125,6 +126,7 @@ export const layer: Layer.Layer<
     const secretsTool = yield* SecretsTool
     const authAs = yield* AuthAsTool
     const interactTool = yield* InteractTool
+    const doctorTool = yield* DoctorTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -209,6 +211,7 @@ export const layer: Layer.Layer<
           secrets: Tool.init(secretsTool),
           auth_as: Tool.init(authAs),
           interact: Tool.init(interactTool),
+          doctor: Tool.init(doctorTool),
         })
 
         return {
@@ -236,6 +239,7 @@ export const layer: Layer.Layer<
             tool.secrets,
             tool.auth_as,
             tool.interact,
+            tool.doctor,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,
