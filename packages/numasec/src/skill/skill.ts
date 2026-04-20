@@ -1,7 +1,10 @@
 import os from "os"
 import path from "path"
 import { pathToFileURL } from "url"
+import matter from "gray-matter"
 import z from "zod"
+import passiveOsintMd from "../../skills/passive-osint/SKILL.md" with { type: "text" }
+import forensicsKitMd from "../../skills/forensics-kit/SKILL.md" with { type: "text" }
 import { Effect, Layer, Context } from "effect"
 import { NamedError } from "@numasec/shared/util/error"
 import type { Agent } from "@/agent/agent"
@@ -28,6 +31,7 @@ export const Info = z.object({
   description: z.string(),
   location: z.string(),
   content: z.string(),
+  embedded: z.boolean().optional(),
 })
 export type Info = z.infer<typeof Info>
 
@@ -101,6 +105,36 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
   }
 })
 
+const BUILTIN_SKILLS = [
+  { content: passiveOsintMd, location: "builtin:passive-osint" },
+  { content: forensicsKitMd, location: "builtin:forensics-kit" },
+]
+
+const addBuiltin = Effect.fnUntraced(function* (state: State, content: string, location: string) {
+  const md = matter(content)
+  const parsed = Info.pick({ name: true, description: true }).safeParse(md.data)
+  if (!parsed.success) {
+    log.error("invalid builtin skill frontmatter", { location })
+    return
+  }
+  if (state.skills[parsed.data.name]) {
+    log.warn("duplicate skill name", {
+      name: parsed.data.name,
+      existing: state.skills[parsed.data.name].location,
+      duplicate: location,
+    })
+  }
+  // Embedded skills are not added to state.dirs — they have no real filesystem dir,
+  // so they must not appear in agent external_directory whitelists or rg.files scans.
+  state.skills[parsed.data.name] = {
+    name: parsed.data.name,
+    description: parsed.data.description,
+    location,
+    content: md.content,
+    embedded: true,
+  }
+})
+
 const scan = Effect.fnUntraced(function* (
   state: State,
   bus: Bus.Interface,
@@ -157,14 +191,9 @@ const loadSkills = Effect.fnUntraced(function* (
     }
   }
 
-  // Built-in skills shipped with the package.
-  // NUMASEC_INSTALL_SKILLS is set by bin/numasec (npm install path).
-  // npm_package_json is set by bun when running scripts (bun run dev path).
-  const builtinRoot =
-    process.env.NUMASEC_INSTALL_SKILLS ??
-    (process.env.npm_package_json ? path.join(path.dirname(process.env.npm_package_json), "skills") : null)
-  if (builtinRoot && (yield* fsys.isDir(builtinRoot))) {
-    yield* scan(state, bus, builtinRoot, SKILL_PATTERN, { scope: "builtin" })
+  // Built-in skills embedded at compile time — always available, no filesystem dependency.
+  for (const skill of BUILTIN_SKILLS) {
+    yield* addBuiltin(state, skill.content, skill.location)
   }
 
   const configDirs = yield* config.directories()
@@ -256,7 +285,7 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
           "  <skill>",
           `    <name>${skill.name}</name>`,
           `    <description>${skill.description}</description>`,
-          `    <location>${pathToFileURL(skill.location).href}</location>`,
+          `    <location>${skill.embedded ? skill.location : pathToFileURL(skill.location).href}</location>`,
           "  </skill>",
         ]),
       "</available_skills>",

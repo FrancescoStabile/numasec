@@ -59,16 +59,24 @@ export const SkillTool = Tool.define(
                 metadata: {},
               })
 
-              const dir = path.dirname(info.location)
-              const base = pathToFileURL(dir).href
-              const limit = 10
-              const files = yield* rg.files({ cwd: dir, follow: false, hidden: true, signal: ctx.abort }).pipe(
-                Stream.filter((file) => !file.includes("SKILL.md")),
-                Stream.map((file) => path.resolve(dir, file)),
-                Stream.take(limit),
-                Stream.runCollect,
-                Effect.map((chunk) => [...chunk].map((file) => `<file>${file}</file>`).join("\n")),
-              )
+              const files = info.embedded
+                ? ""
+                : yield* (() => {
+                    const dir = path.dirname(info.location)
+                    const base = pathToFileURL(dir).href
+                    return rg
+                      .files({ cwd: dir, follow: false, hidden: true, signal: ctx.abort })
+                      .pipe(
+                        Stream.filter((file) => !file.includes("SKILL.md")),
+                        Stream.map((file) => path.resolve(dir, file)),
+                        Stream.take(10),
+                        Stream.runCollect,
+                        Effect.map(
+                          (chunk) =>
+                            `Base directory for this skill: ${base}\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n${[...chunk].map((f) => `<file>${f}</file>`).join("\n")}\n</skill_files>`,
+                        ),
+                      )
+                  })()
 
               return {
                 title: `Loaded skill: ${info.name}`,
@@ -78,18 +86,12 @@ export const SkillTool = Tool.define(
                   "",
                   info.content.trim(),
                   "",
-                  `Base directory for this skill: ${base}`,
-                  "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
-                  "Note: file list is sampled.",
-                  "",
-                  "<skill_files>",
                   files,
-                  "</skill_files>",
                   "</skill_content>",
                 ].join("\n"),
                 metadata: {
                   name: info.name,
-                  dir,
+                  dir: info.embedded ? undefined : path.dirname(info.location),
                 },
               }
             }).pipe(Effect.orDie),

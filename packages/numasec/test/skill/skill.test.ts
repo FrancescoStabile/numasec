@@ -64,7 +64,7 @@ Instructions here.
 
           const skill = yield* Skill.Service
           const list = yield* skill.all()
-          expect(list.length).toBe(1)
+          expect(list.filter((s) => !s.embedded).length).toBe(1)
           const item = list.find((x) => x.name === "test-skill")
           expect(item).toBeDefined()
           expect(item!.description).toBe("A test skill for verification.")
@@ -134,7 +134,7 @@ description: Second test skill.
 
           const skill = yield* Skill.Service
           const list = yield* skill.all()
-          expect(list.length).toBe(2)
+          expect(list.filter((s) => !s.embedded).length).toBe(2)
           expect(list.find((x) => x.name === "skill-one")).toBeDefined()
           expect(list.find((x) => x.name === "skill-two")).toBeDefined()
         }),
@@ -157,7 +157,7 @@ Just some content without YAML frontmatter.
           )
 
           const skill = yield* Skill.Service
-          expect(yield* skill.all()).toEqual([])
+          expect((yield* skill.all()).filter((s) => !s.embedded)).toEqual([])
         }),
       { git: true },
     ),
@@ -182,7 +182,7 @@ description: A skill in the .claude/skills directory.
 
           const skill = yield* Skill.Service
           const list = yield* skill.all()
-          expect(list.length).toBe(1)
+          expect(list.filter((s) => !s.embedded).length).toBe(1)
           const item = list.find((x) => x.name === "claude-skill")
           expect(item).toBeDefined()
           expect(item!.location).toContain(path.join(".claude", "skills", "claude-skill", "SKILL.md"))
@@ -205,10 +205,11 @@ description: A skill in the .claude/skills directory.
           yield* Effect.gen(function* () {
             const skill = yield* Skill.Service
             const list = yield* skill.all()
-            expect(list.length).toBe(1)
-            expect(list[0].name).toBe("global-test-skill")
-            expect(list[0].description).toBe("A global skill from ~/.claude/skills for testing.")
-            expect(list[0].location).toContain(path.join(".claude", "skills", "global-test-skill", "SKILL.md"))
+            expect(list.filter((s) => !s.embedded).length).toBe(1)
+            const item = list.find((x) => x.name === "global-test-skill")
+            expect(item).toBeDefined()
+            expect(item!.description).toBe("A global skill from ~/.claude/skills for testing.")
+            expect(item!.location).toContain(path.join(".claude", "skills", "global-test-skill", "SKILL.md"))
           }).pipe(provideInstance(tmp.path))
         }),
       )
@@ -220,7 +221,7 @@ description: A skill in the .claude/skills directory.
       () =>
         Effect.gen(function* () {
           const skill = yield* Skill.Service
-          expect(yield* skill.all()).toEqual([])
+          expect((yield* skill.all()).filter((s) => !s.embedded)).toEqual([])
         }),
       { git: true },
     ),
@@ -245,7 +246,7 @@ description: A skill in the .agents/skills directory.
 
           const skill = yield* Skill.Service
           const list = yield* skill.all()
-          expect(list.length).toBe(1)
+          expect(list.filter((s) => !s.embedded).length).toBe(1)
           const item = list.find((x) => x.name === "agent-skill")
           expect(item).toBeDefined()
           expect(item!.location).toContain(path.join(".agents", "skills", "agent-skill", "SKILL.md"))
@@ -284,10 +285,11 @@ This skill is loaded from the global home directory.
           yield* Effect.gen(function* () {
             const skill = yield* Skill.Service
             const list = yield* skill.all()
-            expect(list.length).toBe(1)
-            expect(list[0].name).toBe("global-agent-skill")
-            expect(list[0].description).toBe("A global skill from ~/.agents/skills for testing.")
-            expect(list[0].location).toContain(path.join(".agents", "skills", "global-agent-skill", "SKILL.md"))
+            expect(list.filter((s) => !s.embedded).length).toBe(1)
+            const item = list.find((x) => x.name === "global-agent-skill")
+            expect(item).toBeDefined()
+            expect(item!.description).toBe("A global skill from ~/.agents/skills for testing.")
+            expect(item!.location).toContain(path.join(".agents", "skills", "global-agent-skill", "SKILL.md"))
           }).pipe(provideInstance(tmp.path))
         }),
       )
@@ -325,7 +327,7 @@ description: A skill in the .agents/skills directory.
 
           const skill = yield* Skill.Service
           const list = yield* skill.all()
-          expect(list.length).toBe(2)
+          expect(list.filter((s) => !s.embedded).length).toBe(2)
           expect(list.find((x) => x.name === "claude-skill")).toBeDefined()
           expect(list.find((x) => x.name === "agent-skill")).toBeDefined()
         }),
@@ -384,6 +386,27 @@ description: A skill in the .numasec/skills directory.
 
           const skill = yield* Skill.Service
           expect((yield* skill.dirs()).length).toBe(4)
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live("loads passive-osint and forensics-kit as embedded builtins", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          const list = yield* skill.all()
+          const builtins = list.filter((s) => s.embedded)
+          expect(builtins.length).toBe(2)
+          const osint = builtins.find((x) => x.name === "passive-osint")
+          const forensics = builtins.find((x) => x.name === "forensics-kit")
+          expect(osint).toBeDefined()
+          expect(forensics).toBeDefined()
+          expect(osint!.location).toBe("builtin:passive-osint")
+          expect(forensics!.location).toBe("builtin:forensics-kit")
+          expect(osint!.content.length).toBeGreaterThan(100)
+          expect(forensics!.content.length).toBeGreaterThan(100)
         }),
       { git: true },
     ),
