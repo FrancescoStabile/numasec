@@ -188,6 +188,8 @@ Reference authoritative sources: OWASP Cheat Sheets, framework security document
 
 **websearch** — Research CVEs for identified dependencies, find framework-specific security guidance, check for known bypass techniques against sanitization libraries.
 
+**cve** — Use `cve` tool for offline CVE lookups — no API key required.
+
 ## Key Principles
 
 **Context determines severity.** SQL injection in an internal admin tool used by three people is different from SQL injection in a public-facing login page. Always assess the realistic attack scenario, not just the theoretical vulnerability class.
