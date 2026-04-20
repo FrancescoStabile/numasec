@@ -184,6 +184,9 @@ Reference authoritative sources: OWASP Cheat Sheets, framework security document
 
 **http_request** — Verify SAST findings with real HTTP requests. Test injection points, authentication bypasses, and access control issues against a running application.
 
+**scanner** — Active web/network recon (crawl / dir-fuzz / js / ports / service). Use it to enumerate the deployed application's URL surface, discover hidden paths, and harvest endpoints/secrets from JS bundles when verifying SAST findings in a running environment.
+For passive recon load the `passive-osint` skill — do not use the `scanner` tool for OSINT.
+
 **browser** — Test client-side vulnerabilities, verify CSP effectiveness, test CSRF protections, and interact with SPAs.
 
 **websearch** — Research CVEs for identified dependencies, find framework-specific security guidance, check for known bypass techniques against sanitization libraries.
