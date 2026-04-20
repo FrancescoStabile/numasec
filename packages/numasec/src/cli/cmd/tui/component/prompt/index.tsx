@@ -973,6 +973,7 @@ export function Prompt(props: PromptProps) {
               placeholderColor={theme.textMuted}
               textColor={keybind.leader ? theme.textMuted : theme.text}
               focusedTextColor={keybind.leader ? theme.textMuted : theme.text}
+              flexGrow={1}
               minHeight={1}
               maxHeight={6}
               onContentChange={() => {
