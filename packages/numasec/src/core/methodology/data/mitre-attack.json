@@ -1,0 +1,176 @@
+{
+  "id": "mitre",
+  "name": "MITRE ATT&CK (Enterprise)",
+  "version": "v15",
+  "phases": [
+    {
+      "id": "TA0043",
+      "name": "Reconnaissance",
+      "description": "Adversary gathers information to plan future operations.",
+      "techniques": [
+        { "id": "T1595", "name": "Active Scanning", "description": "Probe victim infrastructure via network scans (port, vuln, wordlist)." },
+        { "id": "T1592", "name": "Gather Victim Host Information", "description": "Collect host configuration, software, firmware, client details." },
+        { "id": "T1589", "name": "Gather Victim Identity Information", "description": "Collect emails, employee names, credentials for targeting." },
+        { "id": "T1596", "name": "Search Open Technical Databases", "description": "Query WHOIS, DNS, certificate, scan, and CDN databases." },
+        { "id": "T1593", "name": "Search Open Websites/Domains", "description": "Mine social media, search engines, code repos for intel." }
+      ]
+    },
+    {
+      "id": "TA0042",
+      "name": "Resource Development",
+      "description": "Adversary establishes infrastructure, capabilities, and accounts to support operations.",
+      "techniques": [
+        { "id": "T1583", "name": "Acquire Infrastructure", "description": "Buy or lease servers, domains, DNS, botnets for staging/C2." },
+        { "id": "T1586", "name": "Compromise Accounts", "description": "Take over existing accounts (social, email, cloud) for operations." },
+        { "id": "T1587", "name": "Develop Capabilities", "description": "Build custom malware, exploits, code-signing certs in-house." },
+        { "id": "T1588", "name": "Obtain Capabilities", "description": "Buy or steal tooling, exploits, certificates from third parties." },
+        { "id": "T1585", "name": "Establish Accounts", "description": "Create new identities (email, social, cloud) to support targeting." }
+      ]
+    },
+    {
+      "id": "TA0001",
+      "name": "Initial Access",
+      "description": "Adversary gains a foothold in the target environment.",
+      "techniques": [
+        { "id": "T1566", "name": "Phishing", "description": "Spearphishing attachment/link/service to deliver payload or harvest credentials." },
+        { "id": "T1190", "name": "Exploit Public-Facing Application", "description": "Weaponize vulnerability in an internet-exposed app (web, VPN, mail)." },
+        { "id": "T1078", "name": "Valid Accounts", "description": "Use compromised or default credentials (local, domain, cloud) to log in." },
+        { "id": "T1133", "name": "External Remote Services", "description": "Abuse VPN, RDP, SSH, Citrix exposed externally for persistent access." },
+        { "id": "T1195", "name": "Supply Chain Compromise", "description": "Tamper with software, hardware, or dependencies before delivery." }
+      ]
+    },
+    {
+      "id": "TA0002",
+      "name": "Execution",
+      "description": "Adversary runs malicious code on a local or remote system.",
+      "techniques": [
+        { "id": "T1059", "name": "Command and Scripting Interpreter", "description": "Execute via bash, PowerShell, cmd, Python, JavaScript, etc." },
+        { "id": "T1204", "name": "User Execution", "description": "Rely on user to open a malicious link, attachment, or executable." },
+        { "id": "T1053", "name": "Scheduled Task/Job", "description": "Abuse cron, at, systemd timers, Windows Task Scheduler to run code." },
+        { "id": "T1569", "name": "System Services", "description": "Start or modify system services (sc, systemctl) to execute payloads." },
+        { "id": "T1047", "name": "Windows Management Instrumentation", "description": "Use WMI to execute commands locally or remotely." }
+      ]
+    },
+    {
+      "id": "TA0003",
+      "name": "Persistence",
+      "description": "Adversary maintains access across reboots, credential changes, and interruptions.",
+      "techniques": [
+        { "id": "T1547", "name": "Boot or Logon Autostart Execution", "description": "Run key, Startup folder, LaunchAgent, systemd unit at boot/login." },
+        { "id": "T1136", "name": "Create Account", "description": "Create local, domain, or cloud accounts for future access." },
+        { "id": "T1098", "name": "Account Manipulation", "description": "Modify credentials, keys, MFA, roles on an existing account." },
+        { "id": "T1505", "name": "Server Software Component", "description": "Install web shell, IIS module, transport agent, or SQL proc." },
+        { "id": "T1543", "name": "Create or Modify System Process", "description": "Install service, launchd, systemd unit to persist at process level." }
+      ]
+    },
+    {
+      "id": "TA0004",
+      "name": "Privilege Escalation",
+      "description": "Adversary obtains higher-level permissions on a system or network.",
+      "techniques": [
+        { "id": "T1068", "name": "Exploitation for Privilege Escalation", "description": "Exploit kernel/service bug to elevate from user to SYSTEM/root." },
+        { "id": "T1548", "name": "Abuse Elevation Control Mechanism", "description": "Bypass UAC, sudo, setuid, elevated token APIs." },
+        { "id": "T1055", "name": "Process Injection", "description": "Inject DLL/shellcode into another process to gain its privileges." },
+        { "id": "T1484", "name": "Domain Policy Modification", "description": "Modify GPO, trust, or federation config for escalated access." },
+        { "id": "T1134", "name": "Access Token Manipulation", "description": "Impersonate or duplicate tokens to run with another user's rights." }
+      ]
+    },
+    {
+      "id": "TA0005",
+      "name": "Defense Evasion",
+      "description": "Adversary avoids detection by defenses.",
+      "techniques": [
+        { "id": "T1027", "name": "Obfuscated Files or Information", "description": "Encode, encrypt, pack, or steganographically hide code/data." },
+        { "id": "T1070", "name": "Indicator Removal", "description": "Clear event logs, shell history, artifacts on host." },
+        { "id": "T1218", "name": "System Binary Proxy Execution", "description": "Use LOLBins (rundll32, mshta, regsvr32) to run code signed." },
+        { "id": "T1562", "name": "Impair Defenses", "description": "Disable AV, EDR, firewalls, logging, MFA enforcement." },
+        { "id": "T1036", "name": "Masquerading", "description": "Rename files, spoof signatures, mimic legit task/service names." }
+      ]
+    },
+    {
+      "id": "TA0006",
+      "name": "Credential Access",
+      "description": "Adversary steals account names, passwords, tokens, or keys.",
+      "techniques": [
+        { "id": "T1110", "name": "Brute Force", "description": "Guess passwords via spray, credential stuffing, or offline cracking." },
+        { "id": "T1003", "name": "OS Credential Dumping", "description": "Dump LSASS, SAM, /etc/shadow, DCSync, NTDS.dit." },
+        { "id": "T1555", "name": "Credentials from Password Stores", "description": "Extract secrets from browsers, keychain, vaults, credential managers." },
+        { "id": "T1552", "name": "Unsecured Credentials", "description": "Find creds in files, registry, env vars, CI logs, bash history." },
+        { "id": "T1558", "name": "Steal or Forge Kerberos Tickets", "description": "Kerberoast, AS-REP roast, Golden/Silver Ticket, pass-the-ticket." }
+      ]
+    },
+    {
+      "id": "TA0007",
+      "name": "Discovery",
+      "description": "Adversary enumerates the target environment.",
+      "techniques": [
+        { "id": "T1087", "name": "Account Discovery", "description": "Enumerate local, domain, cloud, email accounts." },
+        { "id": "T1082", "name": "System Information Discovery", "description": "Gather OS, arch, hostname, patch, hardware details." },
+        { "id": "T1083", "name": "File and Directory Discovery", "description": "Browse filesystem for sensitive files, shares, configs." },
+        { "id": "T1046", "name": "Network Service Discovery", "description": "Port-scan internal hosts for services and versions." },
+        { "id": "T1018", "name": "Remote System Discovery", "description": "List other hosts via AD, ARP, DNS, hosts file, SMB." }
+      ]
+    },
+    {
+      "id": "TA0008",
+      "name": "Lateral Movement",
+      "description": "Adversary moves through the environment to reach objectives.",
+      "techniques": [
+        { "id": "T1021", "name": "Remote Services", "description": "Use RDP, SSH, SMB, WinRM, VNC with valid creds to pivot." },
+        { "id": "T1210", "name": "Exploitation of Remote Services", "description": "Exploit unpatched service (SMB, RPC, web) to move laterally." },
+        { "id": "T1534", "name": "Internal Spearphishing", "description": "Phish internal users from a compromised internal mailbox." },
+        { "id": "T1570", "name": "Lateral Tool Transfer", "description": "Copy tools between internal hosts via SMB, SCP, built-in utils." },
+        { "id": "T1550", "name": "Use Alternate Authentication Material", "description": "Pass-the-hash, pass-the-ticket, app tokens, cookies." }
+      ]
+    },
+    {
+      "id": "TA0009",
+      "name": "Collection",
+      "description": "Adversary gathers data of interest to the objective.",
+      "techniques": [
+        { "id": "T1560", "name": "Archive Collected Data", "description": "Compress/encrypt data (zip, rar, 7z) before exfil." },
+        { "id": "T1005", "name": "Data from Local System", "description": "Enumerate and stage files from local filesystem." },
+        { "id": "T1114", "name": "Email Collection", "description": "Harvest mailboxes via PST, IMAP, EWS, Graph API." },
+        { "id": "T1113", "name": "Screen Capture", "description": "Capture desktop screenshots periodically or on demand." },
+        { "id": "T1056", "name": "Input Capture", "description": "Keylogger, credential prompt, GUI hook to capture user input." }
+      ]
+    },
+    {
+      "id": "TA0011",
+      "name": "Command and Control",
+      "description": "Adversary communicates with compromised systems to control them.",
+      "techniques": [
+        { "id": "T1071", "name": "Application Layer Protocol", "description": "C2 over HTTP(S), DNS, SMTP, mail, or messaging protocols." },
+        { "id": "T1105", "name": "Ingress Tool Transfer", "description": "Download additional tools from C2 onto the victim." },
+        { "id": "T1573", "name": "Encrypted Channel", "description": "Wrap C2 traffic in TLS or custom symmetric/asymmetric crypto." },
+        { "id": "T1090", "name": "Proxy", "description": "Use internal/external proxies or redirectors to hide origin." },
+        { "id": "T1572", "name": "Protocol Tunneling", "description": "Tunnel C2 inside another protocol (DNS, ICMP, SSH)." }
+      ]
+    },
+    {
+      "id": "TA0010",
+      "name": "Exfiltration",
+      "description": "Adversary steals data from the target environment.",
+      "techniques": [
+        { "id": "T1041", "name": "Exfiltration Over C2 Channel", "description": "Send data back through the existing C2 channel." },
+        { "id": "T1048", "name": "Exfiltration Over Alternative Protocol", "description": "Use a different protocol (DNS, FTP, SMTP) than C2." },
+        { "id": "T1567", "name": "Exfiltration Over Web Service", "description": "Upload to Dropbox, S3, Telegram, paste sites, Gist." },
+        { "id": "T1020", "name": "Automated Exfiltration", "description": "Automated collection+upload scripts on schedule or triggers." },
+        { "id": "T1029", "name": "Scheduled Transfer", "description": "Exfil data at fixed times to blend into normal traffic." }
+      ]
+    },
+    {
+      "id": "TA0040",
+      "name": "Impact",
+      "description": "Adversary manipulates, interrupts, or destroys systems and data.",
+      "techniques": [
+        { "id": "T1486", "name": "Data Encrypted for Impact", "description": "Ransomware: encrypt files, demand ransom." },
+        { "id": "T1485", "name": "Data Destruction", "description": "Wipe files, overwrite disks, drop tables." },
+        { "id": "T1490", "name": "Inhibit System Recovery", "description": "Delete shadow copies, backups, disable recovery." },
+        { "id": "T1498", "name": "Network Denial of Service", "description": "Flood network to deny service (volumetric DDoS)." },
+        { "id": "T1499", "name": "Endpoint Denial of Service", "description": "Exhaust endpoint resources (CPU, memory, sockets)." },
+        { "id": "T1531", "name": "Account Access Removal", "description": "Lock out users by changing or deleting credentials." }
+      ]
+    }
+  ]
+}

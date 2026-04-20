@@ -28,6 +28,7 @@ import { NetTool } from "./net"
 import { VaultTool } from "./vault"
 import { InteractTool } from "./interact"
 import { DoctorTool } from "./doctor"
+import { MethodologyTool } from "./methodology"
 import { CVETool } from "./cve"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
@@ -126,6 +127,7 @@ export const layer: Layer.Layer<
     const vaultTool = yield* VaultTool
     const interactTool = yield* InteractTool
     const doctorTool = yield* DoctorTool
+    const methodologyTool = yield* MethodologyTool
     const cveTool = yield* CVETool
     const agent = yield* Agent.Service
 
@@ -212,6 +214,7 @@ export const layer: Layer.Layer<
           interact: Tool.init(interactTool),
           doctor: Tool.init(doctorTool),
           cve: Tool.init(cveTool),
+          methodology: Tool.init(methodologyTool),
         })
 
         return {
@@ -240,6 +243,7 @@ export const layer: Layer.Layer<
             tool.interact,
             tool.doctor,
             tool.cve,
+            tool.methodology,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,

@@ -1,0 +1,87 @@
+{
+  "id": "ptes",
+  "name": "Penetration Testing Execution Standard",
+  "version": "1.1",
+  "phases": [
+    {
+      "id": "PTES-01",
+      "name": "Pre-engagement Interactions",
+      "description": "Define scope, rules of engagement, objectives, and logistics with the client.",
+      "techniques": [
+        { "id": "PTES-01.1", "name": "Scope Definition", "description": "Document in/out-of-scope targets, IP ranges, domains, apps, users." },
+        { "id": "PTES-01.2", "name": "Rules of Engagement", "description": "Agree testing windows, allowed techniques, emergency contacts, evidence handling." },
+        { "id": "PTES-01.3", "name": "Goals and Objectives", "description": "Capture business goals (compliance, red-team sim, breach reproduction)." },
+        { "id": "PTES-01.4", "name": "Authorization", "description": "Obtain signed letter of authorization with dates, scope, and signatories." },
+        { "id": "PTES-01.5", "name": "Communications Plan", "description": "Establish secure channel, status cadence, incident escalation path." }
+      ]
+    },
+    {
+      "id": "PTES-02",
+      "name": "Intelligence Gathering",
+      "description": "Collect information about the target from open and technical sources.",
+      "techniques": [
+        { "id": "PTES-02.1", "name": "OSINT Collection", "description": "Gather employees, tech stack, domains, emails from public sources." },
+        { "id": "PTES-02.2", "name": "Footprinting", "description": "Map external surface: DNS, subdomains, ASN, netblocks, TLS certs." },
+        { "id": "PTES-02.3", "name": "Active Reconnaissance", "description": "Port/service scans, banner grabs, web crawl, vuln scan (in-scope only)." },
+        { "id": "PTES-02.4", "name": "Human Intelligence", "description": "Profile targets for social engineering (LinkedIn, conference talks, GitHub)." }
+      ]
+    },
+    {
+      "id": "PTES-03",
+      "name": "Threat Modeling",
+      "description": "Identify assets and threat actors, align attack paths with business impact.",
+      "techniques": [
+        { "id": "PTES-03.1", "name": "Business Asset Analysis", "description": "Rank data, systems, processes by business value to prioritize paths." },
+        { "id": "PTES-03.2", "name": "Threat Agent Analysis", "description": "Profile realistic adversaries (insider, criminal, nation-state) and motives." },
+        { "id": "PTES-03.3", "name": "Attack Path Modeling", "description": "Map plausible kill chains from external to crown-jewel assets." },
+        { "id": "PTES-03.4", "name": "Risk Prioritization", "description": "Weight paths by likelihood × impact to focus exploitation effort." }
+      ]
+    },
+    {
+      "id": "PTES-04",
+      "name": "Vulnerability Analysis",
+      "description": "Discover and validate flaws (technical and logical) that enable the attack paths.",
+      "techniques": [
+        { "id": "PTES-04.1", "name": "Active Vulnerability Testing", "description": "Automated scans (nuclei, nmap NSE, Nessus) plus manual probing." },
+        { "id": "PTES-04.2", "name": "Passive Analysis", "description": "Traffic, metadata, config, code review without touching targets." },
+        { "id": "PTES-04.3", "name": "Validation", "description": "Confirm findings manually — remove false positives before exploitation." },
+        { "id": "PTES-04.4", "name": "Research", "description": "Lookup CVE, advisories, PoCs matching discovered versions." }
+      ]
+    },
+    {
+      "id": "PTES-05",
+      "name": "Exploitation",
+      "description": "Actively compromise systems to demonstrate impact; stay within agreed rules.",
+      "techniques": [
+        { "id": "PTES-05.1", "name": "Precision Strike", "description": "Exploit validated vulnerability to gain initial access." },
+        { "id": "PTES-05.2", "name": "Countermeasure Bypass", "description": "Evade AV, WAF, EDR, IDS where rules of engagement permit." },
+        { "id": "PTES-05.3", "name": "Custom Exploit Development", "description": "Adapt public PoC or develop new exploit for target's version/config." },
+        { "id": "PTES-05.4", "name": "Social Engineering Execution", "description": "Phish, vish, physical — only if explicitly scoped." }
+      ]
+    },
+    {
+      "id": "PTES-06",
+      "name": "Post Exploitation",
+      "description": "Measure true business impact: persistence, lateral movement, data access, cleanup.",
+      "techniques": [
+        { "id": "PTES-06.1", "name": "Infrastructure Analysis", "description": "Map internal network, AD, cloud trust, segmentation from foothold." },
+        { "id": "PTES-06.2", "name": "Pillaging", "description": "Harvest credentials, tokens, sensitive files, secrets in-scope only." },
+        { "id": "PTES-06.3", "name": "High-Value Target Identification", "description": "Chase crown-jewel systems defined in pre-engagement." },
+        { "id": "PTES-06.4", "name": "Persistence", "description": "Install controlled, reversible persistence to simulate dwell time." },
+        { "id": "PTES-06.5", "name": "Cleanup", "description": "Remove artifacts, accounts, beacons; document everything deployed." }
+      ]
+    },
+    {
+      "id": "PTES-07",
+      "name": "Reporting",
+      "description": "Deliver findings, evidence, and remediation guidance to technical and executive audiences.",
+      "techniques": [
+        { "id": "PTES-07.1", "name": "Executive Summary", "description": "Non-technical overview: business risk, posture, top 3 priorities." },
+        { "id": "PTES-07.2", "name": "Technical Findings", "description": "Per-finding: severity, reproduction steps, evidence, CVSS, references." },
+        { "id": "PTES-07.3", "name": "Attack Narrative", "description": "Chronological story of the engagement showing full attack chain." },
+        { "id": "PTES-07.4", "name": "Remediation Guidance", "description": "Concrete, prioritized fixes (code, config, process) for each finding." },
+        { "id": "PTES-07.5", "name": "Debrief", "description": "Live walk-through with blue team + leadership; answer questions, plan retest." }
+      ]
+    }
+  ]
+}

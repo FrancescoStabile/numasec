@@ -1,0 +1,16 @@
+Offline methodology reference: MITRE ATT&CK (Enterprise), PTES, OWASP WSTG.
+
+Use this tool to cite authoritative phase / tactic / technique identifiers when framing an engagement step, a finding, or a report section. All data ships with numasec — no network call is made.
+
+Args:
+- framework: "mitre" | "ptes" | "wstg" (required)
+- phase:     optional phase/tactic/category id or name (e.g. "TA0001", "Reconnaissance", "WSTG-ATHN", "Exploitation")
+- query:     optional free-text filter matched against technique id, name, and description (e.g. "SSRF", "kerberos", "T1595")
+
+Behavior:
+- Pass only `framework` → list of phases with their techniques.
+- Pass `framework` + `phase` → that phase's techniques.
+- Pass `framework` + `query` → techniques across all phases whose id/name/description contains the query (case-insensitive).
+- `phase` and `query` combine (filters within phase).
+
+Cite the returned IDs (e.g. `T1595`, `PTES-05`, `WSTG-INPV-05`) in your reasoning and reports so findings trace back to standard taxonomies.

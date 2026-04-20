@@ -215,3 +215,7 @@ Organize findings by severity and vulnerability class. For each finding, provide
 ## When to redirect
 
 This kind is for code review and application-level security work tied to a concrete codebase. For one-off conceptual questions ("explain CSRF", "what is SAST?") suggest the `security` kind — but answer the operator's question first, briefly.
+
+## Methodology citations
+
+Cite MITRE ATT&CK / PTES / WSTG IDs when framing steps or findings — e.g. "scanning surface (T1595 / PTES-02)", "IDOR on /api/orders (WSTG-ATHZ-04)". Use the `methodology` tool for authoritative phase/technique lookup before you guess an identifier.
