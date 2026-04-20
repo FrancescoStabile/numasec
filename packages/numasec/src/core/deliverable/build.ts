@@ -1,7 +1,8 @@
 import { createHash } from "crypto"
 import { mkdir, writeFile } from "fs/promises"
 import path from "path"
-import { Operation, OperationInfo } from "@/core/operation"
+import { Operation } from "@/core/operation"
+import type { OperationInfo } from "@/core/operation"
 import { Plan } from "@/core/plan"
 import { Observation } from "@/core/observation"
 import { Evidence } from "@/core/evidence"
@@ -32,20 +33,11 @@ function renderReport(
   lines.push("")
   lines.push(`- **Operation slug**: \`${op.slug}\``)
   lines.push(`- **Kind**: \`${op.kind}\``)
-  lines.push(`- **Status**: \`${op.status}\``)
+  lines.push(`- **Opsec**: \`${op.opsec}\``)
+  lines.push(`- **Active**: \`${op.active}\``)
   lines.push(`- **Created**: \`${new Date(op.created_at).toISOString()}\``)
-  if (op.subject && Object.keys(op.subject).length > 0) {
-    lines.push(`- **Subject**: \`${JSON.stringify(op.subject)}\``)
-  }
-  lines.push("")
-
-  lines.push("## Scope")
-  const b = (op.boundary ?? {}) as { default?: string; in_scope?: string[]; out_of_scope?: string[] }
-  lines.push(`- **Default**: \`${b.default ?? "ask"}\``)
-  lines.push(`- **In scope** (${b.in_scope?.length ?? 0}):`)
-  for (const p of b.in_scope ?? []) lines.push(`  - \`${p}\``)
-  lines.push(`- **Out of scope** (${b.out_of_scope?.length ?? 0}):`)
-  for (const p of b.out_of_scope ?? []) lines.push(`  - \`${p}\``)
+  lines.push(`- **Updated**: \`${new Date(op.updated_at).toISOString()}\``)
+  if (op.target) lines.push(`- **Target**: \`${op.target}\``)
   lines.push("")
 
   lines.push("## Plan")
