@@ -1239,7 +1239,7 @@ unix(
             const sh = yield* prompt
               .shell({ sessionID: chat.id, agent: "security", command: "sleep 30" })
               .pipe(Effect.forkChild)
-            yield* Effect.sleep(50)
+            yield* Effect.sleep(300)
 
             yield* prompt.cancel(chat.id)
 

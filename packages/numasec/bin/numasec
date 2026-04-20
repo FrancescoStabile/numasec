@@ -25,6 +25,8 @@ if (envPath) {
 const scriptPath = fs.realpathSync(__filename)
 const scriptDir = path.dirname(scriptPath)
 
+process.env.NUMASEC_INSTALL_SKILLS = path.join(scriptDir, "..", "skills")
+
 //
 const cached = path.join(scriptDir, ".numasec")
 if (fs.existsSync(cached)) {

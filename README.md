@@ -39,7 +39,7 @@ numasec is the third option. A **terminal-native AI agent** that reasons about a
 
 ---
 
-## What's new in `1.1.5` — the GA release
+## What's inside
 
 <table>
 <tr>
@@ -253,16 +253,10 @@ Only with permission. When scope is set, the runtime guard refuses requests to o
 No. It runs fine on Ollama or any OpenAI-compatible local endpoint. Quality depends on the model; the architecture is provider-agnostic.
 
 **How is this different from Claude Code / opencode?**
-Those are coding agents. numasec is an offsec agent. Different prompts, different tools, different methodology — same general class of thing. If you want to write code, use them. If you want to test systems for weaknesses, use this.
+Those are coding agents. numasec is an offsec agent. Different prompts, different tools, different methodology, same general class of thing. If you want to write code, use them. If you want to test systems for weaknesses, use this.
 
 **Can I use it for blue team / defense?**
 Yes. The `appsec`, `osint`, and default `security` agents are set up for that — threat modelling, secure code review, incident triage. It's not only red.
-
-**Why TypeScript and not Python?**
-Because Bun packages to a single statically-linked binary and I'd rather ship one file than a pip wheel and its 30 transitive deps. Also because the rest of the AI-terminal ecosystem lives here now.
-
-**Is there a telemetry kill switch?**
-There's nothing to kill. numasec does not phone home. Ever.
 
 ---
 

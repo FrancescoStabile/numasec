@@ -157,6 +157,16 @@ const loadSkills = Effect.fnUntraced(function* (
     }
   }
 
+  // Built-in skills shipped with the package.
+  // NUMASEC_INSTALL_SKILLS is set by bin/numasec (npm install path).
+  // npm_package_json is set by bun when running scripts (bun run dev path).
+  const builtinRoot =
+    process.env.NUMASEC_INSTALL_SKILLS ??
+    (process.env.npm_package_json ? path.join(path.dirname(process.env.npm_package_json), "skills") : null)
+  if (builtinRoot && (yield* fsys.isDir(builtinRoot))) {
+    yield* scan(state, bus, builtinRoot, SKILL_PATTERN, { scope: "builtin" })
+  }
+
   const configDirs = yield* config.directories()
   for (const dir of configDirs) {
     yield* scan(state, bus, dir, NUMASEC_SKILL_PATTERN)
