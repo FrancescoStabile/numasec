@@ -1,0 +1,22 @@
+Bundle the active operation into a shareable, tamper-evident tarball.
+
+Args:
+  - redact: boolean (default true) — apply the replay redactor to bundled text
+    (markdown, txt, json) before packaging, scrubbing JWTs, auth headers, and
+    common secret field values.
+  - sign: boolean (default false) — attempt to sign the tarball's sha256 with
+    minisign or cosign if a signing key is configured (via NUMASEC_MINISIGN_KEY
+    + NUMASEC_MINISIGN_PASSWORD or COSIGN_KEY env vars). If no key is found,
+    the bundle is emitted unsigned with a warning instead of failing.
+
+The tool copies the operation fascicule (numasec.md), the evidence directory,
+and any report-*.md files into a staging directory, calls Deliverable.build()
+to produce a manifest (if available), redacts text content when requested,
+and emits a single archive at:
+
+  <workspace>/.numasec/operation/<slug>/share-<ts>.tar.gz
+
+Returns the tarball path, size, sha256, and whether it was signed.
+
+Use this when handing off an engagement to a client or teammate. The archive
+is self-contained — no server, no account needed to verify integrity.

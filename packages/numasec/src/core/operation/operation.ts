@@ -227,6 +227,9 @@ async function parseHeader(content: string, fallback: { slug: string; createdAt:
   return { label, kind, target: targetMatch?.[1], opsec }
 }
 
+// Backward-compatible alias for callers (e.g. core/deliverable/build.ts) that still use `get`.
+export const get = (workspace: string, slug: string) => read(workspace, slug)
+
 export async function read(workspace: string, slug: string): Promise<Info | undefined> {
   const file = opFile(workspace, slug)
   if (!existsSync(file)) return undefined
