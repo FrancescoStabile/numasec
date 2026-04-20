@@ -17,6 +17,16 @@ import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 
 export namespace SystemPrompt {
+  export type Kind = "anthropic" | "openai" | "google" | "other"
+
+  export function kind(model: { api: { id: string } }): Kind {
+    const id = model.api.id.toLowerCase()
+    if (id.includes("claude")) return "anthropic"
+    if (id.includes("gpt") || id.includes("o1") || id.includes("o3") || id.includes("codex")) return "openai"
+    if (id.includes("gemini")) return "google"
+    return "other"
+  }
+
   export function provider(model: Provider.Model) {
     if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
       return [PROMPT_BEAST]

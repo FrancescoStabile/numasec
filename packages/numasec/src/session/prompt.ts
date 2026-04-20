@@ -17,6 +17,7 @@ import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
+import PROMPT_PLANNING from "../session/prompt/_planning.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "../tool"
@@ -66,6 +67,12 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
   const elog = EffectLogger.create({ service: "session.prompt" })
+
+  export const PLANNING_REMINDER = PROMPT_PLANNING
+
+  export function needsPlanningReminder(model: { api: { id: string } }): boolean {
+    return SystemPrompt.kind(model) !== "anthropic"
+  }
 
   export interface Interface {
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -221,9 +228,26 @@ export namespace SessionPrompt {
         messages: MessageV2.WithParts[]
         agent: Agent.Info
         session: Session.Info
+        model: Provider.Model
       }) {
         const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
         if (!userMessage) return input.messages
+
+        if (SessionPrompt.needsPlanningReminder(input.model)) {
+          const alreadyInjected = userMessage.parts.some(
+            (p) => p.type === "text" && (p as { text?: string }).text === PROMPT_PLANNING,
+          )
+          if (!alreadyInjected) {
+            userMessage.parts.unshift({
+              id: PartID.ascending(),
+              messageID: userMessage.info.id,
+              sessionID: userMessage.info.sessionID,
+              type: "text",
+              text: PROMPT_PLANNING,
+              synthetic: true,
+            })
+          }
+        }
 
         if (!Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE) {
           if (input.agent.name === "plan") {
@@ -1393,7 +1417,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             }
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
-            msgs = yield* insertReminders({ messages: msgs, agent, session })
+            msgs = yield* insertReminders({ messages: msgs, agent, session, model })
 
             const msg: MessageV2.Assistant = {
               id: MessageID.ascending(),

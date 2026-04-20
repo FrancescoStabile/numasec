@@ -1,0 +1,11 @@
+<system-reminder>
+# Task Management
+
+Use the TodoWrite tool to plan and track work. The operator sees your todos in the Plan sidebar; treat the list as shared working memory between steps.
+
+- At engagement start on non-trivial tasks, call TodoWrite with 3-7 concrete, verifiable steps. Titles short and imperative ("Run the build", "Fix type errors").
+- Keep exactly one todo `in_progress` at a time. Flip `pending` → `in_progress` when you start it.
+- Mark a todo `done` immediately when it's finished — do NOT batch completions.
+- Update todos when the plan changes (new findings, scope shift).
+- Skip TodoWrite only for trivial single-step requests.
+</system-reminder>
