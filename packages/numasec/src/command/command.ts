@@ -12,6 +12,7 @@ import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_TEACH from "./template/teach.txt"
 import PROMPT_DOCTOR from "./template/doctor.txt"
+import PROMPT_PLAY from "./template/play.txt"
 
 type State = {
   commands: Record<string, Info>
@@ -64,6 +65,7 @@ export const Default = {
   REVIEW: "review",
   TEACH: "teach",
   DOCTOR: "doctor",
+  PLAY: "play",
 } as const
 
 export interface Interface {
@@ -121,6 +123,15 @@ export const layer = Layer.effect(
           return PROMPT_DOCTOR
         },
         hints: hints(PROMPT_DOCTOR),
+      }
+      commands[Default.PLAY] = {
+        name: Default.PLAY,
+        description: "run a reusable play (web-surface, network-surface, appsec-triage, osint-target, ctf-warmup)",
+        source: "command",
+        get template() {
+          return PROMPT_PLAY
+        },
+        hints: hints(PROMPT_PLAY),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {

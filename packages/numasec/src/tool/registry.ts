@@ -30,6 +30,7 @@ import { InteractTool } from "./interact"
 import { DoctorTool } from "./doctor"
 import { MethodologyTool } from "./methodology"
 import { CVETool } from "./cve"
+import { PlayTool } from "./play"
 import { ScannerTool } from "./scanner"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
@@ -130,6 +131,7 @@ export const layer: Layer.Layer<
     const doctorTool = yield* DoctorTool
     const methodologyTool = yield* MethodologyTool
     const cveTool = yield* CVETool
+    const playTool = yield* PlayTool
     const scannerTool = yield* ScannerTool
     const agent = yield* Agent.Service
 
@@ -216,6 +218,7 @@ export const layer: Layer.Layer<
           interact: Tool.init(interactTool),
           doctor: Tool.init(doctorTool),
           cve: Tool.init(cveTool),
+          play: Tool.init(playTool),
           scanner: Tool.init(scannerTool),
           methodology: Tool.init(methodologyTool),
         })
@@ -246,6 +249,7 @@ export const layer: Layer.Layer<
             tool.interact,
             tool.doctor,
             tool.cve,
+            tool.play,
             tool.scanner,
             tool.methodology,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),

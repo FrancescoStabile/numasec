@@ -1,0 +1,24 @@
+---
+description: Run a reusable play — a named, deterministic pipeline of tool/skill calls (e.g. web-surface, network-surface, appsec-triage, osint-target, ctf-warmup).
+---
+
+# /play $ARGUMENTS
+
+The operator invoked **/play $ARGUMENTS**.
+
+Parse the argument string into an id (first token) and a positional/keyword arg list (everything after). Common invocations:
+
+- `/play web-surface https://example.com`
+- `/play network-surface 10.0.0.0/24`
+- `/play appsec-triage ./src`
+- `/play osint-target acme.com`
+- `/play ctf-warmup ./chal.bin`
+- `/play web-surface target=https://x.y domain=x.y`
+
+Rules:
+
+1. Call the `play` tool **once** with `{ id, args }`. For a single positional arg, bind it to the play's first required arg (`target`, `path`, etc.). For `key=value` pairs, pass them through as-is.
+2. The `play` tool returns an ordered trace of steps. Execute each step in order by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill.
+3. If a referenced tool is not registered, say so plainly and continue with the remaining steps.
+4. After all steps complete, produce a short synthesis: what was found, what to do next.
+5. Do not invent additional steps or skip declared ones without telling the operator.
