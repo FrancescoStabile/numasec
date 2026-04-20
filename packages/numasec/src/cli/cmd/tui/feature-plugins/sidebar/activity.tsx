@@ -14,8 +14,6 @@ export const TOOL_WHITELIST = new Set([
   "browser",
   "webfetch",
   "websearch",
-  "observe_surface",
-  "recon",
   "grep",
   "glob",
   "codesearch",
@@ -87,15 +85,6 @@ export function deriveLabel(tool: string, input: Record<string, unknown>): strin
     }
     case "websearch": {
       return toStr(input.query) || "search"
-    }
-    case "observe_surface": {
-      const t = toStr(input.target) || toStr(input.url) || toStr(input.host)
-      return `observe ${hostOf(t)}`.trim()
-    }
-    case "recon": {
-      const op = toStr(input.op) || toStr(input.kind) || "recon"
-      const t = toStr(input.target) || toStr(input.query) || ""
-      return `${op} ${t}`.trim()
     }
     case "grep": {
       return toStr(input.pattern) || "grep"

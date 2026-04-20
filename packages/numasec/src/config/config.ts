@@ -537,8 +537,8 @@ export const Agent = z
     const permission: Permission = {}
     for (const [tool, enabled] of Object.entries(agent.tools ?? {})) {
       const action = enabled ? "allow" : "deny"
-      // write, edit, patch, multiedit all map to edit permission
-      if (tool === "write" || tool === "edit" || tool === "patch" || tool === "multiedit") {
+      // write, edit, patch all map to edit permission
+      if (tool === "write" || tool === "edit" || tool === "patch") {
         permission.edit = action
       } else {
         permission[tool] = action
@@ -1415,7 +1415,7 @@ export const layer = Layer.effect(
         const perms: Record<string, PermissionAction> = {}
         for (const [tool, enabled] of Object.entries(result.tools)) {
           const action: PermissionAction = enabled ? "allow" : "deny"
-          if (tool === "write" || tool === "edit" || tool === "patch" || tool === "multiedit") {
+          if (tool === "write" || tool === "edit" || tool === "patch") {
             perms.edit = action
             continue
           }

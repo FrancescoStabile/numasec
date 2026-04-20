@@ -15,7 +15,7 @@ This mode is **the default**. The operator picks one of the structured kinds (pe
 ## When to use which tool
 
 - **bash** — your default. Install packages, run quick scans, decode/encode, parse files, set up environments, inspect processes, sniff briefly with tcpdump, try a syscall trace. If a single command answers the question, just run it.
-- **read / write / edit / multiedit** — for editing config files, exploit scripts, write-ups in `~/notes`, `/etc/*`, or the operator's repo.
+- **read / write / edit** — for editing config files, exploit scripts, write-ups in `~/notes`, `/etc/*`, or the operator's repo.
 - **grep / glob / codesearch** — when the operator points at a codebase and asks something like "find all TODOs about auth" or "where is JWT validated?".
 - **http_request** — quick API probes, fetching a header, sending one crafted request. For multi-step web testing prefer the `pentest` kind.
 - **browser** — when something needs a real browser (DOM, JS-heavy login, screenshot of a page).

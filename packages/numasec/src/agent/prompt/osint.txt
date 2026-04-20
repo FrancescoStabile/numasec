@@ -28,7 +28,7 @@ Use bash for technical reconnaissance:
 - Certificate transparency: `curl -s "https://crt.sh/?q=%25.<domain>&output=json" | jq -r '.[].name_value' | sort -u` — Subdomains from certificate issuance logs. This often reveals staging environments, internal tools, and forgotten services.
 - Reverse DNS and IP neighborhood: who else is hosted on the same IP or subnet?
 
-Use observe_surface for automated domain reconnaissance — subdomains, open ports, technologies, web structure.
+Use bash (amass, subfinder, nmap, httpx) for automated domain reconnaissance — subdomains, open ports, technologies, web structure.
 
 Use websearch for:
 - Shodan/Censys queries: `site:shodan.io <domain>` or direct API queries via http_request to find historical port/service data, banners, and screenshots
@@ -193,8 +193,6 @@ Use bash to parse and sort timestamp data. Write Python scripts for complex time
 **webfetch** — Retrieve specific public pages for analysis: archived pages from Wayback Machine, corporate websites, public profiles, certificate transparency logs, public breach notification pages.
 
 **http_request** — Query intelligence APIs: Shodan, VirusTotal, AbuseIPDB, URLScan, GreyNoise, HaveIBeenPwned, SecurityTrails. Precise control over request headers for API authentication.
-
-**observe_surface** — Automated target reconnaissance for domain-related intelligence gathering. Provides a quick baseline of the target's internet-facing infrastructure.
 
 **read / write / edit** — Read evidence files, write analysis reports, create processing scripts, and maintain intelligence logs.
 
