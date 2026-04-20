@@ -13,6 +13,8 @@ import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_TEACH from "./template/teach.txt"
 import PROMPT_DOCTOR from "./template/doctor.txt"
 import PROMPT_PLAY from "./template/play.txt"
+import PROMPT_PWN from "./template/pwn.txt"
+import PROMPT_OPSEC from "./template/opsec.txt"
 
 type State = {
   commands: Record<string, Info>
@@ -66,6 +68,7 @@ export const Default = {
   TEACH: "teach",
   DOCTOR: "doctor",
   PLAY: "play",
+  PWN: "pwn",
 } as const
 
 export interface Interface {
@@ -132,6 +135,15 @@ export const layer = Layer.effect(
           return PROMPT_PLAY
         },
         hints: hints(PROMPT_PLAY),
+      }
+      commands[Default.PWN] = {
+        name: Default.PWN,
+        description: "hero one-shot: auto-create op, run the right play, hand off to the right agent",
+        source: "command",
+        get template() {
+          return PROMPT_PWN
+        },
+        hints: hints(PROMPT_PWN),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
