@@ -1,7 +1,7 @@
 Run a local environment probe for numasec. Reports:
 - node/bun runtime + OS/arch
 - presence of security tools on PATH (curl, jq, git, rg, nmap, nuclei, subfinder, ffuf, amass, httpx, gobuster, sqlmap, zap, burpsuite) — missing tools are listed but never fail the probe
-- vault status at ~/.config/numasec/secrets.json (presence + file mode only, never values)
+- vault status at ~/.config/numasec/vault.json (presence + file mode only, never values)
 - CVE bundle presence (assets/cve/latest.json)
 - whether the current workspace is writable
 

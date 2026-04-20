@@ -70,7 +70,7 @@ async function probeBinary(name: string): Promise<BinaryReport> {
 }
 
 async function probeVault(): Promise<VaultReport> {
-  const p = path.join(os.homedir(), ".config", "numasec", "secrets.json")
+  const p = path.join(os.homedir(), ".config", "numasec", "vault.json")
   try {
     const s = await stat(p)
     const mode = (s.mode & 0o777).toString(8).padStart(3, "0")

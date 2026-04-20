@@ -25,8 +25,7 @@ import { HttpRequestTool } from "./http-request"
 import { BrowserTool } from "./browser"
 import { CryptoTool } from "./crypto"
 import { NetTool } from "./net"
-import { SecretsTool } from "./secrets"
-import { AuthAsTool } from "./auth-as"
+import { VaultTool } from "./vault"
 import { InteractTool } from "./interact"
 import { DoctorTool } from "./doctor"
 import { Flag } from "@/flag/flag"
@@ -123,8 +122,7 @@ export const layer: Layer.Layer<
     const browser = yield* BrowserTool
     const cryptoTool = yield* CryptoTool
     const netTool = yield* NetTool
-    const secretsTool = yield* SecretsTool
-    const authAs = yield* AuthAsTool
+    const vaultTool = yield* VaultTool
     const interactTool = yield* InteractTool
     const doctorTool = yield* DoctorTool
     const agent = yield* Agent.Service
@@ -208,8 +206,7 @@ export const layer: Layer.Layer<
           browser: Tool.init(browser),
           crypto: Tool.init(cryptoTool),
           net: Tool.init(netTool),
-          secrets: Tool.init(secretsTool),
-          auth_as: Tool.init(authAs),
+          vault: Tool.init(vaultTool),
           interact: Tool.init(interactTool),
           doctor: Tool.init(doctorTool),
         })
@@ -236,8 +233,7 @@ export const layer: Layer.Layer<
             tool.browser,
             tool.crypto,
             tool.net,
-            tool.secrets,
-            tool.auth_as,
+            tool.vault,
             tool.interact,
             tool.doctor,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),

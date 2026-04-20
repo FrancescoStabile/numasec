@@ -1,0 +1,17 @@
+Named-secret store + ambient auth identity for reuse across tool calls in an engagement.
+
+Storage: plaintext JSON at `~/.config/numasec/vault.json`, mode 0600, not encrypted at rest. Never claim otherwise. OS filesystem permissions are the only protection — treat the file accordingly.
+
+Single subcommand tool. Arguments: `{ action, key?, value?, reveal? }`.
+
+Actions:
+- set     — { key, value }      stores/overwrites secret. Output: `[REDACTED:<key>] (stored)`. Never echoes the value.
+- get     — { key, reveal? }    default output: `{present, key, length}` (value stays out of the transcript). Pass `reveal: true` only when the value must be inspected directly — it will land in chat history.
+- list    — {}                  returns sorted secret keys (never values).
+- delete  — { key }             removes the secret. Also clears `active_identity` if it matched.
+- use_as  — { key }             marks `key` as the ambient auth identity; http/browser tools read this marker. `key` must already exist.
+
+Guidelines:
+- Prefer passing `[VAULT:<key>]` placeholders in shell commands so values never land in the transcript.
+- `use_as` is secret-touching: it implies subsequent http traffic will carry that credential. Treat it with care.
+- Do not log or paraphrase secret values back to the user.

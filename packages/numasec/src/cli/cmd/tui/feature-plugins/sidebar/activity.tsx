@@ -18,8 +18,7 @@ export const TOOL_WHITELIST = new Set([
   "glob",
   "codesearch",
   "interact",
-  "auth_as",
-  "secrets",
+  "vault",
   "crypto",
 ])
 
@@ -100,11 +99,10 @@ export function deriveLabel(tool: string, input: Record<string, unknown>): strin
       const t = toStr(input.target) || toStr(input.url) || ""
       return `${a} ${t}`.trim()
     }
-    case "auth_as": {
-      return `as ${toStr(input.identity) || toStr(input.user) || "?"}`
-    }
-    case "secrets": {
-      return `secrets ${toStr(input.op) || ""}`.trim()
+    case "vault": {
+      const action = toStr(input.action) || toStr(input.op) || ""
+      const key = toStr(input.key) || toStr(input.name) || ""
+      return `vault ${action}${key ? ` ${key}` : ""}`.trim()
     }
     case "crypto": {
       return `crypto ${toStr(input.op) || ""}`.trim()
