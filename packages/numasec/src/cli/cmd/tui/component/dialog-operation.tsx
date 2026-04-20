@@ -7,13 +7,15 @@ import { Operation, type OperationKind } from "@/core/operation"
 
 const KIND_GLYPHS: Record<OperationKind, string> = {
   pentest: "◆",
-  ctf: "▲",
-  bughunt: "✦",
+  appsec: "◈",
   osint: "●",
+  hacking: "✖",
+  bughunt: "✦",
+  ctf: "▲",
   research: "◇",
 }
 
-const KINDS: OperationKind[] = ["pentest", "ctf", "bughunt", "osint", "research"]
+const KINDS: OperationKind[] = ["pentest", "appsec", "osint", "hacking", "bughunt", "ctf", "research"]
 
 // Empty-state → 2-step create wizard (label → kind).
 // Populated → select/activate/deactivate existing ops + "+ new" entry.
@@ -147,14 +149,18 @@ export function DialogOperation() {
 function describeKind(k: OperationKind): string {
   switch (k) {
     case "pentest":
-      return "authorized penetration test against a client system"
-    case "ctf":
-      return "capture-the-flag challenge or training exercise"
-    case "bughunt":
-      return "bug bounty / responsible-disclosure hunt"
+      return "authorized penetration test against a client system → pentest agent"
+    case "appsec":
+      return "application-security review, DAST/SAST/SCA, remediation → appsec agent"
     case "osint":
-      return "open-source intelligence gathering"
+      return "open-source intelligence gathering → osint agent"
+    case "hacking":
+      return "offensive R&D, exploit dev, binary/web hacking → hacking agent"
+    case "bughunt":
+      return "bug bounty / responsible-disclosure hunt → pentest agent"
+    case "ctf":
+      return "capture-the-flag or training exercise → hacking agent"
     case "research":
-      return "security research, reverse engineering, PoC work"
+      return "security research, threat modelling, PoC work → security agent"
   }
 }

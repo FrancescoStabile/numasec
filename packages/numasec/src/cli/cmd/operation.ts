@@ -1,13 +1,11 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { UI } from "../ui"
-import { Operation, type OperationKind } from "@/core/operation"
+import { Operation, KINDS, type OperationKind } from "@/core/operation"
 
 function workspace(): string {
   return process.cwd()
 }
-
-const KINDS: ReadonlyArray<OperationKind> = ["pentest", "ctf", "bughunt", "osint", "research"] as const
 
 function formatTable(ops: Awaited<ReturnType<typeof Operation.list>>): string {
   if (ops.length === 0) return "no operations yet — create one with `numasec operation new`"

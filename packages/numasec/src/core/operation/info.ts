@@ -6,7 +6,7 @@
 import { z } from "zod"
 import type { Event } from "./events"
 
-const KindId = z.enum(["security", "pentest", "appsec", "osint", "hacking"])
+const KindId = z.enum(["pentest", "appsec", "osint", "hacking", "bughunt", "ctf", "research"])
 
 export const Info = z.object({
   id: z.string(),

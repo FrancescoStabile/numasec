@@ -10,6 +10,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_TEACH from "./template/teach.txt"
 
 type State = {
   commands: Record<string, Info>
@@ -60,6 +61,7 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  TEACH: "teach",
 } as const
 
 export interface Interface {
@@ -99,6 +101,15 @@ export const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+      commands[Default.TEACH] = {
+        name: Default.TEACH,
+        description: "narrate every tool call — teach/learn mode for the operator",
+        source: "command",
+        get template() {
+          return PROMPT_TEACH
+        },
+        hints: hints(PROMPT_TEACH),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {

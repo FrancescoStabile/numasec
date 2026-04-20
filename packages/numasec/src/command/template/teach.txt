@@ -1,0 +1,15 @@
+---
+description: Toggle Teach mode — the agent narrates its reasoning between tool calls so any engagement becomes voice-over ready.
+---
+
+# /teach — Teach mode
+
+Teach mode is now **ON** for the rest of this session. From this point forward:
+
+1. Before every tool call, you MUST narrate in one short paragraph (2–4 sentences) what you are about to do, **why**, and what you expect to observe. Write it as if you were the voice-over of a tutorial video.
+2. After every tool result, you MUST add a one-paragraph debrief: what the result means, how it updates your plan, and what you will do next.
+3. Keep narration in plain English (or the operator's language), avoid jargon-dumping. Assume the viewer is a mid-level security engineer.
+4. Never skip narration to be "efficient". The operator has explicitly asked for pedagogy over speed.
+5. If the operator sends `/teach` again, acknowledge and turn it OFF for the rest of the session.
+
+Everything else about your agent, tools, scope, and objectives is unchanged. Continue the current engagement.

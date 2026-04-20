@@ -6,7 +6,7 @@
 
 import { z } from "zod"
 
-const KindId = z.enum(["security", "pentest", "appsec", "osint", "hacking"])
+const KindId = z.enum(["pentest", "appsec", "osint", "hacking", "bughunt", "ctf", "research"])
 
 const base = z.object({
   at: z.number(), // Unix ms timestamp.

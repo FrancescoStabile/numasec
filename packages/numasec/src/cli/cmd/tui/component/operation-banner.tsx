@@ -10,9 +10,11 @@ import { Operation, type OperationInfo, type OperationKind } from "@/core/operat
 // point. See commit 43ff009 for context on the polling-induced freeze class.
 const KIND_GLYPHS: Record<OperationKind, string> = {
   pentest: "◆",
-  ctf: "▲",
-  bughunt: "✦",
+  appsec: "◈",
   osint: "●",
+  hacking: "✖",
+  bughunt: "✦",
+  ctf: "▲",
   research: "◇",
 }
 

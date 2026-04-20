@@ -25,7 +25,37 @@ async function ensureMigrated(workspace: string): Promise<void> {
 export const ROOT_DIRNAME = ".numasec"
 export const OP_FILENAME = "numasec.md"
 
-export type Kind = "pentest" | "ctf" | "bughunt" | "osint" | "research"
+export type Kind = "pentest" | "appsec" | "osint" | "hacking" | "bughunt" | "ctf" | "research"
+
+export type AgentID = "security" | "pentest" | "appsec" | "osint" | "hacking"
+
+// Default primary agent for each operation kind. The taxonomy mixes workflow
+// labels (bughunt, ctf, research) with agent specializations (pentest, appsec,
+// osint, hacking). The UI and /pwn heuristic call KIND_AGENT to decide which
+// agent should be active when a new operation starts.
+export const KIND_AGENT: Record<Kind, AgentID> = {
+  pentest: "pentest",
+  appsec: "appsec",
+  osint: "osint",
+  hacking: "hacking",
+  bughunt: "pentest",
+  ctf: "hacking",
+  research: "security",
+}
+
+export const KINDS: ReadonlyArray<Kind> = [
+  "pentest",
+  "appsec",
+  "osint",
+  "hacking",
+  "bughunt",
+  "ctf",
+  "research",
+] as const
+
+export function defaultAgentFor(kind: Kind): AgentID {
+  return KIND_AGENT[kind]
+}
 
 export interface Info {
   slug: string
@@ -175,9 +205,7 @@ async function parseHeader(content: string, fallback: { slug: string; createdAt:
   const kindMatch = metaLine.match(/kind:\s*(\S+)/)
   const targetMatch = metaLine.match(/target:\s*(\S+)/)
   const rawKind = (kindMatch?.[1] ?? "pentest") as Kind
-  const kind: Kind = (["pentest", "ctf", "bughunt", "osint", "research"] as const).includes(rawKind)
-    ? rawKind
-    : "pentest"
+  const kind: Kind = KINDS.includes(rawKind) ? rawKind : "pentest"
   return { label, kind, target: targetMatch?.[1] }
 }
 
