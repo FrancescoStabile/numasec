@@ -1,57 +1,58 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/tui"
-import { createMemo, For, Show, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, onCleanup } from "solid-js"
 import { TextAttributes } from "@opentui/core"
+import { Plan } from "@/core/plan"
+import { Operation } from "@/core/operation"
 
 const id = "internal:sidebar-plan"
 
-type TodoItem = { content: string; status: string; priority: string }
+type RowItem = {
+  title: string
+  status: Plan.NodeStatus
+  highlight?: boolean
+}
 
-function glyphFor(status: string): string {
-  switch (status) {
-    case "completed":
-      return "●"
-    case "in_progress":
-      return "◉"
-    case "cancelled":
-      return "✗"
-    default:
-      return "○"
-  }
+const STATUS_GLYPH: Record<Plan.NodeStatus, string> = {
+  planned: "○",
+  running: "◉",
+  done: "●",
+  blocked: "✕",
+  skipped: "◇",
+}
+
+function mapTodoStatus(s: string): Plan.NodeStatus {
+  if (s === "completed") return "done"
+  if (s === "in_progress") return "running"
+  if (s === "cancelled") return "skipped"
+  return "planned"
 }
 
 function colorFor(
-  status: string,
-  theme: { success: string; warning: string; textMuted: string; text: string },
+  status: Plan.NodeStatus,
+  theme: { success: string; warning: string; textMuted: string; text: string; error: string },
 ): string {
-  switch (status) {
-    case "completed":
-      return theme.success
-    case "in_progress":
-      return theme.warning
-    case "cancelled":
-      return theme.textMuted
-    default:
-      return theme.text
-  }
+  if (status === "done") return theme.success
+  if (status === "running") return theme.warning
+  if (status === "blocked") return theme.error
+  if (status === "skipped") return theme.textMuted
+  return theme.text
 }
 
-function Row(props: { item: TodoItem; theme: ReturnType<TuiPluginApi["theme"]["current"] extends infer T ? () => T : never> | any }) {
+function Row(props: { item: RowItem; theme: ReturnType<TuiPluginApi["theme"]["current"] extends infer T ? () => T : never> | any }) {
   const theme = props.theme
   const color = colorFor(props.item.status, theme)
-  const isCancelled = props.item.status === "cancelled"
-  const isHigh = props.item.priority === "high" && props.item.status !== "completed" && props.item.status !== "cancelled"
-
+  const strike = props.item.status === "skipped"
   return (
     <box flexDirection="row" gap={1} justifyContent="space-between">
       <box flexDirection="row" gap={1} flexShrink={1}>
         <text flexShrink={0} fg={color}>
-          {glyphFor(props.item.status)}
+          {STATUS_GLYPH[props.item.status]}
         </text>
-        <text wrapMode="word" fg={color} attributes={isCancelled ? TextAttributes.STRIKETHROUGH : undefined}>
-          {props.item.content}
+        <text wrapMode="word" fg={color} attributes={strike ? TextAttributes.STRIKETHROUGH : undefined}>
+          {props.item.title}
         </text>
       </box>
-      <Show when={isHigh}>
+      <Show when={props.item.highlight}>
         <text flexShrink={0} fg={theme.error}>
           ⚑
         </text>
@@ -61,44 +62,98 @@ function Row(props: { item: TodoItem; theme: ReturnType<TuiPluginApi["theme"]["c
 }
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
-  const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
-  const list = createMemo(() => props.api.state.session.todo(props.session_id) as TodoItem[])
 
-  const active = createMemo(() => list().filter((i) => i.status !== "cancelled"))
-  const done = createMemo(() => active().filter((i) => i.status === "completed").length)
-  const total = createMemo(() => active().length)
+  // Boolean-flip tick: integer ticks make createResource treat every refetch as a
+  // new source and stack in-flight work. Same pattern as dialog-operation.tsx.
+  const [tick, setTick] = createSignal(true)
+  const refresh = () => setTick((v) => !v)
+  let inflight = false
 
-  const show = createMemo(() => list().length > 0 && list().some((i) => i.status !== "completed" && i.status !== "cancelled"))
+  const [data] = createResource(tick, async () => {
+    if (inflight) return { nodes: [] as Plan.Node[] }
+    inflight = true
+    try {
+      const dir = props.api.state.path.directory
+      if (!dir) return { nodes: [] as Plan.Node[] }
+      const slug = await Operation.activeSlug(dir).catch(() => undefined)
+      if (!slug) return { nodes: [] as Plan.Node[] }
+      const nodes = await Plan.list(dir, slug).catch(() => [] as Plan.Node[])
+      return { nodes }
+    } finally {
+      inflight = false
+    }
+  })
 
+  const todos = createMemo(() => props.api.state.session.todo(props.session_id))
+
+  const rows = createMemo<RowItem[]>(() => {
+    const planNodes = data()?.nodes ?? []
+    if (planNodes.length > 0) {
+      return planNodes.map((n) => ({ title: n.title, status: n.status }))
+    }
+    // Fallback: parse TodoWrite from the current session — preserves behaviour
+    // for pure Claude flows when no active operation / empty plan store.
+    return todos().map((t) => ({
+      title: t.content,
+      status: mapTodoStatus(t.status),
+      highlight:
+        (t as { priority?: string }).priority === "high" &&
+        t.status !== "completed" &&
+        t.status !== "cancelled",
+    }))
+  })
+
+  // Refresh when TodoWrite fires or when the session status changes (proxy for
+  // "something in the operation may have moved"). Event-driven — no setInterval.
+  const offTodo = props.api.event.on("todo.updated", () => refresh())
+  const offStatus = props.api.event.on("session.idle", () => refresh())
+  onCleanup(() => {
+    offTodo()
+    offStatus()
+  })
+
+  const [open, setOpen] = createSignal(true)
+  const activeRows = createMemo(() => rows().filter((r) => r.status !== "skipped"))
+  const doneCount = createMemo(() => activeRows().filter((r) => r.status === "done").length)
+  const totalCount = createMemo(() => activeRows().length)
+  const hasOpen = createMemo(() => rows().some((r) => r.status !== "done" && r.status !== "skipped"))
+  const canCollapse = createMemo(() => rows().length > 2)
+
+  // Top-level <box> wrapper is load-bearing — opentui's insertExpression
+  // unwraps SolidJS memo functions in a loop; returning a <Show> (a memo) at
+  // the top level subscribes the parent render-effect to data(), causing
+  // recreation on every refetch → infinite RAM growth. See dialog-operation.tsx.
   return (
-    <Show when={show()}>
-      <box>
-        <box
-          flexDirection="row"
-          gap={1}
-          justifyContent="space-between"
-          onMouseDown={() => list().length > 2 && setOpen((x) => !x)}
-        >
-          <box flexDirection="row" gap={1} flexShrink={1}>
-            <Show when={list().length > 2}>
-              <text fg={theme().text} flexShrink={0}>
-                {open() ? "▼" : "▶"}
+    <box>
+      <Show when={rows().length > 0 && hasOpen()}>
+        <box>
+          <box
+            flexDirection="row"
+            gap={1}
+            justifyContent="space-between"
+            onMouseDown={() => canCollapse() && setOpen((x) => !x)}
+          >
+            <box flexDirection="row" gap={1} flexShrink={1}>
+              <Show when={canCollapse()}>
+                <text fg={theme().text} flexShrink={0}>
+                  {open() ? "▼" : "▶"}
+                </text>
+              </Show>
+              <text fg={theme().text} wrapMode="none">
+                <b>PLAN</b>
               </text>
-            </Show>
-            <text fg={theme().text} wrapMode="none">
-              <b>PLAN</b>
+            </box>
+            <text fg={theme().textMuted} flexShrink={0} wrapMode="none">
+              {doneCount()}/{totalCount()}
             </text>
           </box>
-          <text fg={theme().textMuted} flexShrink={0} wrapMode="none">
-            {done()}/{total()}
-          </text>
+          <Show when={!canCollapse() || open()}>
+            <For each={rows()}>{(item) => <Row item={item} theme={theme()} />}</For>
+          </Show>
         </box>
-        <Show when={list().length <= 2 || open()}>
-          <For each={list()}>{(item) => <Row item={item} theme={theme()} />}</For>
-        </Show>
-      </box>
-    </Show>
+      </Show>
+    </box>
   )
 }
 
