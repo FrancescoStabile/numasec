@@ -7,6 +7,7 @@
 import { z } from "zod"
 
 const KindId = z.enum(["pentest", "appsec", "osint", "hacking", "bughunt", "ctf", "research"])
+const OpsecLevel = z.enum(["normal", "strict"])
 
 const base = z.object({
   at: z.number(), // Unix ms timestamp.
@@ -36,6 +37,10 @@ export const Event = z.discriminatedUnion("type", [
   base.extend({
     type: z.literal("mode_set"),
     mode: z.record(z.string(), z.string()),
+  }),
+  base.extend({
+    type: z.literal("opsec_set"),
+    opsec: OpsecLevel,
   }),
   base.extend({
     type: z.literal("session_attached"),

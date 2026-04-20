@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { Event } from "./events"
 
 const KindId = z.enum(["pentest", "appsec", "osint", "hacking", "bughunt", "ctf", "research"])
+const OpsecLevel = z.enum(["normal", "strict"])
 
 export const Info = z.object({
   id: z.string(),
@@ -16,6 +17,7 @@ export const Info = z.object({
   subject: z.record(z.string(), z.unknown()).optional(),
   boundary: z.record(z.string(), z.unknown()).optional(),
   mode: z.record(z.string(), z.string()).default({}),
+  opsec: OpsecLevel.default("normal"),
   sessions: z.array(z.string()).default([]),
   status: z.enum(["active", "archived"]).default("active"),
   created_at: z.number(),
@@ -42,6 +44,7 @@ export function project(events: Event[]): Info | undefined {
     label: first.label,
     kind: first.kind,
     mode: {},
+    opsec: "normal",
     sessions: [],
     status: "active",
     created_at: first.at,
@@ -54,6 +57,7 @@ export function project(events: Event[]): Info | undefined {
     else if (e.type === "subject_set") info.subject = e.subject
     else if (e.type === "boundary_set") info.boundary = e.boundary
     else if (e.type === "mode_set") info.mode = e.mode
+    else if (e.type === "opsec_set") info.opsec = e.opsec
     else if (e.type === "session_attached") {
       if (!info.sessions.includes(e.session_id)) info.sessions.push(e.session_id)
     } else if (e.type === "archived") info.status = "archived"

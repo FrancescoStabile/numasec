@@ -1,0 +1,17 @@
+Toggle or inspect the operational security level of the active operation.
+
+Args:
+  - action: "status" (default) or "set"
+  - level: "normal" | "strict" (required when action = "set")
+
+Levels:
+  - normal: the scope guard behaves as usual.
+  - strict: the scope guard also refuses any traffic to known third-party
+    intel hosts (crt.sh, otx.alienvault.com, www.virustotal.com,
+    api.shodan.io, urlscan.io, wayback-api.archive.org) and upgrades
+    unmatched "ask" decisions to "deny" so nothing leaks outside the
+    declared target boundary (localhost excluded).
+
+Use this before handling a sensitive engagement to reduce passive OSINT
+leakage. Use action = "status" to read the current level and the list of
+blocked hosts without changing anything.

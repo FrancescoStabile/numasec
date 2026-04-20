@@ -2,11 +2,50 @@
 //
 // This module is intentionally thin: it locates the active op, parses its
 // Scope block, and delegates matching to `evaluate`. No state, no cache.
+//
+// Opsec lockdown (T09): when the active operation declares `opsec: strict`,
+// the guard additionally refuses any request that targets a third-party
+// intel service (passive OSINT leakage) and upgrades unmatched "ask"
+// decisions to "deny" so traffic stays within the declared target boundary.
 
 import { Operation } from "@/core/operation"
 import { parseScope } from "@/core/operation/scope"
 import { evaluate } from "./evaluate"
 import type { Decision, Request } from "./schema"
+
+// Third-party intel services that would leak the active target if contacted.
+// Configurable via this constant list — keep lowercase, hostname only.
+export const OPSEC_BLOCKLIST: ReadonlyArray<string> = [
+  "crt.sh",
+  "otx.alienvault.com",
+  "www.virustotal.com",
+  "api.shodan.io",
+  "urlscan.io",
+  "wayback-api.archive.org",
+]
+
+const LOCALHOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"])
+
+function extractHost(request: Request): string | undefined {
+  if (request.kind === "url") {
+    try {
+      return new URL(request.value).hostname.toLowerCase()
+    } catch {
+      return undefined
+    }
+  }
+  if (request.kind === "host") return request.value.toLowerCase()
+  return undefined
+}
+
+function isBlocklisted(host: string): boolean {
+  return OPSEC_BLOCKLIST.some((h) => host === h || host.endsWith("." + h))
+}
+
+function isLocalhost(host: string): boolean {
+  if (LOCALHOSTS.has(host)) return true
+  return host.endsWith(".localhost")
+}
 
 export class ScopeDeniedError extends Error {
   readonly decision: Decision
@@ -27,19 +66,52 @@ export class ScopeDeniedError extends Error {
 
 export async function resolveActiveBoundary(
   workspace: string,
-): Promise<{ slug: string; boundary: unknown } | undefined> {
+): Promise<{ slug: string; boundary: unknown; opsec: Operation.Opsec } | undefined> {
   const slug = await Operation.activeSlug(workspace).catch(() => undefined)
   if (!slug) return undefined
-  const markdown = await Operation.readMarkdown(workspace, slug).catch(() => undefined)
+  const [markdown, info] = await Promise.all([
+    Operation.readMarkdown(workspace, slug).catch(() => undefined),
+    Operation.read(workspace, slug).catch(() => undefined),
+  ])
   if (!markdown) return undefined
-  return { slug, boundary: parseScope(markdown) }
+  return { slug, boundary: parseScope(markdown), opsec: info?.opsec ?? "normal" }
+}
+
+export async function opsec(workspace: string): Promise<Operation.Opsec> {
+  const info = await Operation.active(workspace).catch(() => undefined)
+  return info?.opsec ?? "normal"
 }
 
 export async function check(workspace: string, request: Request): Promise<Decision> {
   const ctx = await resolveActiveBoundary(workspace)
   if (!ctx) return { mode: "allow", reason: "no active operation" }
+
+  if (ctx.opsec === "strict") {
+    const host = extractHost(request)
+    if (host && isBlocklisted(host)) {
+      const decision: Decision = {
+        mode: "deny",
+        reason: "opsec strict: 3rd-party intel host blocked",
+        matched: host,
+      }
+      throw new ScopeDeniedError(request, decision, ctx.slug)
+    }
+  }
+
   const decision = evaluate(ctx.boundary, request)
   if (decision.mode === "deny") throw new ScopeDeniedError(request, decision, ctx.slug)
+
+  if (ctx.opsec === "strict" && decision.mode === "ask") {
+    const host = extractHost(request)
+    if (!host || !isLocalhost(host)) {
+      const denied: Decision = {
+        mode: "deny",
+        reason: "opsec strict: outside declared target boundary",
+      }
+      throw new ScopeDeniedError(request, denied, ctx.slug)
+    }
+  }
+
   return decision
 }
 

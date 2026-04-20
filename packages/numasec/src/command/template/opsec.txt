@@ -1,0 +1,25 @@
+---
+description: Inspect or change the opsec level of the active operation.
+---
+
+# /opsec — operational security lockdown
+
+The operator wants to inspect or toggle the opsec level of the current
+engagement. Follow this exact procedure.
+
+1. Parse `$ARGUMENTS`:
+   - `strict` or `normal` → call the `opsec` tool with `{ action: "set", level: "<value>" }`.
+   - empty or any other value → call the `opsec` tool with `{ action: "status" }`.
+2. Report the tool output verbatim, prefixed with a 1-line summary:
+   - `Opsec is now <level>.` for `set`.
+   - `Opsec: <level>.` for `status`.
+3. If the tool reports no active operation, tell the operator to run `/pwn`
+   first — do not try to create one implicitly.
+4. When entering `strict`, remind the operator in one short line that:
+   - 3rd-party intel hosts (crt.sh, shodan, virustotal, urlscan, wayback,
+     alienvault) will be refused by the guard;
+   - unmatched scope decisions default to DENY (localhost excluded).
+5. Do NOT run any other shell or network command. The `opsec` tool is the
+   single source of truth for this slash command.
+
+Input: $ARGUMENTS

@@ -2,8 +2,14 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/t
 import { createMemo, createResource, createSignal, Show } from "solid-js"
 import { Doctor } from "@/core/doctor"
 import type { DoctorReport } from "@/core/doctor"
+import { Operation } from "@/core/operation"
 
 const id = "internal:sidebar-doctor"
+
+type Snapshot = {
+  report: DoctorReport
+  opsec: "normal" | "strict"
+}
 
 function View(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
@@ -12,11 +18,13 @@ function View(props: { api: TuiPluginApi }) {
   const [tick] = createSignal(true)
   let inflight = false
 
-  const [data] = createResource<DoctorReport | undefined, boolean>(tick, async () => {
+  const [data] = createResource<Snapshot | undefined, boolean>(tick, async () => {
     if (inflight) return undefined
     inflight = true
     try {
-      return await Doctor.probePromise()
+      const report = await Doctor.probePromise()
+      const active = await Operation.active(process.cwd()).catch(() => undefined)
+      return { report, opsec: active?.opsec ?? "normal" }
     } catch {
       return undefined
     } finally {
@@ -26,12 +34,12 @@ function View(props: { api: TuiPluginApi }) {
 
   const ready = createMemo(() => data())
   const tools = createMemo(() => {
-    const r = ready()
+    const r = ready()?.report
     if (!r) return { present: 0, total: 0 }
     return { present: r.binaries.filter((b) => b.present).length, total: r.binaries.length }
   })
   const nodeVersion = createMemo(() => {
-    const v = ready()?.runtime.node
+    const v = ready()?.report.runtime.node
     if (!v) return ""
     const major = v.split(".")[0]
     return `node ${major}.x`
@@ -44,8 +52,9 @@ function View(props: { api: TuiPluginApi }) {
     if (ratio >= 0.25) return theme().warning
     return theme().error
   })
-  const vaultOk = createMemo(() => ready()?.vault.present === true)
-  const wsOk = createMemo(() => ready()?.workspace.writable !== false)
+  const vaultOk = createMemo(() => ready()?.report.vault.present === true)
+  const wsOk = createMemo(() => ready()?.report.workspace.writable !== false)
+  const opsecStrict = createMemo(() => ready()?.opsec === "strict")
 
   // The outer <box> is load-bearing — see dialog-operation.tsx:47-53 for why
   // a concrete opentui node (not Switch/Show) must be the top-level return.
@@ -83,6 +92,11 @@ function View(props: { api: TuiPluginApi }) {
             · ws {wsOk() ? "✓" : "ro"}
           </text>
         </box>
+        <Show when={opsecStrict()}>
+          <text fg={theme().error} wrapMode="none">
+            OPSEC: strict
+          </text>
+        </Show>
       </Show>
     </box>
   )

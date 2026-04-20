@@ -145,6 +145,15 @@ export const layer = Layer.effect(
         },
         hints: hints(PROMPT_PWN),
       }
+      commands[Default.OPSEC] = {
+        name: Default.OPSEC,
+        description: "opsec lockdown — inspect/set strict mode to refuse 3rd-party intel leaks",
+        source: "command",
+        get template() {
+          return PROMPT_OPSEC
+        },
+        hints: hints(PROMPT_OPSEC),
+      }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
         commands[name] = {

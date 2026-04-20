@@ -135,6 +135,7 @@ export const layer: Layer.Layer<
     const playTool = yield* PlayTool
     const pwnBootstrapTool = yield* PwnBootstrapTool
     const scannerTool = yield* ScannerTool
+    const opsecTool = yield* OpsecTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -255,6 +256,7 @@ export const layer: Layer.Layer<
             tool.play,
             tool.pwn_bootstrap,
             tool.scanner,
+            tool.opsec,
             tool.methodology,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],

@@ -57,11 +57,16 @@ export function defaultAgentFor(kind: Kind): AgentID {
   return KIND_AGENT[kind]
 }
 
+export type Opsec = "normal" | "strict"
+
+export const OPSECS: ReadonlyArray<Opsec> = ["normal", "strict"] as const
+
 export interface Info {
   slug: string
   label: string
   kind: Kind
   target?: string
+  opsec: Opsec
   created_at: number
   updated_at: number
   active: boolean
@@ -100,7 +105,7 @@ async function uniqueSlug(workspace: string, base: string): Promise<string> {
   return `${tried}-${stamp}`
 }
 
-function skeleton(input: { label: string; kind: Kind; target?: string; createdAt: Date }): string {
+function skeleton(input: { label: string; kind: Kind; target?: string; opsec?: Opsec; createdAt: Date }): string {
   const date = input.createdAt.toISOString().slice(0, 10)
   const targetHost = (() => {
     if (!input.target) return ""
@@ -112,8 +117,9 @@ function skeleton(input: { label: string; kind: Kind; target?: string; createdAt
   })()
   const scopeIn = targetHost ? `- in: ${targetHost}` : "- in:"
   const targetLine = input.target ? ` · target: ${input.target}` : ""
+  const opsecLine = input.opsec && input.opsec !== "normal" ? ` · opsec: ${input.opsec}` : ""
   return `# Operation: ${input.label}
-kind: ${input.kind}${targetLine} · started: ${date}
+kind: ${input.kind}${targetLine}${opsecLine} · started: ${date}
 
 <!--
 This is your living engagement notebook. The AI agent updates it automatically
@@ -148,12 +154,19 @@ export async function create(input: {
   label: string
   kind: Kind
   target?: string
+  opsec?: Opsec
 }): Promise<Info> {
   const slug = await uniqueSlug(input.workspace, input.label)
   const dir = opDir(input.workspace, slug)
   await mkdir(path.join(dir, "evidence"), { recursive: true })
   const now = new Date()
-  const content = skeleton({ label: input.label, kind: input.kind, target: input.target, createdAt: now })
+  const content = skeleton({
+    label: input.label,
+    kind: input.kind,
+    target: input.target,
+    opsec: input.opsec,
+    createdAt: now,
+  })
   await writeFile(opFile(input.workspace, slug), content, "utf8")
   await activate(input.workspace, slug)
   return {
@@ -161,6 +174,7 @@ export async function create(input: {
     label: input.label,
     kind: input.kind,
     target: input.target,
+    opsec: input.opsec ?? "normal",
     created_at: now.getTime(),
     updated_at: now.getTime(),
     active: true,
@@ -198,15 +212,19 @@ async function parseHeader(content: string, fallback: { slug: string; createdAt:
   label: string
   kind: Kind
   target?: string
+  opsec: Opsec
 }> {
   const firstLine = content.split("\n", 1)[0] ?? ""
   const label = firstLine.replace(/^#\s*Operation:\s*/, "").trim() || fallback.slug
   const metaLine = content.split("\n")[1] ?? ""
   const kindMatch = metaLine.match(/kind:\s*(\S+)/)
   const targetMatch = metaLine.match(/target:\s*(\S+)/)
+  const opsecMatch = metaLine.match(/opsec:\s*(\S+)/)
   const rawKind = (kindMatch?.[1] ?? "pentest") as Kind
   const kind: Kind = KINDS.includes(rawKind) ? rawKind : "pentest"
-  return { label, kind, target: targetMatch?.[1] }
+  const rawOpsec = (opsecMatch?.[1] ?? "normal") as Opsec
+  const opsec: Opsec = OPSECS.includes(rawOpsec) ? rawOpsec : "normal"
+  return { label, kind, target: targetMatch?.[1], opsec }
 }
 
 export async function read(workspace: string, slug: string): Promise<Info | undefined> {
@@ -220,6 +238,7 @@ export async function read(workspace: string, slug: string): Promise<Info | unde
     label: header.label,
     kind: header.kind,
     target: header.target,
+    opsec: header.opsec,
     created_at: st.birthtimeMs,
     updated_at: st.mtimeMs,
     active,
@@ -257,4 +276,28 @@ export async function readMarkdown(workspace: string, slug: string): Promise<str
   const file = opFile(workspace, slug)
   if (!existsSync(file)) return undefined
   return readFile(file, "utf8")
+}
+
+// Rewrites the meta line (2nd line) of numasec.md to set or unset `opsec: <level>`.
+// Level "normal" is the default and is stored by removing any explicit opsec marker.
+export async function setOpsec(workspace: string, slug: string, level: Opsec): Promise<void> {
+  const file = opFile(workspace, slug)
+  if (!existsSync(file)) return
+  const content = await readFile(file, "utf8")
+  const lines = content.split("\n")
+  const meta = lines[1] ?? ""
+  const stripped = meta
+    .replace(/\s*·\s*opsec:\s*\S+/g, "")
+    .replace(/^opsec:\s*\S+\s*·?\s*/, "")
+  if (level === "normal") {
+    lines[1] = stripped
+  } else {
+    const startedIdx = stripped.search(/·\s*started:/)
+    if (startedIdx >= 0) {
+      lines[1] = stripped.slice(0, startedIdx) + `· opsec: ${level} ` + stripped.slice(startedIdx)
+    } else {
+      lines[1] = `${stripped} · opsec: ${level}`
+    }
+  }
+  await writeFile(file, lines.join("\n"), "utf8")
 }
