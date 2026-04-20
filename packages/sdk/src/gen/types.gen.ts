@@ -1451,6 +1451,7 @@ export type Command = {
   model?: string
   template: string
   subtask?: boolean
+  priority?: number
 }
 
 export type Model = {

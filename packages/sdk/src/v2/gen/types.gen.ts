@@ -2129,6 +2129,7 @@ export type Command = {
   template: string
   subtask?: boolean
   hints: Array<string>
+  priority?: number
 }
 
 export type Agent = {

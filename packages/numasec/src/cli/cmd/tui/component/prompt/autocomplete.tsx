@@ -63,6 +63,7 @@ export type AutocompleteOption = {
   isDirectory?: boolean
   onSelect?: () => void
   path?: string
+  priority?: number
 }
 
 export function Autocomplete(props: {
@@ -365,6 +366,7 @@ export function Autocomplete(props: {
       results.push({
         display: "/" + serverCommand.name + label,
         description: serverCommand.description,
+        priority: serverCommand.priority,
         onSelect: () => {
           const newText = "/" + serverCommand.name + " "
           const cursor = props.input().logicalCursor
@@ -375,7 +377,12 @@ export function Autocomplete(props: {
       })
     }
 
-    results.sort((a, b) => a.display.localeCompare(b.display))
+    results.sort((a, b) => {
+      const pa = a.priority ?? 100
+      const pb = b.priority ?? 100
+      if (pa !== pb) return pa - pb
+      return a.display.localeCompare(b.display)
+    })
 
     const max = firstBy(results, [(x) => x.display.length, "desc"])?.display.length
     if (!max) return results

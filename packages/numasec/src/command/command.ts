@@ -46,6 +46,7 @@ export const Info = z
     template: z.promise(z.string()).or(z.string()),
     subtask: z.boolean().optional(),
     hints: z.array(z.string()),
+    priority: z.number().optional(),
   })
   .meta({
     ref: "Command",
@@ -95,10 +96,81 @@ export const layer = Layer.effect(
       const bridge = yield* EffectBridge.make()
       const commands: Record<string, Info> = {}
 
+      commands[Default.PWN] = {
+        name: Default.PWN,
+        description: "one-shot recon + plan: pass a URL/IP/domain",
+        source: "command",
+        priority: 10,
+        get template() {
+          return PROMPT_PWN
+        },
+        hints: hints(PROMPT_PWN),
+      }
+      commands[Default.PLAY] = {
+        name: Default.PLAY,
+        description: "run a named play: web-surface, network-surface, appsec-triage, osint, ctf-warmup",
+        source: "command",
+        priority: 20,
+        get template() {
+          return PROMPT_PLAY
+        },
+        hints: hints(PROMPT_PLAY),
+      }
+      commands[Default.DOCTOR] = {
+        name: Default.DOCTOR,
+        description: "environment & tool probe — what's missing, what's ready",
+        source: "command",
+        priority: 30,
+        get template() {
+          return PROMPT_DOCTOR
+        },
+        hints: hints(PROMPT_DOCTOR),
+      }
+      commands[Default.OPSEC] = {
+        name: Default.OPSEC,
+        description: "toggle strict opsec for the active operation",
+        source: "command",
+        priority: 40,
+        get template() {
+          return PROMPT_OPSEC
+        },
+        hints: hints(PROMPT_OPSEC),
+      }
+      commands[Default.SHARE] = {
+        name: Default.SHARE,
+        description: "bundle & redact the active operation for handoff",
+        source: "command",
+        priority: 50,
+        get template() {
+          return PROMPT_SHARE
+        },
+        hints: hints(PROMPT_SHARE),
+      }
+      commands[Default.REMEDIATE] = {
+        name: Default.REMEDIATE,
+        description: "turn an observation into a patch on a disposable branch",
+        source: "command",
+        priority: 60,
+        get template() {
+          return PROMPT_REMEDIATE
+        },
+        hints: hints(PROMPT_REMEDIATE),
+      }
+      commands[Default.TEACH] = {
+        name: Default.TEACH,
+        description: "narrate every tool call — learn-by-watching mode",
+        source: "command",
+        priority: 70,
+        get template() {
+          return PROMPT_TEACH
+        },
+        hints: hints(PROMPT_TEACH),
+      }
       commands[Default.INIT] = {
         name: Default.INIT,
         description: "guided AGENTS.md setup",
         source: "command",
+        priority: 80,
         get template() {
           return PROMPT_INITIALIZE.replace("${path}", ctx.worktree)
         },
@@ -108,74 +180,12 @@ export const layer = Layer.effect(
         name: Default.REVIEW,
         description: "review changes [commit|branch|pr], defaults to uncommitted",
         source: "command",
+        priority: 90,
         get template() {
           return PROMPT_REVIEW.replace("${path}", ctx.worktree)
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
-      }
-      commands[Default.TEACH] = {
-        name: Default.TEACH,
-        description: "narrate every tool call — teach/learn mode for the operator",
-        source: "command",
-        get template() {
-          return PROMPT_TEACH
-        },
-        hints: hints(PROMPT_TEACH),
-      }
-      commands[Default.DOCTOR] = {
-        name: Default.DOCTOR,
-        description: "environment self-check — runtime, tools on PATH, vault, workspace",
-        source: "command",
-        get template() {
-          return PROMPT_DOCTOR
-        },
-        hints: hints(PROMPT_DOCTOR),
-      }
-      commands[Default.PLAY] = {
-        name: Default.PLAY,
-        description: "run a reusable play (web-surface, network-surface, appsec-triage, osint-target, ctf-warmup)",
-        source: "command",
-        get template() {
-          return PROMPT_PLAY
-        },
-        hints: hints(PROMPT_PLAY),
-      }
-      commands[Default.PWN] = {
-        name: Default.PWN,
-        description: "hero one-shot: auto-create op, run the right play, hand off to the right agent",
-        source: "command",
-        get template() {
-          return PROMPT_PWN
-        },
-        hints: hints(PROMPT_PWN),
-      }
-      commands[Default.OPSEC] = {
-        name: Default.OPSEC,
-        description: "opsec lockdown — inspect/set strict mode to refuse 3rd-party intel leaks",
-        source: "command",
-        get template() {
-          return PROMPT_OPSEC
-        },
-        hints: hints(PROMPT_OPSEC),
-      }
-      commands[Default.SHARE] = {
-        name: Default.SHARE,
-        description: "bundle the active operation into a signed, redacted, shareable tarball",
-        source: "command",
-        get template() {
-          return PROMPT_SHARE
-        },
-        hints: hints(PROMPT_SHARE),
-      }
-      commands[Default.REMEDIATE] = {
-        name: Default.REMEDIATE,
-        description: "propose a reviewable fix for an observation (patch or advice, disposable branch)",
-        source: "command",
-        get template() {
-          return PROMPT_REMEDIATE
-        },
-        hints: hints(PROMPT_REMEDIATE),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
