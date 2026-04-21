@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.gif" alt="numasec running a full pentest from the TUI" width="900" />
+  <video src="assets/demo-pentest.mp4" autoplay loop muted playsinline width="900"></video>
 </p>
 
 ---
@@ -99,7 +99,7 @@ Think "GitHub Actions for pentest workflows". A Play is a YAML-ish script that d
 ### Operations — per-engagement persistent memory
 
 <p align="center">
-  <img src="assets/operations.gif" alt="creating an operation with /operations" width="900" />
+  <video src="assets/demo-operations.mp4" autoplay loop muted playsinline width="900"></video>
 </p>
 
 Every engagement lives in a file — `.numasec/operation/<slug>/numasec.md` — auto-loaded as a system instruction for every session opened in that workspace. Target, scope, findings, dead-ends: it all persists. Switch context with `/operations`, pick up exactly where you left off.
