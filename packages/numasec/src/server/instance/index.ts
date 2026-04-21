@@ -11,6 +11,8 @@ import { Agent } from "../../agent/agent"
 import { Skill } from "../../skill"
 import { Global } from "../../global"
 import { Command } from "../../command"
+import { Auth } from "../../auth"
+import { ProviderID } from "../../provider/schema"
 import { QuestionRoutes } from "./question"
 import { PermissionRoutes } from "./permission"
 import { Flag } from "@/flag/flag"
@@ -27,6 +29,7 @@ import { EventRoutes } from "./event"
 import { SyncRoutes } from "./sync"
 import { WorkspaceRouterMiddleware } from "./middleware"
 import { AppRuntime } from "@/effect/app-runtime"
+import { errors } from "../error"
 
 export const InstanceRoutes = (upgrade: UpgradeWebSocket): Hono => {
   const app = new Hono()
@@ -51,6 +54,50 @@ export const InstanceRoutes = (upgrade: UpgradeWebSocket): Hono => {
   return app
     .route("/question", QuestionRoutes())
     .route("/provider", ProviderRoutes())
+    .put(
+      "/auth/:providerID",
+      describeRoute({
+        summary: "Set auth credentials",
+        description: "Set authentication credentials",
+        operationId: "auth.set",
+        responses: {
+          200: {
+            description: "Successfully set authentication credentials",
+            content: { "application/json": { schema: resolver(z.boolean()) } },
+          },
+          ...errors(400),
+        },
+      }),
+      validator("param", z.object({ providerID: ProviderID.zod })),
+      validator("json", Auth.Info.zod),
+      async (c) => {
+        const providerID = c.req.valid("param").providerID
+        const info = c.req.valid("json")
+        await AppRuntime.runPromise(Auth.Service.use((svc) => svc.set(providerID, info)))
+        return c.json(true)
+      },
+    )
+    .delete(
+      "/auth/:providerID",
+      describeRoute({
+        summary: "Remove auth credentials",
+        description: "Remove authentication credentials",
+        operationId: "auth.remove",
+        responses: {
+          200: {
+            description: "Successfully removed authentication credentials",
+            content: { "application/json": { schema: resolver(z.boolean()) } },
+          },
+          ...errors(400),
+        },
+      }),
+      validator("param", z.object({ providerID: ProviderID.zod })),
+      async (c) => {
+        const providerID = c.req.valid("param").providerID
+        await AppRuntime.runPromise(Auth.Service.use((svc) => svc.remove(providerID)))
+        return c.json(true)
+      },
+    )
     .route("/sync", SyncRoutes())
     .route("/", FileRoutes())
     .route("/", EventRoutes())
