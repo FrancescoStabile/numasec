@@ -53,6 +53,7 @@ const skipInstall = process.argv.includes("--skip-install")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 const linker = process.platform === "win32" ? ["--linker", "hoisted"] : []
+const buildOs = process.env.NUMASEC_BUILD_OS?.split(",").map((item) => item.trim()).filter(Boolean)
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -142,26 +143,32 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+const targets = allTargets.filter((item) => {
+  if (buildOs && buildOs.length > 0 && !buildOs.includes(item.os)) {
+    return false
+  }
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
+  if (!singleFlag) {
+    return true
+  }
 
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
+  if (item.os !== process.platform || item.arch !== process.arch) {
+    return false
+  }
 
-      return true
-    })
-  : allTargets
+  // When building for the current platform, prefer a single native binary by default.
+  // Baseline binaries require additional Bun artifacts and can be flaky to download.
+  if (item.avx2 === false) {
+    return baselineFlag
+  }
+
+  // also skip abi-specific builds for the same reason
+  if (item.abi !== undefined) {
+    return false
+  }
+
+  return true
+})
 
 await $`rm -rf dist`
 
