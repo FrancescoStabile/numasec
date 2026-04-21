@@ -156,6 +156,7 @@ jobs:
     needs: [version, build-agent]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -184,61 +185,70 @@ jobs:
             npm publish "$dir" --access public
           }
 
-          mkdir -p packages
+          rm -rf publish-packages
+          mkdir -p publish-packages
           for src in npm-artifacts/npm-packages-*/numasec-*/; do
             [ -d "$src" ] || continue
             name=$(basename "$src")
-            if [ -d "packages/$name" ]; then
+            if [ -d "publish-packages/$name" ]; then
               echo "Skipping duplicate: $name"
               continue
             fi
-            cp -r "$src" "packages/$name"
+            cp -r "$src" "publish-packages/$name"
           done
 
-          for src in npm-artifacts/npm-packages-*/numasec/; do
-            [ -d "$src" ] || continue
-            cp -r "$src" "packages/numasec"
-            break
-          done
+          mkdir -p publish-packages/numasec
+          cp -r packages/numasec/bin publish-packages/numasec/bin
+          cp packages/numasec/script/postinstall.mjs publish-packages/numasec/postinstall.mjs
+          cp LICENSE publish-packages/numasec/LICENSE
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const source = JSON.parse(fs.readFileSync('packages/numasec/package.json', 'utf8'));
+            const deps = {};
+            for (const dir of fs.readdirSync('publish-packages')) {
+              if (!dir.startsWith('numasec-')) continue;
+              const sub = JSON.parse(fs.readFileSync(path.join('publish-packages', dir, 'package.json'), 'utf8'));
+              deps[sub.name] = sub.version;
+            }
+            fs.writeFileSync(
+              'publish-packages/numasec/package.json',
+              JSON.stringify(
+                {
+                  name: source.name,
+                  version: source.version,
+                  license: source.license,
+                  type: source.type,
+                  bin: source.bin,
+                  scripts: {
+                    postinstall: 'bun ./postinstall.mjs || node ./postinstall.mjs',
+                  },
+                  optionalDependencies: deps,
+                },
+                null,
+                2,
+              ),
+            );
+            console.log('optionalDependencies:', deps);
+          "
 
-          if [ -d "packages/numasec" ]; then
-            node -e "
-              const fs = require('fs');
-              const path = require('path');
-              const pkg = JSON.parse(fs.readFileSync('packages/numasec/package.json', 'utf8'));
-              const deps = {};
-              for (const dir of fs.readdirSync('packages')) {
-                if (dir.startsWith('numasec-')) {
-                  const sub = JSON.parse(fs.readFileSync(path.join('packages', dir, 'package.json'), 'utf8'));
-                  deps[sub.name] = sub.version;
-                }
-              }
-              pkg.optionalDependencies = deps;
-              fs.writeFileSync('packages/numasec/package.json', JSON.stringify(pkg, null, 2));
-              console.log('optionalDependencies:', deps);
-            "
-          fi
-
-          if [ ! -d "packages/numasec" ]; then
-            echo "Missing main numasec package artifact"
-            exit 1
-          fi
-
-          for dir in packages/numasec-*/; do
+          for dir in publish-packages/numasec-*/; do
             [ -d "$dir" ] || continue
             chmod +x "$dir/bin/numasec" 2>/dev/null || true
           done
 
-          for dir in packages/numasec-*/; do
+          chmod +x publish-packages/numasec/bin/numasec
+
+          for dir in publish-packages/numasec-*/; do
             [ -d "$dir" ] || continue
             publish_dir "$dir"
           done
 
-          pkg=$(spec "packages/numasec")
+          pkg=$(spec "publish-packages/numasec")
           if npm view "$pkg" version >/dev/null 2>&1; then
             echo "Skipping existing $pkg"
           else
-            cd packages/numasec
+            cd publish-packages/numasec
             npm pack
             tarball=$(ls -1 *.tgz | head -n 1)
             npm publish "$tarball" --access public
