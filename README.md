@@ -253,6 +253,10 @@ Legacy aliases still supported in v1.x:
 
 ## Development
 
+> [!IMPORTANT]  
+> Bun MUST be version `1.3.11`. I'm not sure why but other versions often corrupt upon building.
+
+
 ```bash
 cd agent
 bun install

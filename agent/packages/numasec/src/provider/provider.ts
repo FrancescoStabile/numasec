@@ -259,7 +259,10 @@ export namespace Provider {
           if (useLanguageModel(sdk)) return sdk.languageModel(modelID)
           return shouldUseCopilotResponsesApi(modelID) ? sdk.responses(modelID) : sdk.chat(modelID)
         },
-        options: {},
+        options: {
+          timeout: 180_000,
+          chunkTimeout: 120_000,
+        },
       }
     },
     azure: async (provider) => {
