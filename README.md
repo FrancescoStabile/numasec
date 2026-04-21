@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="#what-numasec-is">What it is</a> |
-  <a href="#what-ships-in-115">What ships</a> |
+  <a href="#what-ships">What ships</a> |
   <a href="#operations-are-the-product">Operations</a> |
   <a href="#what-you-actually-type">Commands</a> |
   <a href="#install">Install</a> |
@@ -45,7 +45,9 @@ Open numasec, run `/pwn https://target`, let it create the operation, pick the r
 
 <p align="center"><sub>5 primary agents | 2 user facing subagents | 30 built in tools | 5 built in plays | 2 embedded skills | 7 operation kinds</sub></p>
 
-## What ships in 1.1.5
+## What ships
+
+This is the shape of numasec right now: a terminal-native security stack with real agents, real workflows, and enough built-in machinery to feel like a small operating environment instead of a prompt wrapper.
 
 | Layer | What is actually there |
 |---|---|

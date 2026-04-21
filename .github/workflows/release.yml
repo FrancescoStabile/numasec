@@ -168,6 +168,7 @@ jobs:
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -216,9 +217,8 @@ jobs:
               JSON.stringify(
                 {
                   name: source.name,
-                  version: source.version,
+                  version: process.env.RELEASE_VERSION,
                   license: source.license,
-                  type: source.type,
                   bin: source.bin,
                   scripts: {
                     postinstall: 'bun ./postinstall.mjs || node ./postinstall.mjs',
