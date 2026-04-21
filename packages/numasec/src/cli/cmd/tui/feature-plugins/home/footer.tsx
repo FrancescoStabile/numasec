@@ -59,7 +59,7 @@ function Label(props: { api: TuiPluginApi }) {
 
   return (
     <box flexShrink={0}>
-      <text fg={theme().primary}>• numasec local</text>
+      <text fg={theme().primary}>• numasec</text>
     </box>
   )
 }

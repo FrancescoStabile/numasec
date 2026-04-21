@@ -16,12 +16,8 @@
   <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=for-the-badge&color=yellow&logo=starship" alt="stars"></a>
 </p>
 
-<!-- HERO GIF — 15–20s on a dark terminal:
-     user types `/pwn juice-shop.local`, numasec maps surface, chains a finding,
-     and drops a Pulse card. Recommended width 900px. Replace `assets/hero.gif`. -->
 <p align="center">
   <img src="assets/hero.gif" alt="numasec running a full pentest from the TUI" width="900" />
-  <br/><sub><em>Placeholder — record ~20s of <code>/pwn</code> on Juice Shop and drop the gif at <code>assets/hero.gif</code>.</em></sub>
 </p>
 
 ---
@@ -100,19 +96,15 @@ Every engagement is a file (`.numasec/operation/<slug>/numasec.md`) auto-loaded 
 
 Think "GitHub Actions for pentest workflows". A Play is a YAML-ish script that drives the agent through a reproducible attack/defense flow with parameters, gates, and artefacts. 5 ship in the box (`web-surface`, `appsec-triage`, `pwn`, `osint-passive`, `remediation-loop`) — write your own in any plugin.
 
-### Sidebar widgets — situational awareness, always visible
+### Operations — per-engagement persistent memory
 
-<!-- SIDEBAR GIF — 8s pan across the right column showing Pulse → Plan → Activity → Doctor.
-     Drop at assets/sidebar.gif. -->
 <p align="center">
-  <img src="assets/sidebar.gif" alt="sidebar widgets: Pulse, Plan, Activity, Doctor" width="900" />
-  <br/><sub><em>Placeholder — record the sidebar with a live op running.</em></sub>
+  <img src="assets/operations.gif" alt="creating an operation with /operations" width="900" />
 </p>
 
-- **Pulse** — live target/engagement status
-- **Plan** — TodoWrite sync, works on *any* LLM (Claude, GPT-5, Gemini, Ollama, …)
-- **Activity** — tool calls streaming in real time
-- **Doctor** — green/red dots for every dependency, OPSEC flag, model health
+Every engagement lives in a file — `.numasec/operation/<slug>/numasec.md` — auto-loaded as a system instruction for every session opened in that workspace. Target, scope, findings, dead-ends: it all persists. Switch context with `/operations`, pick up exactly where you left off.
+
+The sidebar keeps you oriented while the agent runs: **Pulse** shows live target/engagement status, **Plan** tracks the agent's todo list in real time (works on any LLM — Claude, GPT-5, Gemini, Ollama), **Activity** streams tool calls as they happen.
 
 ### Benchmark harness
 
@@ -132,13 +124,6 @@ Merged the old `secrets` + `auth-as` palette-cruft into a single `vault` tool ba
 - **Attack surface recon.** Crawl, directory fuzz, JS static analysis, port scan, service fingerprint as first-class primitives.
 - **OOB callbacks, crypto primitives, net probes, auth profiles.** The pieces a real operator needs that stock chat assistants don't have.
 - **Any LLM.** Anthropic, OpenAI, Google, xAI, OpenRouter, Bedrock, GitHub Models, Ollama, any OpenAI-compatible endpoint. The model is the brain, numasec is the hands.
-
-<!-- ATTACK-CHAIN GIF — 10–15s showing an IDOR → privesc chain with evidence card.
-     Drop at assets/attack-chain.gif. -->
-<p align="center">
-  <img src="assets/attack-chain.gif" alt="discovering IDOR → privilege escalation" width="900" />
-  <br/><sub><em>Placeholder — record an IDOR→privesc chain on a lab target.</em></sub>
-</p>
 
 ---
 
