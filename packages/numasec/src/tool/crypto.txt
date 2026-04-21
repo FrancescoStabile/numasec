@@ -1,0 +1,16 @@
+Cryptographic primitives for offensive & defensive workflows.
+
+Use when you need deterministic hashing, HMAC, encoding/decoding, JWT decoding, or quick symmetric/asymmetric operations without spawning external binaries.
+
+Operations (op):
+- hash       — { algo: "sha256"|"sha1"|"md5"|"sha512", data, encoding? } → digest
+- hmac       — { algo, key, data, encoding? } → hmac digest
+- encode     — { codec: "base64"|"base64url"|"hex"|"url"|"rot13", data }
+- decode     — { codec, data }
+- jwt_decode — { token } → { header, payload, signature_hex } (no verification)
+- xor        — { data, key, encoding?: "hex"|"base64" } → xor result
+
+All outputs are strings; `encoding` controls digest/output form (default hex).
+Inputs that look like binary should be passed base64-encoded; specify `input_encoding: "base64"` to decode before hashing.
+
+This tool does NOT sign or verify arbitrary payloads with keys from disk. For that, use `bash` with `openssl`/`minisign`/`cosign`.

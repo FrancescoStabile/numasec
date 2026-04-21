@@ -1,0 +1,22 @@
+Make raw HTTP requests with full control over method, headers, body, and cookies for security testing and API analysis.
+
+Parameters:
+- url: Target URL to request
+- method: HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+- headers: Custom request headers as key-value pairs
+- body: Request body for POST/PUT/PATCH
+- cookies: Raw Cookie header string
+- timeout: Request timeout in milliseconds (default 15000)
+- follow_redirects: Whether to follow HTTP redirects (default true)
+
+Returns status code, response headers, body preview (truncated to 8000 chars), elapsed time, redirect chain, and a curl replay command for reproduction.
+
+Use this tool for:
+- Sending crafted requests during security assessments
+- Testing API endpoints with custom headers and payloads
+- Verifying vulnerabilities with proof-of-concept requests
+- Checking server behavior with malformed or edge-case input
+- Probing authentication and authorization boundaries
+- Testing CORS, CSRF, and header-injection scenarios
+
+Each response includes a ready-to-use curl command that exactly reproduces the request, making it easy to share findings and build reproducible test cases.

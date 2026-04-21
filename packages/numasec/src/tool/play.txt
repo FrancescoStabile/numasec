@@ -1,0 +1,15 @@
+Run a named **play** — a reusable, deterministic pipeline of tool/skill calls — and get back an ordered trace the agent must execute step by step.
+
+A play is the "scalpel" between a single tool and a general-purpose agent. Each play bundles the domain knowledge (which tools, in which order, with which args) so the operator can trigger a full recurring workflow with one call.
+
+Args:
+- id: play id (required). Available: web-surface, network-surface, appsec-triage, osint-target, ctf-warmup.
+- args: object of play-specific arguments (e.g. { target: "https://example.com" }).
+
+Behavior:
+- Looks up the play, validates required args, performs template substitution (`{{name}}` and `{{name|fallback}}`) and conditional filtering on its steps.
+- Returns a formatted trace listing each step (tool + args OR skill + brief) in execution order.
+- Does **not** invoke the referenced tools itself — you, the agent, execute each step by calling the named tool with the resolved args. Skill steps are executed via the `skill` tool with the given name.
+- If a referenced tool is not registered (e.g. `scanner` before T02 lands), report it and continue with the remaining steps.
+
+Permission: `play`.

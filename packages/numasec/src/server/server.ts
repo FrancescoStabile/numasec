@@ -1,0 +1,107 @@
+import { generateSpecs } from "hono-openapi"
+import { Hono } from "hono"
+import { adapter } from "#hono"
+import { MDNS } from "./mdns"
+import { lazy } from "@/util/lazy"
+import { AuthMiddleware, CompressionMiddleware, CorsMiddleware, ErrorMiddleware, LoggerMiddleware } from "./middleware"
+import { InstanceRoutes } from "./instance"
+import { initProjectors } from "./projectors"
+import { Log } from "@/util"
+import { Flag } from "@/flag/flag"
+
+// @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+globalThis.AI_SDK_LOG_WARNINGS = false
+
+initProjectors()
+
+export namespace Server {
+  const log = Log.create({ service: "server" })
+
+  export type Listener = {
+    hostname: string
+    port: number
+    url: URL
+    stop: (close?: boolean) => Promise<void>
+  }
+
+  export const Default = lazy(() => create({}))
+
+  function create(opts: { cors?: string[] }) {
+    const app = new Hono()
+    const runtime = adapter.create(app)
+
+    return {
+      app: app
+        .onError(ErrorMiddleware)
+        .use(AuthMiddleware)
+        .use(LoggerMiddleware)
+        .use(CompressionMiddleware)
+        .use(CorsMiddleware(opts))
+        .route("/", InstanceRoutes(runtime.upgradeWebSocket)),
+      runtime,
+    }
+  }
+
+  export async function openapi() {
+    // Build a fresh app with all routes registered directly so
+    // hono-openapi can see describeRoute metadata (`.route()` wraps
+    // handlers when the sub-app has a custom errorHandler, which
+    // strips the metadata symbol).
+    const { app } = create({})
+    const result = await generateSpecs(app, {
+      documentation: {
+        info: {
+          title: "numasec",
+          version: "1.0.0",
+          description: "numasec api",
+        },
+        openapi: "3.1.1",
+      },
+    })
+    return result
+  }
+
+  export let url: URL
+
+  export async function listen(opts: {
+    port: number
+    hostname: string
+    mdns?: boolean
+    mdnsDomain?: string
+    cors?: string[]
+  }): Promise<Listener> {
+    const built = create(opts)
+    const server = await built.runtime.listen(opts)
+
+    const next = new URL("http://localhost")
+    next.hostname = opts.hostname
+    next.port = String(server.port)
+    url = next
+
+    const mdns =
+      opts.mdns &&
+      server.port &&
+      opts.hostname !== "127.0.0.1" &&
+      opts.hostname !== "localhost" &&
+      opts.hostname !== "::1"
+    if (mdns) {
+      MDNS.publish(server.port, opts.mdnsDomain)
+    } else if (opts.mdns) {
+      log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
+    }
+
+    let closing: Promise<void> | undefined
+    return {
+      hostname: opts.hostname,
+      port: server.port,
+      url: next,
+      stop(close?: boolean) {
+        closing ??= (async () => {
+          if (mdns) MDNS.unpublish()
+          await server.stop(close)
+        })()
+        return closing
+      },
+    }
+  }
+}

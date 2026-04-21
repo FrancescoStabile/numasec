@@ -1,0 +1,50 @@
+name: bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: "space-separated scenarios (web-surface appsec-triage pwn)"
+        required: false
+        default: "web-surface appsec-triage pwn"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Run scenarios
+        working-directory: packages/numasec
+        env:
+          NUMASEC_BENCH_CI: "1"
+        run: |
+          set -e
+          for s in ${{ inputs.scenarios }}; do
+            echo "::group::scenario $s"
+            bun run script/bench/run.ts --scenario "$s" || echo "scenario $s failed (continuing)"
+            echo "::endgroup::"
+          done
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: packages/numasec/bench-results-*.json
+          if-no-files-found: warn

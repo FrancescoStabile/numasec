@@ -1,0 +1,34 @@
+---
+description: Hero one-shot — auto-create an operation, pick the right play, and hand off to the right default agent.
+---
+
+# /pwn $1
+
+The operator invoked **/pwn $1** — a zero-config offensive starter.
+
+Do exactly the following, in order:
+
+1. Classify the target (`$1`) yourself using these rules (no extra tool call needed):
+   - Matches `^https?://` → **URL**.
+   - Matches `^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?$` → **IP/CIDR**.
+   - Otherwise, if it looks like a bare domain (contains a dot, no scheme, no path) → **domain**.
+   - If none of the above, tell the operator the target shape is unclear and stop.
+
+2. Call the `pwn_bootstrap` tool with `{ target: "$1" }`. It will create and activate the operation and return `{ slug, kind, agent, playId }`. Trust that return value — do not reinterpret the kind yourself.
+
+3. Call the `play` tool with `{ id: <playId>, args: { target: "$1" } }`. Execute each step in the returned trace by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill. If a referenced tool is not registered, say so and continue with the remaining steps.
+
+4. Write findings into the active operation's `numasec.md` (Attempts / Findings sections) using `edit`/`write` as the play runs.
+
+5. When all steps are done, produce a short synthesis:
+   - What was found (3–6 bullets).
+   - What the next best action is (one line).
+   - End with this exact call-to-action line, verbatim:
+
+     `Next: /share to export, /report for the final document.`
+
+Rules:
+
+- Do not invent extra steps and do not skip declared ones without telling the operator.
+- Do not change the operation kind that `pwn_bootstrap` chose.
+- Do not run `/pwn` on a target whose shape you could not classify in step 1.

@@ -1,0 +1,34 @@
+import { Plugin } from "../plugin"
+import { Format } from "../format"
+import { File } from "../file"
+import { Snapshot } from "../snapshot"
+import * as Project from "./project"
+import * as Vcs from "./vcs"
+import { Bus } from "../bus"
+import { Command } from "../command"
+import { Instance } from "./instance"
+import { Log } from "@/util"
+import { FileWatcher } from "@/file/watcher"
+import * as Effect from "effect/Effect"
+
+export const InstanceBootstrap = Effect.gen(function* () {
+  Log.Default.info("bootstrapping", { directory: Instance.directory })
+  yield* Plugin.Service.use((svc) => svc.init())
+  yield* Effect.all(
+    [
+      Format.Service,
+      File.Service,
+      FileWatcher.Service,
+      Vcs.Service,
+      Snapshot.Service,
+    ].map((s) => Effect.forkDetach(s.use((i) => i.init()))),
+  ).pipe(Effect.withSpan("InstanceBootstrap.init"))
+
+  yield* Bus.Service.use((svc) =>
+    svc.subscribeCallback(Command.Event.Executed, async (payload) => {
+      if (payload.properties.name === Command.Default.INIT) {
+        Project.setInitialized(Instance.project.id)
+      }
+    }),
+  )
+}).pipe(Effect.withSpan("InstanceBootstrap"))

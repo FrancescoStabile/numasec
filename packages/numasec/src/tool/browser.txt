@@ -1,0 +1,37 @@
+Control a headless Chromium browser via Playwright for security testing of JavaScript-heavy applications, SPAs, and authenticated workflows.
+
+Actions:
+- navigate: Load a URL and capture page content, cookies, and network state
+- click: Click an element by CSS selector
+- fill: Fill a form field by CSS selector with a value
+- screenshot: Capture a full-page PNG screenshot
+- evaluate: Execute arbitrary JavaScript in the page context
+- get_cookies: Retrieve all cookies for the current browser context
+- dom_snapshot: Capture full DOM + structured summary (forms, links, scripts). Caches for dom_diff.
+- storage_snapshot: Read localStorage, sessionStorage, and cookies together
+- console_log: Return buffered console messages and page errors since session start
+- network_tab: Return buffered HTTP requests (method, status, URL, content-type, duration)
+- dom_diff: Diff current DOM against the previous dom_snapshot (added/removed lines)
+
+Parameters:
+- action: The browser action to perform
+- url: URL to navigate to (required for navigate, optional for others to pre-navigate)
+- selector: CSS selector for click/fill actions
+- value: Text value for fill, or JavaScript code for evaluate
+- timeout: Action timeout in milliseconds (default 30000)
+- headers: Custom HTTP headers to inject into all browser requests
+- cookies: Raw Cookie header string to seed the browser session
+- local_storage: Key-value pairs to seed into localStorage
+- session_storage: Key-value pairs to seed into sessionStorage
+- max_bytes: Output byte cap for dom_snapshot/console_log/network_tab/dom_diff (default 65536)
+- clear: Drain the console/network buffer after read
+
+Use this tool for:
+- Testing SPAs that require JavaScript rendering
+- Verifying DOM-based XSS by injecting payloads and observing execution
+- Filling and submitting forms programmatically
+- Testing authentication flows with cookie/token seeding
+- Capturing screenshots as evidence of security findings
+- Evaluating JavaScript to inspect page state or trigger behaviors
+
+Requires Playwright and Chromium binaries. For static pages, prefer http_request instead.

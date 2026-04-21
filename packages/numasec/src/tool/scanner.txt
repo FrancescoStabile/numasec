@@ -1,0 +1,61 @@
+Active recon scanner — pure-TypeScript adapters for web/network discovery.
+
+This tool drives the five in-repo scanner primitives under `src/scanner/`. It
+touches remote systems, so every invocation is **active reconnaissance** and
+should be treated as operator-approved activity (the default permission is
+`ask`). For passive recon, load the `passive-osint` skill instead of using
+this tool.
+
+When an operation is active, `target` is checked against the operation's
+`## Scope` block: out-of-scope targets are refused with an "out-of-scope"
+error. Missing scope produces a warning but does not block execution.
+
+Modes
+-----
+
+`crawl` — start from a URL, follow same-origin links, parse HTML, detect
+technologies, sitemap.xml, robots.txt, and OpenAPI/Swagger specs. Use when
+you need the application's URL surface and form inventory. Timeout 60s.
+
+Options: `maxUrls` (default 100), `maxDepth` (default 3), `timeout` per
+request in ms (default 10000).
+
+`dir-fuzz` — wordlist-based directory/file brute force against a base URL.
+Uses a built-in list targeting admin panels, API roots, actuator endpoints,
+backup/config files, and common CMS paths. Baselines custom 404s. Use when
+you suspect hidden content the crawler cannot discover. Timeout 60s.
+
+Options: `wordlist` (string[]), `extensions` (e.g. `["php","bak"]`),
+`concurrency` (default 10), `timeout` per request (default 10000),
+`filterStatus` (numbers to keep; default 200/201/204/301/302/307/308/401/403).
+
+`js` — fetch a URL, extract external JS bundles, and scan HTML + JS for
+API endpoints, SPA routes, embedded secrets (AWS/Google/Stripe/JWT/etc.),
+and chatbot SDKs. Use when the app is a SPA or when you need to harvest
+endpoints not exposed by the rendered HTML. Timeout 60s.
+
+Options: `maxFiles` (default 20), `timeout` per fetch (default 10000).
+
+`ports` — TCP connect scan with banner grab, no root required. Defaults to
+the top ~40 ports (web, DB, mail, SSH, RDP, caches, etc.). Use on a bare
+host to enumerate listening services. Timeout 30s.
+
+Options: `ports` (number[]), `concurrency` (default 50), `timeout` per
+connect in ms (default 3000).
+
+`service` — protocol-level probes on specific ports. Identifies HTTP, SSH,
+FTP, SMTP/POP3/IMAP, MySQL, PostgreSQL, Redis, MongoDB, Memcached, RDP.
+Use after `ports` to fingerprint what is actually listening. Timeout 15s.
+
+Options: `ports` (number[], required), `concurrency` (default 10),
+`timeout` per probe (default 5000).
+
+Target format
+-------------
+
+- `crawl`, `dir-fuzz`, `js`: absolute URL, e.g. `https://example.com`.
+- `ports`, `service`: bare host or `host:port` ignored — pass ports via
+  `options.ports`. IPs and hostnames both work.
+
+Output is JSON summarising whatever each mode found (URLs, paths, open
+ports, banners, secrets, etc.) plus timing.

@@ -1,0 +1,29 @@
+Bridge a finding to a fix. Given an observation id from the active operation,
+the tool returns a structured remediation payload the calling agent can turn
+into a reviewable patch.
+
+Args:
+  - observation_id: id of the observation to remediate (required)
+  - mode: "patch" (default) or "advice"
+
+Behaviour:
+  - Looks up the observation in the active operation's observation store.
+  - If mode = "advice" OR no file can be inferred from the observation's
+    evidence/note, returns structured advice:
+      { title, steps: string[], references: string[] }
+  - If a file reference can be extracted (evidence entries like
+    `path/file.ext` or `path/file.ext:line`, also scanned from the note),
+    reads the file and ±30 lines around the target line and returns:
+      { observation_id, file, line, patch, rationale, risk, tested: false }
+    The `patch` is a scaffold unified diff that inserts a single TODO marker
+    at the target site so the calling agent has something to refine. This
+    tool is intentionally deterministic — the agent composes the real fix
+    using the surrounding context returned here.
+
+Operator safety:
+  - The tool NEVER applies the patch. The operator reviews first.
+  - The tool refuses to look at any file under a fixture directory named
+    `juice-shop/` (or similar known canonical checkouts) — it returns advice
+    instead and asks the operator to provide a disposable clone path.
+
+Permission: ask (`remediate`).

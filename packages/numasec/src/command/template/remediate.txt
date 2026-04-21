@@ -1,0 +1,54 @@
+---
+description: Propose a reviewable fix for an observation (patch or advice).
+---
+
+# /remediate — close the loop from finding to fix
+
+The operator wants to turn an observation into a reviewable patch. Follow
+this procedure exactly.
+
+1. Parse `$ARGUMENTS` as `<observation_id> [advice|patch]`.
+   - Require at least one token — if missing, ask the operator for the
+     observation id and stop.
+   - Default mode is `patch`; any token `advice` overrides to advice mode.
+
+2. Call the `remediate` tool with `{ observation_id, mode }`.
+   - The tool is deterministic: it returns either a structured advice object
+     or a scaffold unified diff plus ±30 lines of surrounding context.
+   - If the tool reports `no_active_operation` or `observation_not_found`,
+     relay that verbatim and stop.
+
+3. If the tool returned advice only (no `patch` field):
+   - Present the advice (`title`, `steps[]`, `references[]`) to the operator.
+   - Do NOT try to fabricate a diff from thin air. Stop here.
+
+4. If the tool returned a scaffold patch:
+   - Read the `context.before` / `target` / `context.after` slice it gave
+     you.
+   - Replace the `// numasec: TODO remediate ...` marker in the scaffold with
+     a real, minimal fix derived from the observation's title + note + the
+     context. Keep the diff tight — no unrelated churn.
+   - Present the refined unified diff, the `rationale`, and the `risk` level.
+
+5. **Fixture safety (hard rule).** Never modify a canonical fixture checkout
+   in place. If the workspace contains a directory like `./juice-shop/`,
+   `./webgoat/`, `./dvwa/`, or `./bwapp/` and the patch would touch it,
+   refuse and ask the operator to provide a disposable clone path
+   (`git clone <upstream> /tmp/disposable-<slug>`). The remediate tool
+   already refuses in this case — surface that refusal to the operator.
+
+6. **Disposable-branch workflow.** Before applying, always use a throwaway
+   branch on a disposable clone:
+   - `git checkout -b numasec/remediate-<observation_id>`
+   - Never apply on `main`/`develop` or the operator's active branch without
+     explicit consent.
+   - Use the `bash` tool (behind ask permission) to offer, in order:
+     `git status`, `git checkout -b numasec/remediate-<observation_id>`,
+     `git apply --check <patch-file>`, `git apply <patch-file>`,
+     `git commit -m "remediate <observation_id>"`.
+   - Stop and wait for the operator to confirm before each destructive step.
+
+7. Do NOT apply the patch without explicit operator consent. Do NOT push.
+   Do NOT open a PR on their behalf unless they say so.
+
+Input: $ARGUMENTS

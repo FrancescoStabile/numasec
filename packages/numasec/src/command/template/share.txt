@@ -1,0 +1,31 @@
+---
+description: Bundle the active operation into a shareable, tamper-evident tarball.
+---
+
+# /share — hand-off the active operation
+
+The operator wants to hand off the current engagement as a single archive.
+Follow this procedure exactly.
+
+1. Parse `$ARGUMENTS` for optional flags (order-independent, whitespace-separated):
+   - `--no-redact` → pass `{ redact: false }` to the `share` tool.
+   - `--sign`      → pass `{ sign: true }` to the `share` tool.
+   - anything else → ignore.
+   Default is `{ redact: true, sign: false }`.
+2. Call the `share` tool with those arguments. It reads the active operation
+   via `Operation.activeSlug()`, copies the fascicule + evidence + reports +
+   deliverable manifest into a staging dir, optionally redacts text content,
+   and emits `<workspace>/.numasec/operation/<slug>/share-<ts>.tar.gz`.
+3. Report the result to the operator in this order:
+   - **Archive** — one line with the tarball path and size in bytes.
+   - **Integrity** — `sha256: <first 16 chars>…`.
+   - **Signed** — `yes (<scheme>)` or `no`; if `sign: true` was requested but
+     signing failed, quote the warning the tool returned (no key, binary
+     missing, etc.).
+   - **Redacted** — `yes` or `no`.
+4. If the tool reports no active operation, tell the operator to run `/pwn`
+   first — do not try to create one implicitly.
+5. Do NOT shell out (`tar`, `gpg`, `gh gist`) yourself. The `share` tool is
+   the single source of truth for this slash command.
+
+Input: $ARGUMENTS

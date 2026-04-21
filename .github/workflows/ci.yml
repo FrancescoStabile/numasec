@@ -2,17 +2,10 @@ name: CI
 
 on:
   push:
-    branches:
-      - dev
-      - main
-      - "release-*"
-      - "hotfix-*"
+    branches: [develop, main, "release-*", "release/*", "hotfix-*", "hotfix/*"]
   pull_request:
-    branches:
-      - dev
-      - main
-      - "release-*"
-      - "hotfix-*"
+    branches: [develop, main, "release/*"]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -22,33 +15,40 @@ env:
   HUSKY: "0"
 
 jobs:
-  ts-typecheck:
-    name: TypeScript Type Check
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.11"
-      - run: bun install --frozen-lockfile
-        working-directory: agent
-      - run: bun run typecheck
-        working-directory: agent
+      - uses: ./.github/actions/setup-bun
+      - run: bun typecheck
 
-  ts-test:
-    name: TypeScript Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: "1.3.11"
-      - run: bun install --frozen-lockfile
-        working-directory: agent
+          node-version: "24"
+      - uses: ./.github/actions/setup-bun
+      - run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
       - run: bun test --timeout 30000
-        working-directory: agent/packages/numasec
+        working-directory: packages/numasec
+        env:
+          NUMASEC_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
   build:
     name: Build
@@ -56,24 +56,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.11"
-      - run: bun install --frozen-lockfile
-        working-directory: agent
+      - uses: ./.github/actions/setup-bun
       - run: bun run build
-        working-directory: agent/packages/numasec
-
-  release-proof:
-    name: Release Proof
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.11"
-      - run: bun install --frozen-lockfile
-        working-directory: agent
-      - run: bun run test:release-proof
-        working-directory: agent/packages/numasec
+        working-directory: packages/numasec

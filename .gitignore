@@ -1,41 +1,38 @@
-# Environment
-.env
-
-# Generated artifacts
-*.sarif
-*.kbpack
-*.log
-
-# Local / editor
-.sentrysec/
-.claude/
-CLAUDE.md
-.codelens/
-.mcp.json
-.vscode/
 .DS_Store
+node_modules
+.worktrees
+.sst
+.env
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+dist
+ts-dist
+.turbo
+**/.serena
+.serena/
+/result
+refs
+Session.vim
+a.out
+target
+.scripts
+.direnv/
 
-# Internal docs (not for public repo)
-FORK_PRD.md
+# Local dev files
+UPCOMING_CHANGELOG.md
+logs/
+*.bun-build
+tsconfig.tsbuildinfo
 
-# Agent (TypeScript TUI) build artifacts
-agent/node_modules/
-agent/.turbo/
-agent/dist/
-agent/ts-dist/
-agent/**/*.tsbuildinfo
+# Runtime artifacts
+session.json
+/numasec.json
+.numasec/
+.playwright-browsers/
 
-# Agent upstream docs (not part of numasec)
-agent/packages/docs/
-agent/packages/console/app/src/routes/docs/
-agent/packages/web/src/content/docs/
-sessions.db
-package.json
-docs/ROADMAP.md
-docs/PRD.md
-
-# Local dev
-hardening/
-vision/
-install.local.sh
-.numasec-local/
+# Local notes (agent scratchpad)
+notes/
