@@ -104,6 +104,16 @@ function errorTool(parts: MessageV2.Part[]) {
   return part?.state.status === "error" ? (part as ErrorToolPart) : undefined
 }
 
+const waitFor = <A>(check: () => Effect.Effect<A | undefined>, message: string) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 100; i++) {
+      const value = yield* check()
+      if (value !== undefined) return value
+      yield* Effect.sleep(50)
+    }
+    throw new Error(message)
+  })
+
 const mcp = Layer.succeed(
   MCP.Service,
   MCP.Service.of({
@@ -1326,7 +1336,23 @@ unix(
 
           const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
           yield* llm.wait(1)
-          yield* Effect.sleep(150)
+          yield* waitFor(
+            () =>
+              sessions.messages({ sessionID: chat.id }).pipe(
+                Effect.map((msgs) =>
+                  msgs
+                    .findLast((msg) => msg.info.role === "assistant")
+                    ?.parts.find(
+                      (part) =>
+                        part.type === "tool" &&
+                        part.state.status === "running" &&
+                        typeof part.state.metadata?.output === "string" &&
+                        part.state.metadata.output.startsWith("..."),
+                    ),
+                ),
+              ),
+            "timed out waiting for bash metadata truncation preview",
+          )
           yield* prompt.cancel(chat.id)
 
           const exit = yield* Fiber.await(run)

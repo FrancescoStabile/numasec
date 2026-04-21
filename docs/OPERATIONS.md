@@ -26,36 +26,40 @@ This design is deliberately boring. No knowledge graph. No event store. No extra
         └── <slug>/
             ├── numasec.md            # the fascicule (auto-loaded)
             ├── evidence/             # attachments the agent drops (screenshots, captures)
-            └── report-<ts>.md        # outputs of /report (coming in 1.2.1)
+            ├── share-<ts>.tar.gz     # outputs of /share
+            └── deliverable/          # reserved for generated deliverables
 ```
 
 The skeleton written at `/operations new` looks like:
 
 ```markdown
 # Operation: <label>
-<!-- meta: kind: pentest  target: https://example.com -->
+kind: pentest · target: https://example.com · started: 2026-04-21
 
 ## Scope
-- in: https://example.com/*
-- out: https://example.com/admin/*
+- in: example.com
+- out:
 
-## Stack
--
+## Stack & Endpoints
+_nothing learned yet — will populate as the agent probes_
 
-## Defenses
--
+## Defenses observed
+_nothing observed yet_
 
 ## Findings
-- [proposed] XSS in search param  ← evidence/2026-04-17-xss.png
+_none yet_
 
 ## Attempts
--
+_none yet_
 
 ## Todos
-- [ ]
+_none yet_
 ```
 
-The `## Scope` block is parsed by the boundary guard: lines like `- in: <glob>` / `- out: <glob>` become allow/deny patterns for `http_request` and `webfetch`. No scope block ⇒ everything allowed.
+The `## Scope` block is parsed by the boundary guard: lines like `- in: <pattern>`
+and `- out: <pattern>` become allow and deny patterns for the active engagement.
+When `/opsec strict` is enabled, these patterns gate browser, HTTP, and other
+network touching activity.
 
 ## Finding convention
 
@@ -68,7 +72,8 @@ This keeps the agent's write surface wide (fast, no approval friction) while anc
 ## TUI flow
 
 - `/operations` → dialog listing ops with a `+ New operation` entry. Empty workspace → two-step wizard (label → kind).
-- Kinds: `pentest`, `ctf`, `bughunt`, `osint`, `research`. Purely cosmetic — same file format under all of them.
+- Kinds: `pentest`, `appsec`, `osint`, `hacking`, `bughunt`, `ctf`, `research`.
+- The kind selects the default agent for the operation. `bughunt` maps to `pentest`, `ctf` maps to `hacking`, `research` maps to `security`.
 - Top-of-session banner shows the active op's glyph, label, kind, target, line count, and "updated Xm ago".
 - Close the app, reopen tomorrow, open a new session in the same workspace: the banner is back, the file is back, the agent knows what you did yesterday.
 
@@ -86,22 +91,8 @@ numasec operation archive <slug> # deactivate (files stay on disk)
 
 The prompt tells the agent to keep `numasec.md` under ~1000 lines and summarise the oldest `## Attempts` entries when it grows. Large tool outputs go under `evidence/` and are linked by relative path rather than inlined.
 
-## Dismantling
+## Why the format matters
 
-If this feature proves not useful, removing it is a one-day job:
-
-1. Delete `packages/numasec/src/core/operation/`.
-2. Revert `packages/numasec/src/core/boundary/guard.ts` to its pre-1.2.0 version (plain pass-through).
-3. Revert `packages/numasec/src/session/instruction.ts` — drop the `numasec.md` auto-injection.
-4. Remove the "Operation memory" block from `prompt/default.txt`, `prompt/kimi.txt`, `prompt/trinity.txt`.
-5. Delete `OperationBanner`, `DialogOperation`, and their two wire-up sites.
-6. `rm -rf .numasec/operation/` in any workspace you want to clean.
-
-No migration, no schema versioning, no data loss concerns — the feature is just a file and a ~200-line namespace.
-
-## Roadmap
-
-1.2.1 will add:
-- Sidebar live preview of the active `numasec.md`.
-- `/report` slash — LLM reshape of `numasec.md` into a client-ready `report-<ts>.md`.
-- Home-screen one-time suggestion when opening a workspace with no active op.
+The operation file is intentionally boring. No event store, no hidden database,
+no proprietary sync layer. The state is a markdown file the operator can open,
+edit, diff, archive, or delete without asking numasec for permission.

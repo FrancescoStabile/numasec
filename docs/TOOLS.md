@@ -1,68 +1,71 @@
-# numasec — Tool Reference (v1.1.5 Launch Identity)
+# numasec Tool Reference
 
-This is a quick reference of the primitive tools shipped in the numasec core. Every
-tool is LLM-friendly: minimal schema, no fragile output parsers, no hidden state
-beyond per-session buffers. The agent reads raw tool output and reasons over it.
+This page describes the built in tool palette that ships with numasec 1.1.5.
+These are the tool ids the agents actually see at runtime.
 
-## File & code
+## File and code tools
 
-- **read / write / edit / multiedit / apply_patch** — filesystem primitives
-- **grep / glob / codesearch** — search primitives
+- `read`, `write`, `edit`, `patch`
+- `glob`, `grep`, `code`
+- `bash`
 
-## Network
+These are the basic filesystem and search primitives. `bash` is still the escape
+hatch when you want to drive binaries already installed on the machine.
 
-- **http_request** — HTTP calls with scope boundary guard
-- **webfetch** — fetch + markdown conversion for reading web pages
-- **websearch** — web search (provider-backed)
-- **net** *(new)* — raw TCP/UDP send + banner grab (one-shot; no interactive shells)
+## Session and orchestration tools
 
-## Browser (Playwright)
+- `task`
+- `todo`
+- `skill`
+- `fetch`
+- `search`
+- `question` when the current client allows operator prompts
+- `plan` when experimental plan mode is enabled in the CLI
 
-- **browser** — one tool, many actions:
-  - `navigate`, `click`, `fill`, `screenshot`, `evaluate`, `get_cookies`
-  - *(new in 1.1.5)* `dom_snapshot`, `storage_snapshot`, `console_log`, `network_tab`, `dom_diff`
+These tools keep long sessions usable: background work, planning, web fetch,
+web search, code search, and skill loading.
 
-## Crypto & encoding
+## Security primitives
 
-- **crypto** *(new)* — `hash`, `hmac`, `encode`, `decode`, `jwt_decode`, `xor`
-  - Algorithms: sha1/sha256/sha384/sha512/md5 + common HMAC variants
-  - Codecs: base64 / hex / url / rot13
+- `httprequest`
+- `browser`
+- `scanner`
+- `crypto`
+- `net`
+- `vault`
+- `interact`
+- `methodology`
+- `cve`
 
-## Identity & secrets
+In practice, this is the core of numasec.
 
-- **secrets** *(new)* — plain-JSON credential vault at `$XDG_CONFIG_HOME/numasec/secrets.json`
-  - `set`, `get`, `list`, `remove`
-  - NOTE: stored in plain JSON in v1. Encrypted vault planned for a later milestone.
-- **auth_as** *(new)* — auth profiles at `$XDG_CONFIG_HOME/numasec/auth-profiles.json`
-  - `set` a named profile (`basic`, `bearer`, `cookie`, `form`) with credentials payload
-  - Referenced by name from `http_request` / `browser` to replay authenticated sessions
+`httprequest` handles raw HTTP with auth, cookies, redirects, and replay.
+`browser` is a Playwright driven browser for navigation, interaction, and state
+inspection. `scanner` covers built in surface mapping primitives such as crawl,
+dir fuzz, JavaScript analysis, port scan, service probe, and banner grabs.
+`vault` replaces the old split between auth and secrets storage with one place
+for local credentials and profiles.
 
-## Recon & OSINT
+## Engagement workflow tools
 
-- **recon** *(new)* — unified wrapper for external recon/OSINT binaries. One tool, twelve dispatchable backends, no output parsing.
-  - Web: `nuclei`, `ffuf`, `katana`, `sqlmap`, `httpx`, `subfinder`
-  - OSINT: `theharvester`, `sherlock`, `maigret`, `shodan`, `whois`, `holehe`
-  - Returns raw stdout/stderr + exit code + duration. Returns a clear "Binary not found" if missing on PATH.
+- `doctor`
+- `play`
+- `pwn_bootstrap`
+- `opsec`
+- `share`
+- `remediate`
 
-## Out-of-band
+These are the tools that turn the primitive palette into an operator workflow.
 
-- **interact** *(new)* — OOB callback generator
-  - `generate`: returns a callback URL (interactsh if `interactsh-client` on PATH, else `webhook.site` fallback)
-  - `poll`: returns captured hits (DNS/HTTP) since last poll
-  - `close`: tear down the session
-  - Required for SSRF, blind XSS, DNS-based OOB verification
+- `doctor` checks runtime, workspace, CVE bundle, vault mode, and missing local tools
+- `play` expands a reusable workflow into an ordered step trace
+- `pwn_bootstrap` creates and activates an operation, then selects the right play and default agent
+- `opsec` inspects or changes the operation guard level
+- `share` builds a redacted handoff archive for the active operation
+- `remediate` turns an observation into reviewable advice or patch scaffolding
 
-## Orchestration
+## A note on external binaries
 
-- **task / todowrite / skill / question / plan_exit** — session + flow primitives
-- **bash** — arbitrary shell (scope-guarded for known network commands)
-- **observe_surface** — kind-specific surface enumeration helper
-
-## Notes for agent authors
-
-- Prefer primitives over shelling out to ad-hoc tools; when the primitive doesn't
-  cover a case, fall back to `bash`.
-- `secrets` values are never emitted in transcript plain-text in production modes —
-  the tool returns them only when explicitly asked via `get`, and the operator
-  should treat the transcript accordingly.
-- `net` and `interact` require operator permission per invocation via `ctx.ask`.
+numasec does not bundle tools like `nmap`, `sqlmap`, `ffuf`, `nuclei`, or Burp.
+It can still use them through `bash`, and `/doctor` will tell you what is present
+or missing on your machine.

@@ -38,8 +38,8 @@ keystroke.
 No fragile parsers wrapping every CLI tool, no hand‑coded chain state machines, no
 proprietary policies layered over the model provider, no telemetry, no cloud backend,
 no auto‑updating taxonomies that drift overnight. Capability lives in primitives the
-operator already understands: `bash`, `http_request`, `browser`, `interact`, `auth_as`,
-`secrets`, `crypto`, `net`. The model decides; the operator confirms.
+operator already understands: `bash`, `httprequest`, `browser`, `scanner`, `interact`,
+`vault`, `crypto`, `net`, `methodology`, `cve`. The model decides; the operator confirms.
 
 ---
 

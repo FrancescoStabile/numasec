@@ -66,7 +66,7 @@ Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
   - `packages/numasec`: Core business logic, security agents, TUI & server.
   - `packages/numasec/src/cli/cmd/tui/`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/numasec/src/agent/`: Agent system (security, pentest, appsec, osint, hacking)
-  - `packages/numasec/src/tool/`: Built-in tools (bash, edit, grep, glob, http_request, browser, etc.)
+  - `packages/numasec/src/tool/`: Built-in tools (bash, edit, grep, glob, httprequest, browser, scanner, vault, etc.)
   - `packages/plugin`: Source for `@numasec/plugin`
 
 ### Understanding bun dev vs numasec
@@ -189,7 +189,7 @@ Examples:
 - `fix: resolve crash on startup`
 - `feat: add dark mode support`
 - `feat(app): add dark mode support`
-- `fix(desktop): resolve crash on startup`
+- `fix(numasec): resolve startup crash on Fedora`
 - `chore: bump dependency versions`
 
 ### Style Preferences
