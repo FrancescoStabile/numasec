@@ -10,10 +10,10 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 FROM base AS build-amd64
-COPY dist/numasec-linux-x64-baseline-musl/bin/numasec /usr/local/bin/numasec
+COPY packages/numasec/dist/numasec-linux-x64-baseline-musl/bin/numasec /usr/local/bin/numasec
 
 FROM base AS build-arm64
-COPY dist/numasec-linux-arm64-musl/bin/numasec /usr/local/bin/numasec
+COPY packages/numasec/dist/numasec-linux-arm64-musl/bin/numasec /usr/local/bin/numasec
 
 ARG TARGETARCH
 FROM build-${TARGETARCH}
