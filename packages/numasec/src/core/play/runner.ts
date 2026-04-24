@@ -4,15 +4,25 @@ import {
   type Step,
   type ToolStep,
   type SkillStep,
+  type NormalizedStep,
+  type NormalizedToolStep,
+  type NormalizedSkillStep,
+  type PlayRequirement,
   isConditional,
   isToolStep,
   isSkillStep,
+  isNormalizedStep,
 } from "./play"
 import { PlayRegistry } from "./registry"
 
+export type PlayEnvironment = {
+  binaries: Set<string>
+  runtimes: Partial<Record<string, boolean>>
+}
+
 export type TraceEntry =
-  | { kind: "tool"; tool: string; args: Record<string, unknown> }
-  | { kind: "skill"; skill: string; brief: string }
+  | { kind: "tool"; tool: string; args: Record<string, unknown>; label?: string }
+  | { kind: "skill"; skill: string; brief: string; label?: string }
 
 export type RunResult = {
   play: Play
@@ -69,6 +79,34 @@ function evalCondition(expr: string, args: Record<string, unknown>): boolean {
   return !(v === undefined || v === null || v === "" || v === false)
 }
 
+function resolveNormalizedStep(step: NormalizedStep, args: Record<string, unknown>): TraceEntry {
+  if (step.kind === "tool") {
+    return {
+      kind: "tool",
+      label: step.label,
+      tool: step.tool,
+      args: substitute(step.args, args) as Record<string, unknown>,
+    }
+  }
+  return { kind: "skill", label: step.label, skill: step.skill, brief: substituteString(step.brief, args) }
+}
+
+// Returns one representative unmet requirement for skip-reason reporting.
+// Required ones take priority; if none, the first unmet optional one is returned.
+function findUnmetRequirement(
+  requires: PlayRequirement[],
+  env: PlayEnvironment,
+): PlayRequirement | undefined {
+  const isUnmet = (req: PlayRequirement) => {
+    if (req.kind === "runtime") return !env.runtimes[req.id]
+    if (req.kind === "binary") return !env.binaries.has(req.id)
+    return false
+  }
+  const requiredUnmet = requires.find((req) => req.missingAs === "required" && isUnmet(req))
+  if (requiredUnmet) return requiredUnmet
+  return requires.find((req) => req.missingAs === "optional" && isUnmet(req))
+}
+
 function resolveStep(step: Step, args: Record<string, unknown>): TraceEntry {
   if (isToolStep(step)) {
     const resolved = substitute(step.args, args) as Record<string, unknown>
@@ -88,7 +126,11 @@ function validateArgs(play: Play, args: Record<string, unknown>): string[] {
 }
 
 export namespace PlayRunner {
-  export function run(input: { id: string; args?: Record<string, unknown> }): RunResult {
+  export function run(input: {
+    id: string
+    args?: Record<string, unknown>
+    environment?: PlayEnvironment
+  }): RunResult {
     const play = PlayRegistry.get(input.id)
     if (!play) throw new PlayNotFoundError(input.id)
 
@@ -96,10 +138,20 @@ export namespace PlayRunner {
     const missing = validateArgs(play, args)
     if (missing.length > 0) throw new PlayArgError(input.id, missing)
 
+    const env: PlayEnvironment = input.environment ?? { binaries: new Set<string>(), runtimes: {} }
     const trace: TraceEntry[] = []
     const skipped: { step: PlayStep; reason: string }[] = []
 
     for (const step of play.steps) {
+      if (isNormalizedStep(step)) {
+        const unmet = findUnmetRequirement(step.requires ?? [], env)
+        if (unmet) {
+          skipped.push({ step, reason: `missing ${unmet.missingAs} capability: ${unmet.label}` })
+          continue
+        }
+        trace.push(resolveNormalizedStep(step, args))
+        continue
+      }
       if (isConditional(step)) {
         if (!evalCondition(step.if, args)) {
           skipped.push({ step, reason: `if "${step.if}" was falsy` })
@@ -128,11 +180,11 @@ export namespace PlayRunner {
     lines.push("## Steps (execute in order)")
     result.trace.forEach((entry, i) => {
       if (entry.kind === "tool") {
-        lines.push(`${i + 1}. tool: ${entry.tool}`)
+        lines.push(`${i + 1}. tool: ${entry.tool}${entry.label ? ` — ${entry.label}` : ""}`)
         lines.push(`   args: ${JSON.stringify(entry.args)}`)
         return
       }
-      lines.push(`${i + 1}. skill: ${entry.skill}`)
+      lines.push(`${i + 1}. skill: ${entry.skill}${entry.label ? ` — ${entry.label}` : ""}`)
       lines.push(`   brief: ${entry.brief}`)
     })
     if (result.skipped.length > 0) {
@@ -148,4 +200,4 @@ export namespace PlayRunner {
   }
 }
 
-export type { Step, ToolStep, SkillStep, PlayStep }
+export type { Step, ToolStep, SkillStep, PlayStep, NormalizedStep, NormalizedToolStep, NormalizedSkillStep }

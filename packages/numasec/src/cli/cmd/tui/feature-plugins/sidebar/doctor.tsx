@@ -38,6 +38,16 @@ function View(props: { api: TuiPluginApi }) {
     if (!r) return { present: 0, total: 0 }
     return { present: r.binaries.filter((b) => b.present).length, total: r.binaries.length }
   })
+  const capability = createMemo(() => {
+    const report = ready()?.report.capability
+    if (!report) return { playsReady: 0, playsTotal: 0, verticalsReady: 0, verticalsTotal: 0 }
+    return {
+      playsReady: report.plays.filter((item) => item.status === "ready").length,
+      playsTotal: report.plays.length,
+      verticalsReady: report.verticals.filter((item) => item.status === "ready").length,
+      verticalsTotal: report.verticals.length,
+    }
+  })
   const nodeVersion = createMemo(() => {
     const v = ready()?.report.runtime.node
     if (!v) return ""
@@ -52,6 +62,7 @@ function View(props: { api: TuiPluginApi }) {
     if (ratio >= 0.25) return theme().warning
     return theme().error
   })
+  const browserOk = createMemo(() => ready()?.report.browser.present === true)
   const vaultOk = createMemo(() => ready()?.report.vault.present === true)
   const wsOk = createMemo(() => ready()?.report.workspace.writable !== false)
   const opsecStrict = createMemo(() => ready()?.opsec === "strict")
@@ -84,6 +95,17 @@ function View(props: { api: TuiPluginApi }) {
             {nodeVersion()}
           </text>
         </box>
+        <box flexDirection="row" gap={1}>
+          <text fg={browserOk() ? theme().success : theme().warning} wrapMode="none">
+            browser {browserOk() ? "✓" : "·"}
+          </text>
+          <text fg={theme().textMuted} wrapMode="none">
+            · plays {capability().playsReady}/{capability().playsTotal}
+          </text>
+        </box>
+        <text fg={theme().textMuted} wrapMode="none">
+          verticals {capability().verticalsReady}/{capability().verticalsTotal}
+        </text>
         <box flexDirection="row" gap={1}>
           <text fg={vaultOk() ? theme().success : theme().textMuted} wrapMode="none">
             vault {vaultOk() ? "✓" : "·"}

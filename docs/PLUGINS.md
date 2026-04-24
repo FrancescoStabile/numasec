@@ -8,9 +8,8 @@ boots. Depending on what the package exports, a plugin can register tools,
 themes, prompts, or other runtime extensions through the `@numasec/plugin`
 surface.
 
-This project started from an opencode fork, so the plugin architecture inherits
-that lineage, but the source of truth for numasec contributors is this repo and
-the types published under `@numasec/plugin`.
+The source of truth for numasec contributors is this repo and the types
+published under `@numasec/plugin`.
 
 ### Namespace policy
 

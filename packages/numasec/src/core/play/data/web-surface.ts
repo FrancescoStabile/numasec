@@ -4,51 +4,75 @@ const play: Play = {
   id: "web-surface",
   name: "Web Surface Map",
   description:
-    "Map the attack surface of a URL: crawl the site, analyse loaded JS, run a light dir-fuzz, and enumerate subdomains via passive OSINT. Produces endpoints, forms, JS secrets, subdomains.",
+    "Map the attack surface of a URL: crawl the site, analyse loaded JS, run a light dir-fuzz, enumerate subdomains via passive OSINT, and optionally capture browser passive findings. Produces endpoints, forms, JS secrets, subdomains.",
   args: [
     { name: "target", required: true, type: "string", description: "root URL to survey (e.g. https://example.com)" },
     {
       name: "domain",
       required: false,
       type: "string",
-      description: "apex domain for subdomain enumeration (defaults to hostname of target)",
+      description: "apex domain for subdomain enumeration (optional)",
     },
   ],
   steps: [
     {
+      kind: "skill",
+      label: "enumerate passive subdomains",
       skill: "passive-osint",
-      brief:
-        "enumerate subdomains of {{domain}} using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
+      brief: "enumerate subdomains of {{domain|target hostname}} using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
     },
     {
-      tool: "browser",
-      args: {
-        action: "crawl",
-        url: "{{target}}",
-        depth: 2,
-        note: "collect endpoints, forms, and referenced JS URLs",
-      },
-    },
-    {
-      tool: "bash",
-      args: {
-        command:
-          "echo 'js-analyze: fetch each JS URL from crawl, grep for secrets (AWS_|API_KEY|TOKEN|password|bearer), endpoints (/api/, fetch\\(, axios)'",
-        description: "JS secrets & endpoint extraction guidance",
-      },
-    },
-    {
+      kind: "tool",
+      label: "crawl target",
       tool: "scanner",
       args: {
-        kind: "dir-fuzz",
+        mode: "crawl",
         target: "{{target}}",
-        profile: "light",
-        note: "top-1k wordlist, 10 req/s, no recursion",
+        options: {
+          maxUrls: 50,
+          maxDepth: 2,
+          timeout: 10_000,
+        },
       },
     },
     {
-      tool: "methodology",
-      args: { framework: "wstg", phase: "WSTG-INFO" },
+      kind: "tool",
+      label: "JavaScript endpoint extraction",
+      tool: "scanner",
+      args: {
+        mode: "js",
+        target: "{{target}}",
+        options: {
+          maxFiles: 20,
+          timeout: 10_000,
+        },
+      },
+    },
+    {
+      kind: "tool",
+      label: "Light web dir-fuzz",
+      tool: "scanner",
+      args: {
+        mode: "dir-fuzz",
+        target: "{{target}}",
+        options: {
+          concurrency: 10,
+          timeout: 10_000,
+          wordlist: ["common"],
+          extensions: ["php", "txt", "js"],
+          filterStatus: [200, 201, 204, 301, 302, 307, 308, 401, 403],
+        },
+      },
+    },
+    {
+      kind: "tool",
+      label: "Browser passive findings",
+      tool: "browser",
+      args: {
+        action: "passive_appsec",
+        url: "{{target}}",
+      },
+      requires: [{ kind: "runtime", id: "browser", label: "browser runtime", missingAs: "optional" }],
     },
   ],
 }

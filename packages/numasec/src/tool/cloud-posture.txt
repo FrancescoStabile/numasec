@@ -1,0 +1,1 @@
+Run an AWS-first cloud posture check through the optional prowler adapter. Use this when you want a bounded posture sweep of the currently configured AWS auth context without dropping to an opaque bash wrapper.

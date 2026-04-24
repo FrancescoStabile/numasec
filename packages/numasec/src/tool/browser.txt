@@ -12,10 +12,11 @@ Actions:
 - console_log: Return buffered console messages and page errors since session start
 - network_tab: Return buffered HTTP requests (method, status, URL, content-type, duration)
 - dom_diff: Diff current DOM against the previous dom_snapshot (added/removed lines)
+- passive_appsec: Navigate to a URL and return structured passive findings for storage, cookies, headers, CSRF heuristics, mixed content, and browser-side errors
 
 Parameters:
 - action: The browser action to perform
-- url: URL to navigate to (required for navigate, optional for others to pre-navigate)
+- url: URL to navigate to (required for navigate and passive_appsec, optional for others to pre-navigate)
 - selector: CSS selector for click/fill actions
 - value: Text value for fill, or JavaScript code for evaluate
 - timeout: Action timeout in milliseconds (default 30000)
@@ -23,7 +24,7 @@ Parameters:
 - cookies: Raw Cookie header string to seed the browser session
 - local_storage: Key-value pairs to seed into localStorage
 - session_storage: Key-value pairs to seed into sessionStorage
-- max_bytes: Output byte cap for dom_snapshot/console_log/network_tab/dom_diff (default 65536)
+- max_bytes: Output byte cap for dom_snapshot/console_log/network_tab/dom_diff/passive_appsec (default 65536)
 - clear: Drain the console/network buffer after read
 
 Use this tool for:

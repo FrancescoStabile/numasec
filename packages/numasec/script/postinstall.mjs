@@ -88,6 +88,7 @@ async function main() {
       fs.copyFileSync(binaryPath, target)
     }
     fs.chmodSync(target, 0o755)
+    console.log("numasec installed. Run `numasec` to start.")
   } catch (error) {
     console.error("Failed to setup numasec binary:", error.message)
     process.exit(1)

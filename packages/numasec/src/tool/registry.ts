@@ -36,6 +36,10 @@ import { ScannerTool } from "./scanner"
 import { OpsecTool } from "./opsec"
 import { RemediateTool } from "./remediate"
 import { ShareTool } from "./share"
+import { CloudPostureTool } from "./cloud-posture"
+import { ContainerSurfaceTool } from "./container-surface"
+import { IacTriageTool } from "./iac-triage"
+import { BinaryTriageTool } from "./binary-triage"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util"
 import * as Truncate from "./truncate"
@@ -141,6 +145,10 @@ export const layer: Layer.Layer<
     const opsecTool = yield* OpsecTool
     const shareTool = yield* ShareTool
     const remediateTool = yield* RemediateTool
+    const cloudPostureTool = yield* CloudPostureTool
+    const containerSurfaceTool = yield* ContainerSurfaceTool
+    const iacTriageTool = yield* IacTriageTool
+    const binaryTriageTool = yield* BinaryTriageTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -233,6 +241,10 @@ export const layer: Layer.Layer<
           share: Tool.init(shareTool),
           methodology: Tool.init(methodologyTool),
           remediate: Tool.init(remediateTool),
+          cloud_posture: Tool.init(cloudPostureTool),
+          container_surface: Tool.init(containerSurfaceTool),
+          iac_triage: Tool.init(iacTriageTool),
+          binary_triage: Tool.init(binaryTriageTool),
         })
 
         return {
@@ -268,6 +280,10 @@ export const layer: Layer.Layer<
             tool.share,
             tool.methodology,
             tool.remediate,
+            tool.cloud_posture,
+            tool.container_surface,
+            tool.iac_triage,
+            tool.binary_triage,
             ...(Flag.NUMASEC_EXPERIMENTAL_PLAN_MODE && Flag.NUMASEC_CLIENT === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,

@@ -1,0 +1,1 @@
+Run a single-binary hardening triage scan through the optional checksec adapter. Use this when you want a bounded local executable review without dropping to an opaque bash wrapper.

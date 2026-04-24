@@ -108,7 +108,7 @@ export const layer = Layer.effect(
       }
       commands[Default.PLAY] = {
         name: Default.PLAY,
-        description: "run a named play: web-surface, network-surface, appsec-triage, osint, ctf-warmup",
+        description: "run a named play such as web-surface, cloud-posture, or binary-triage",
         source: "command",
         priority: 20,
         get template() {

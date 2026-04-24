@@ -5,6 +5,13 @@ export type PlayArgSpec = {
   description?: string
 }
 
+export type PlayRequirement = {
+  kind: "runtime" | "binary"
+  id: string
+  label: string
+  missingAs: "required" | "optional"
+}
+
 export type ToolStep = {
   tool: string
   args: Record<string, unknown>
@@ -22,7 +29,25 @@ export type ConditionalStep = {
   then: Step
 }
 
-export type PlayStep = Step | ConditionalStep
+export type NormalizedToolStep = {
+  kind: "tool"
+  label: string
+  tool: string
+  args: Record<string, unknown>
+  requires?: PlayRequirement[]
+}
+
+export type NormalizedSkillStep = {
+  kind: "skill"
+  label: string
+  skill: string
+  brief: string
+  requires?: PlayRequirement[]
+}
+
+export type NormalizedStep = NormalizedToolStep | NormalizedSkillStep
+
+export type PlayStep = Step | ConditionalStep | NormalizedStep
 
 export type Play = {
   id: string
@@ -42,4 +67,9 @@ export function isSkillStep(step: Step): step is SkillStep {
 
 export function isConditional(step: PlayStep): step is ConditionalStep {
   return "if" in step && "then" in step
+}
+
+// Distinguishes NormalizedStep (has `kind`) from Step and ConditionalStep
+export function isNormalizedStep(step: PlayStep): step is NormalizedStep {
+  return "kind" in step
 }

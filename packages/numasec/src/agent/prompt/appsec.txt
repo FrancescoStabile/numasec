@@ -8,7 +8,7 @@ Scope your review to the active operation's `target:` (typically a repo path). T
 
 If the operation is **strict-opsec**, do not submit code or snippets to third-party analyzers, online sandboxes, or public LLM APIs outside the numasec stack. Stay local.
 
-## Tool palette (1.1.5)
+## Tool palette (1.1.7)
 
 - `read` — deep-read functions end-to-end, not just the flagged line. Context determines exploitability.
 - `grep` — your most-used tool. Search for dangerous sinks, hardcoded secrets, and bypassed framework protections. Scope with globs: `grep "eval\\(" --glob "*.js"`.

@@ -3,7 +3,7 @@ Run a named **play** — a reusable, deterministic pipeline of tool/skill calls 
 A play is the "scalpel" between a single tool and a general-purpose agent. Each play bundles the domain knowledge (which tools, in which order, with which args) so the operator can trigger a full recurring workflow with one call.
 
 Args:
-- id: play id (required). Available: web-surface, network-surface, appsec-triage, osint-target, ctf-warmup.
+- id: play id (required). Available: web-surface, network-surface, appsec-triage, osint-target, ctf-warmup, api-surface, auth-surface, cloud-posture, container-surface, iac-triage, binary-triage.
 - args: object of play-specific arguments (e.g. { target: "https://example.com" }).
 
 Behavior:
@@ -11,5 +11,10 @@ Behavior:
 - Returns a formatted trace listing each step (tool + args OR skill + brief) in execution order.
 - Does **not** invoke the referenced tools itself — you, the agent, execute each step by calling the named tool with the resolved args. Skill steps are executed via the `skill` tool with the given name.
 - If a referenced tool is not registered (e.g. `scanner` before T02 lands), report it and continue with the remaining steps.
+- **Capability-gated steps**: some steps carry `requires` conditions (binary or runtime). The tool automatically probes the local environment (via the doctor) and skips any step whose capability is unavailable. Skipped steps are listed in the `## Skipped` section of the output with the reason. Metadata fields `steps`, `skipped`, and `degraded` (`skipped > 0`) reflect the resolved outcome. This means a play can degrade honestly — for example, `api-surface` omits the browser passive-capture step when no browser runtime is installed — without requiring the caller to pass an environment manually.
+- `auth-surface` maps login/signup, recovery/invite/logout, and session-related browser signals without active verification in v1.
+- `container-surface` runs an image-first container surface sweep via the optional trivy adapter and reports honestly unavailable when the adapter binary is absent.
+- `iac-triage` runs a path-first IaC triage sweep via the optional checkov adapter and reports honestly unavailable when the adapter binary is absent.
+- `binary-triage` runs a single-binary hardening triage via the optional checksec adapter and reports honestly unavailable when the adapter binary is absent.
 
 Permission: `play`.

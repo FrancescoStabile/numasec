@@ -1,0 +1,1 @@
+Run an image-first container surface scan through the optional trivy adapter. Use this when you want a bounded container-image triage without dropping to an opaque bash wrapper.

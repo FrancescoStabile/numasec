@@ -2,10 +2,18 @@ import z from "zod"
 import { Effect } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION from "./play.txt"
-import { PlayRegistry, PlayRunner, PlayNotFoundError, PlayArgError } from "../core/play"
+import { PlayRegistry, PlayRunner, PlayNotFoundError, PlayArgError, isNormalizedStep } from "../core/play"
+import { Doctor } from "../core/doctor"
+
+// Mutable so tests can inject a controlled probe without patching module namespaces.
+export const _deps = { probe: Doctor.probe }
 
 const parameters = z.object({
-  id: z.string().describe("play id (e.g. web-surface, network-surface, appsec-triage, osint-target, ctf-warmup)"),
+  id: z
+    .string()
+    .describe(
+      "play id (e.g. web-surface, network-surface, appsec-triage, osint-target, ctf-warmup, api-surface, auth-surface, cloud-posture, container-surface, iac-triage, binary-triage)",
+    ),
   args: z.record(z.string(), z.unknown()).optional().describe("play-specific arguments"),
 })
 
@@ -15,7 +23,20 @@ type Metadata = {
   steps: number
   skipped: number
   available: boolean
+  degraded?: boolean
   reason?: string
+}
+
+function availabilityOf(result: ReturnType<typeof PlayRunner.run>) {
+  const requiredSkipped = result.skipped.some((item) => {
+    if (!isNormalizedStep(item.step)) return false
+    return (item.step.requires ?? []).some((req) => req.missingAs === "required")
+  })
+
+  if (!requiredSkipped) return { available: true, degraded: result.skipped.length > 0 }
+  // Future-proofed: if required capability was skipped but other steps ran, report available + degraded.
+  if (result.trace.length > 0) return { available: true, degraded: true }
+  return { available: false, degraded: false }
 }
 
 export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
@@ -43,9 +64,15 @@ export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
             }
           }
 
+          const report = yield* _deps.probe(process.cwd())
+          const environment = {
+            binaries: new Set(report.binaries.filter((b) => b.present).map((b) => b.name)),
+            runtimes: { browser: report.browser.present },
+          }
+
           const outcome = ((): { ok: true; result: ReturnType<typeof PlayRunner.run> } | { ok: false; message: string } => {
             try {
-              return { ok: true, result: PlayRunner.run({ id: params.id, args: params.args ?? {} }) }
+              return { ok: true, result: PlayRunner.run({ id: params.id, args: params.args ?? {}, environment }) }
             } catch (error) {
               if (error instanceof PlayArgError || error instanceof PlayNotFoundError) {
                 return { ok: false, message: error.message }
@@ -69,6 +96,7 @@ export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
           }
 
           const result = outcome.result
+          const availability = availabilityOf(result)
           return {
             title: `play: ${result.play.name}`,
             output: PlayRunner.format(result),
@@ -76,7 +104,8 @@ export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
               play: result.play.id,
               steps: result.trace.length,
               skipped: result.skipped.length,
-              available: true,
+              available: availability.available,
+              degraded: availability.degraded,
             },
           }
         }),

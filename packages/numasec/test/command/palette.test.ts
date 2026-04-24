@@ -40,4 +40,19 @@ describe("command palette", () => {
       { git: true },
     ),
   )
+
+  it.live("describes the play command with current play ids", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const command = yield* Command.Service
+          const play = (yield* command.list()).find((c) => c.name === "play")
+
+          expect(play?.description).toContain("cloud-posture")
+          expect(play?.description).toContain("binary-triage")
+          expect(play?.description).not.toContain("osint,")
+        }),
+      { git: true },
+    ),
+  )
 })

@@ -2,37 +2,34 @@ import { Effect } from "effect"
 import { access, constants, stat } from "fs/promises"
 import path from "path"
 import os from "os"
-
-const BINARIES = [
-  "curl",
-  "jq",
-  "git",
-  "rg",
-  "nmap",
-  "nuclei",
-  "subfinder",
-  "ffuf",
-  "amass",
-  "httpx",
-  "gobuster",
-  "sqlmap",
-  "zap",
-  "burpsuite",
-] as const
+import { BINARIES } from "./catalog"
+import { evaluateCapabilitySurface, type CapabilityReadiness, type CapabilitySurface } from "./readiness"
 
 export type BinaryReport = { name: string; present: boolean; path?: string; version?: string }
 export type VaultReport = { present: boolean; path: string; mode?: string }
 export type CveReport = { present: boolean; path: string }
 export type WorkspaceReport = { path: string; writable: boolean }
+export type BrowserReport = { present: boolean; executable?: string; reason?: string }
+export type BrowserRuntimeDriver = {
+  chromium: {
+    executablePath(): string
+    launch(options: { headless: boolean }): Promise<{ close(): Promise<void> | void }>
+  }
+}
 
 export type Report = {
   runtime: { bun?: string; node: string }
   os: { platform: NodeJS.Platform; arch: string; release: string }
   binaries: BinaryReport[]
+  browser: BrowserReport
   cve: CveReport
   vault: VaultReport
   workspace: WorkspaceReport
+  capability: CapabilitySurface
 }
+
+const BROWSER_INSTALL_HINT = "Run: npx playwright install chromium"
+let browserRuntime: Promise<BrowserReport> | undefined
 
 const VERSION_TIMEOUT_MS = 500
 
@@ -99,22 +96,65 @@ async function probeWorkspace(workspace: string): Promise<WorkspaceReport> {
   }
 }
 
+function browserUnavailable(): BrowserReport {
+  return {
+    present: false,
+    reason: BROWSER_INSTALL_HINT,
+  }
+}
+
+export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Promise<BrowserReport> {
+  try {
+    const executable = driver.chromium.executablePath()
+    await access(executable, constants.X_OK)
+    const browser = await driver.chromium.launch({ headless: true })
+    await browser.close()
+    return { present: true, executable }
+  } catch {
+    return browserUnavailable()
+  }
+}
+
+async function probeBrowserRuntime(): Promise<BrowserReport> {
+  browserRuntime ??= (async () => {
+    try {
+      return await evaluateBrowserRuntime(await import("playwright"))
+    } catch {
+      return browserUnavailable()
+    }
+  })()
+
+  return browserRuntime
+}
+
+function renderCapabilityLine(item: CapabilityReadiness) {
+  const mark = item.status === "ready" ? "✓" : item.status === "degraded" ? "~" : "x"
+  const missing = [...item.missing_required, ...item.missing_optional]
+
+  if (missing.length === 0) return `- ${mark} ${item.label}`
+  return `- ${mark} ${item.label} — missing ${missing.join(", ")}`
+}
+
 export function probe(workspace: string = process.cwd()): Effect.Effect<Report> {
   return Effect.promise(async () => {
-    const binaries = await Promise.all(BINARIES.map(probeBinary))
-    const [vault, cve, ws] = await Promise.all([
+    const binaries = await Promise.all(BINARIES.map((item) => probeBinary(item.name)))
+    const [browser, vault, cve, ws] = await Promise.all([
+      probeBrowserRuntime(),
       probeVault(),
       probeCve(workspace),
       probeWorkspace(workspace),
     ])
     const bunVersion = (globalThis as unknown as { Bun?: { version?: string } }).Bun?.version
+    const present = new Set(binaries.filter((item) => item.present).map((item) => item.name))
     return {
       runtime: { bun: bunVersion, node: process.versions.node },
       os: { platform: process.platform, arch: process.arch, release: os.release() },
       binaries,
+      browser,
       cve,
       vault,
       workspace: ws,
+      capability: evaluateCapabilitySurface({ binaries: present, browser_present: browser.present }),
     }
   })
 }
@@ -137,6 +177,19 @@ export function format(report: Report): string {
     const suffix = b.present ? ` — ${b.version ?? b.path ?? ""}`.trimEnd() : " — not installed"
     lines.push(`- ${mark} ${b.name}${suffix}`)
   }
+  lines.push("")
+  lines.push("## browser")
+  lines.push(
+    report.browser.present
+      ? `- present · ${report.browser.executable ?? "playwright chromium"}`
+      : `- unavailable · ${report.browser.reason}`,
+  )
+  lines.push("")
+  lines.push("## play readiness")
+  for (const item of report.capability.plays) lines.push(renderCapabilityLine(item))
+  lines.push("")
+  lines.push("## vertical readiness")
+  for (const item of report.capability.verticals) lines.push(renderCapabilityLine(item))
   lines.push("")
   lines.push("## workspace")
   lines.push(`- ${report.workspace.writable ? "writable" : "NOT writable"} · ${report.workspace.path}`)

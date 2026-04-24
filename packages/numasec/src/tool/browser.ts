@@ -2,6 +2,7 @@ import z from "zod"
 import { Effect } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION from "./browser.txt"
+import { buildPassiveAppSecResult } from "../browser/passive-run"
 
 const parameters = z.object({
   action: z
@@ -17,6 +18,7 @@ const parameters = z.object({
       "console_log",
       "network_tab",
       "dom_diff",
+      "passive_appsec",
     ])
     .describe("Browser action to perform"),
   url: z
@@ -39,7 +41,7 @@ const parameters = z.object({
     .min(1024)
     .max(1048576)
     .optional()
-    .describe("Max output bytes for dom_snapshot / console_log / network_tab"),
+    .describe("Max output bytes for dom_snapshot / console_log / network_tab / passive_appsec"),
   clear: z.boolean().optional().describe("Drain console/network buffer after read"),
 })
 
@@ -224,7 +226,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
   const page = session.page
   const context = session.context
 
-  if (params.url && params.action !== "navigate") {
+  if (params.url && params.action !== "navigate" && params.action !== "passive_appsec") {
     await page.goto(params.url, { timeout, waitUntil: "domcontentloaded" })
   }
 
@@ -257,6 +259,30 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
         preview,
       ].join("\n"),
     }
+  }
+
+  if (params.action === "passive_appsec") {
+    if (!params.url) throw new Error("url is required for passive_appsec action")
+    const networkStart = session.network.length
+    const consoleStart = session.console.length
+    const response = await page
+      .goto(params.url, { timeout, waitUntil: "networkidle" })
+      .catch(() => page.goto(params.url!, { timeout, waitUntil: "domcontentloaded" }))
+    const title = (await page.title().catch(() => "")) || page.url() || params.url
+    const headers = response ? await response.headers() : undefined
+    return buildPassiveAppSecResult({
+      title,
+      headers,
+      page,
+      context,
+      session,
+      startIndexes: {
+        network: networkStart,
+        console: consoleStart,
+      },
+      max_bytes: params.max_bytes,
+      clear: params.clear,
+    })
   }
 
   if (params.action === "click") {

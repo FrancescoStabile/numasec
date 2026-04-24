@@ -1,0 +1,1 @@
+Run a path-first IaC triage scan through the optional checkov adapter. Use this when you want a bounded local infrastructure-as-code review without dropping to an opaque bash wrapper.

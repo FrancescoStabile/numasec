@@ -11,7 +11,10 @@ The operator wants a health report for their local numasec environment. Follow t
    - **Runtime** — one line with node/bun version and OS/arch.
    - **Tooling** — show `present/total` count, then list missing tools grouped into two tiers:
      - *core* (curl, jq, git, rg) — if any are missing, flag as **blocker**.
-     - *offensive* (nmap, nuclei, subfinder, ffuf, amass, httpx, gobuster, sqlmap, zap, burpsuite) — flag as *optional*; mention which skills become degraded.
+     - *offensive* (nmap, nuclei, subfinder, ffuf, amass, httpx, gobuster, sqlmap, zap, burpsuite) — flag as *optional*; mention which current verticals become degraded or unavailable.
+   - **Browser** — present or unavailable. If unavailable, mention `npx playwright install chromium`.
+   - **Play readiness** — list any degraded or unavailable plays first; mention what is missing.
+   - **Vertical readiness** — list any degraded or unavailable verticals first; mention what is missing.
    - **Vault** — present or not configured. If present, report only the file mode (e.g. `600`). Never echo the file's contents.
    - **CVE bundle** — present or not configured.
    - **Workspace** — writable or read-only.

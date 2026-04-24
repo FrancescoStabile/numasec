@@ -14,7 +14,7 @@ If an operation is active (TUI banner shows its slug via `Operation.activeSlug()
 
 If the banner flags **strict-opsec**, skip third-party lookups (VT, urlscan, sandbox uploads, public hash checks) — work from local tools only.
 
-## Tool palette (1.1.5)
+## Tool palette (1.1.7)
 
 - `bash` — home turf. nmap, ffuf, sqlmap, nuclei, nikto, gdb/pwndbg, radare2, ghidra-headless, pwntools, hashcat, john, binwalk, exiftool, tshark, volatility, msfconsole, hydra, impacket, openssl. Reach for whatever fits.
 - `scanner` — active web/network recon (crawl, dir-fuzz, js, portscan, service-probe, banner). Use before drilling with `http_request` or `bash`.

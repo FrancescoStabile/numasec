@@ -1,6 +1,6 @@
 # numasec Tool Reference
 
-This page describes the built in tool palette that ships with numasec 1.1.5.
+This page describes the built in tool palette that ships with numasec 1.1.7.
 These are the tool ids the agents actually see at runtime.
 
 ## File and code tools
@@ -36,6 +36,10 @@ web search, code search, and skill loading.
 - `interact`
 - `methodology`
 - `cve`
+- `cloud_posture`
+- `container_surface`
+- `iac_triage`
+- `binary_triage`
 
 In practice, this is the core of numasec.
 
@@ -45,6 +49,17 @@ inspection. `scanner` covers built in surface mapping primitives such as crawl,
 dir fuzz, JavaScript analysis, port scan, service probe, and banner grabs.
 `vault` replaces the old split between auth and secrets storage with one place
 for local credentials and profiles.
+
+The adapter tools expose deeper vertical workflows without bundling every
+security binary into numasec:
+
+- `cloud_posture` runs cloud posture checks through local adapters such as `prowler`
+- `container_surface` triages container images through local adapters such as `trivy`
+- `iac_triage` checks infrastructure-as-code through the local `checkov` adapter
+- `binary_triage` gathers binary metadata and quick reverse-engineering signals from local utilities
+
+If an adapter is missing, the tool reports an unavailable/degraded state instead
+of pretending work was performed.
 
 ## Engagement workflow tools
 
@@ -66,6 +81,7 @@ These are the tools that turn the primitive palette into an operator workflow.
 
 ## A note on external binaries
 
-numasec does not bundle tools like `nmap`, `sqlmap`, `ffuf`, `nuclei`, or Burp.
+numasec does not bundle tools like `nmap`, `sqlmap`, `ffuf`, `nuclei`, `prowler`,
+`trivy`, `checkov`, `checksec`, or Burp.
 It can still use them through `bash`, and `/doctor` will tell you what is present
 or missing on your machine.

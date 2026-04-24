@@ -4,6 +4,12 @@ import networkSurface from "./data/network-surface"
 import appsecTriage from "./data/appsec-triage"
 import osintTarget from "./data/osint-target"
 import ctfWarmup from "./data/ctf-warmup"
+import apiSurface from "./data/api-surface"
+import authSurface from "./data/auth-surface"
+import cloudPosture from "./data/cloud-posture"
+import containerSurface from "./data/container-surface"
+import iacTriage from "./data/iac-triage"
+import binaryTriage from "./data/binary-triage"
 
 const plays: Record<string, Play> = {
   [webSurface.id]: webSurface,
@@ -11,6 +17,12 @@ const plays: Record<string, Play> = {
   [appsecTriage.id]: appsecTriage,
   [osintTarget.id]: osintTarget,
   [ctfWarmup.id]: ctfWarmup,
+  [apiSurface.id]: apiSurface,
+  [authSurface.id]: authSurface,
+  [cloudPosture.id]: cloudPosture,
+  [containerSurface.id]: containerSurface,
+  [iacTriage.id]: iacTriage,
+  [binaryTriage.id]: binaryTriage,
 }
 
 export namespace PlayRegistry {

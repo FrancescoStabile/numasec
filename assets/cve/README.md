@@ -34,7 +34,7 @@ Each entry in the decompressed JSON array has the shape:
    <https://nvd.nist.gov/feeds/json/cve/1.1/>, merging them into the existing
    index, capping summaries at 280 chars, and gzipping the result.
 
-3. The workflow opens a PR against `release/1.1.5` (or the current release
+3. The workflow opens a PR against the current release
    branch) with the refreshed `index.json.gz`.
 
 ## Size budget
