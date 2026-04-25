@@ -28,7 +28,7 @@ export type Report = {
   capability: CapabilitySurface
 }
 
-const BROWSER_INSTALL_HINT = "Run: npx playwright install chromium"
+const BROWSER_INSTALL_HINT = "Playwright unavailable. Run: bun add playwright && npx playwright install chromium"
 let browserRuntime: Promise<BrowserReport> | undefined
 
 const VERSION_TIMEOUT_MS = 500

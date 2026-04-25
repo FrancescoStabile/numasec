@@ -136,7 +136,7 @@ async function ensure(abort: AbortSignal): Promise<Session> {
     pw = await import("playwright")
   } catch {
     throw new Error(
-      "Playwright is not installed. Run: npx playwright install chromium",
+      "Playwright is not installed. Run: bun add playwright && npx playwright install chromium",
     )
   }
 

@@ -60,7 +60,7 @@ describe("Doctor.probe", () => {
         { name: "curl", present: true, path: "/usr/bin/curl", version: "curl 8.7.1" },
         { name: "rg", present: true, path: "/usr/bin/rg", version: "ripgrep 14.1.1" },
       ],
-      browser: { present: false, reason: "Run: npx playwright install chromium" },
+      browser: { present: false, reason: "Playwright unavailable. Run: bun add playwright && npx playwright install chromium" },
       vault: { present: false, path: "/tmp/vault.json" },
       cve: { present: false, path: "/tmp/latest.json" },
       workspace: { path: "/tmp/work", writable: true },

@@ -205,7 +205,7 @@ for (const item of targets) {
     conditions: ["browser"],
     tsconfig: "./tsconfig.json",
     plugins: [plugin],
-    external: ["node-gyp"],
+    external: ["node-gyp", "playwright-core", "playwright"],
     format: "esm",
     minify: true,
     splitting: true,
