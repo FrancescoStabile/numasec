@@ -126,10 +126,9 @@ describe("tool.assertExternalDirectory", () => {
       await using tmp = await tmpdir({ git: true })
 
       const target = path.join(outerTmp.path, "outside.txt")
-      const alt = target
-        .replace(/^[A-Za-z]:/, "")
-        .replaceAll("\\", "/")
-        .toLowerCase()
+      // Use MSYS2/Cygwin convention (/c/Users/...) so windowsPath can normalize it
+      const drive = target.match(/^[A-Za-z]:/)![0]
+      const alt = "/" + drive[0].toLowerCase() + target.slice(2).replaceAll("\\", "/").toLowerCase()
 
       await Instance.provide({
         directory: tmp.path,

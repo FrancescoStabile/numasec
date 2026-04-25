@@ -38,6 +38,13 @@ const whichOf = (name: string): string | null => {
   return typeof fn === "function" ? fn(name) : null
 }
 
+const CHROMIUM_SYSTEM_NAMES = ["chromium", "chromium-browser", "google-chrome", "chrome"] as const
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return String(err)
+}
+
 async function probeVersion(bin: string): Promise<string | undefined> {
   try {
     const proc = Bun.spawn([bin, "--version"], {
@@ -96,31 +103,82 @@ async function probeWorkspace(workspace: string): Promise<WorkspaceReport> {
   }
 }
 
-function browserUnavailable(): BrowserReport {
+function browserUnavailable(reason?: string): BrowserReport {
   return {
     present: false,
-    reason: BROWSER_INSTALL_HINT,
+    reason: reason ?? BROWSER_INSTALL_HINT,
   }
 }
 
+async function findSystemChromium(): Promise<string | null> {
+  const envPath = process.env.NUMASEC_CHROMIUM_PATH
+  if (envPath) {
+    try {
+      await access(envPath, constants.X_OK)
+      return envPath
+    } catch {
+      return null
+    }
+  }
+  for (const name of CHROMIUM_SYSTEM_NAMES) {
+    const found = whichOf(name)
+    if (found) return found
+  }
+  return null
+}
+
+async function tryLaunchWithDriver(
+  driver: BrowserRuntimeDriver,
+  executablePath?: string,
+): Promise<{ close(): Promise<void> | void }> {
+  if (executablePath) {
+    return driver.chromium.launch({ headless: true, executablePath } as Parameters<typeof driver.chromium.launch>[0])
+  }
+  return driver.chromium.launch({ headless: true })
+}
+
+async function tryResolveExecutable(driver: BrowserRuntimeDriver): Promise<string> {
+  const executable = driver.chromium.executablePath()
+  await access(executable, constants.X_OK)
+  return executable
+}
+
 export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Promise<BrowserReport> {
+  // First try Playwright's managed Chromium
+  let firstError: string | undefined
   try {
-    const executable = driver.chromium.executablePath()
-    await access(executable, constants.X_OK)
-    const browser = await driver.chromium.launch({ headless: true })
+    const executable = await tryResolveExecutable(driver)
+    const browser = await tryLaunchWithDriver(driver)
     await browser.close()
     return { present: true, executable }
-  } catch {
-    return browserUnavailable()
+  } catch (err) {
+    firstError = errorMessage(err)
   }
+
+  // Fallback: system Chromium via env var or PATH
+  try {
+    const systemPath = await findSystemChromium()
+    if (systemPath) {
+      const browser = await tryLaunchWithDriver(driver, systemPath)
+      await browser.close()
+      return { present: true, executable: systemPath }
+    }
+  } catch (err) {
+    // system chromium found but failed to launch
+  }
+
+  const pathHint = process.env.NUMASEC_CHROMIUM_PATH
+    ? ` | Tried NUMASEC_CHROMIUM_PATH=${process.env.NUMASEC_CHROMIUM_PATH}`
+    : ""
+  return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${firstError ?? "unknown error"}${pathHint}`)
 }
 
 async function probeBrowserRuntime(): Promise<BrowserReport> {
   browserRuntime ??= (async () => {
     try {
       return await evaluateBrowserRuntime(await import("playwright"))
-    } catch {
-      return browserUnavailable()
+    } catch (err) {
+      return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${errorMessage(err)}`)
     }
   })()
 

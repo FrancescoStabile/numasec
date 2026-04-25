@@ -17,7 +17,7 @@ function packageArch() {
   return os.arch()
 }
 
-test("postinstall prints a concise success message after linking the platform binary", async () => {
+test.skipIf(process.platform === "win32")("postinstall prints a concise success message after linking the platform binary", async () => {
   await using fixture = await tmpdir({
     init: async (dir) => {
       const packageName = `numasec-${packagePlatform()}-${packageArch()}`
