@@ -131,10 +131,27 @@ async function ensure(abort: AbortSignal): Promise<Session> {
   const existing = sessions.get(id)
   if (existing) return existing
 
-  let pw: typeof import("playwright")
+  let pw: typeof import("playwright") | undefined
   try {
     pw = await import("playwright")
   } catch {
+    // import entirely failed — not installed
+  }
+
+  // In compiled binaries, import("playwright") may succeed but return a
+  // broken module (chromium undefined) due to Bun embedding CI paths into
+  // playwright-core's require.resolve calls. Try local filesystem fallback.
+  if (!pw?.chromium?.launch) {
+    try {
+      const { createRequire } = await import("module")
+      const require = createRequire(process.cwd() + "/package.json")
+      pw = require("playwright") as typeof import("playwright")
+    } catch {
+      // local filesystem fallback also failed
+    }
+  }
+
+  if (!pw?.chromium?.launch) {
     throw new Error(
       "Playwright is not installed. Run: bun add playwright && npx playwright install chromium",
     )

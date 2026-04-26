@@ -176,40 +176,54 @@ export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Prom
 async function probeBrowserRuntime(): Promise<BrowserReport> {
   browserRuntime ??= (async () => {
     // Try Playwright's built-in import (works in dev mode)
+    let driver: BrowserRuntimeDriver | undefined
     try {
-      return await evaluateBrowserRuntime(await import("playwright"))
-    } catch (pwErr) {
-      // Playwright import failed — common in compiled binaries due to
-      // Bun bundling CI paths into playwright-core's require.resolve calls.
-      // Fallback: detect Chromium on the system without needing playwright.
-
-      // Check NUMASEC_CHROMIUM_PATH env var first, then system PATH
-      const systemPath = await findSystemChromium()
-      if (systemPath) {
-        // Verify the binary actually runs
-        try {
-          const proc = Bun.spawn([systemPath, "--version"], { stdout: "pipe", stderr: "pipe" })
-          const output = await new Response(proc.stdout).text()
-          await proc.exited
-          if (proc.exitCode === 0 && output.trim()) {
-            return {
-              present: true,
-              executable: systemPath,
-              reason: output.trim().split("\n")[0],
-            }
-          }
-        } catch {
-          // binary exists but can't run (missing deps, etc.)
-        }
-        return {
-          present: true,
-          executable: systemPath,
-          reason: "Found on system but Playwright can't load (bundled binary). Set NUMASEC_CHROMIUM_PATH and install playwright locally: bun add playwright",
-        }
-      }
-
-      return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${errorMessage(pwErr)}`)
+      driver = await import("playwright")
+    } catch {
+      // import failed — not installed or bundled CI path issue
     }
+
+    // In compiled binaries, import may succeed but chromium is undefined.
+    // Try local filesystem fallback via createRequire.
+    if (!driver?.chromium?.launch) {
+      try {
+        const { createRequire } = await import("module")
+        const require = createRequire(process.cwd() + "/package.json")
+        driver = require("playwright") as BrowserRuntimeDriver
+      } catch {
+        // local filesystem fallback also failed
+      }
+    }
+
+    if (driver?.chromium?.launch) {
+      return await evaluateBrowserRuntime(driver)
+    }
+
+    // Playwright unavailable — fallback: detect Chromium on the system
+    const systemPath = await findSystemChromium()
+    if (systemPath) {
+      try {
+        const proc = Bun.spawn([systemPath, "--version"], { stdout: "pipe", stderr: "pipe" })
+        const output = await new Response(proc.stdout).text()
+        await proc.exited
+        if (proc.exitCode === 0 && output.trim()) {
+          return {
+            present: true,
+            executable: systemPath,
+            reason: output.trim().split("\n")[0],
+          }
+        }
+      } catch {
+        // binary exists but can't run (missing deps, etc.)
+      }
+      return {
+        present: true,
+        executable: systemPath,
+        reason: "Found on system but Playwright can't load (bundled binary). Set NUMASEC_CHROMIUM_PATH and install playwright locally: bun add playwright",
+      }
+    }
+
+    return browserUnavailable(BROWSER_INSTALL_HINT)
   })()
 
   return browserRuntime
