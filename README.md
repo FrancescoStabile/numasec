@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo-pentest.gif" alt="numasec running a pentest against OWASP Juice Shop" width="900" />
+  <img src="assets/pentest-demo.gif" alt="numasec running a pentest against OWASP Juice Shop" width="900" />
 </p>
 
 ## Why numasec
@@ -133,7 +133,7 @@ An operation is a durable notebook at:
 numasec reloads that file into the active system context. Scope, target details, assumptions, findings, attempted payloads, rejected hypotheses, screenshots, and next steps stay with the engagement instead of disappearing into chat history.
 
 <p align="center">
-  <img src="assets/demo-operations.gif" alt="creating an operation in numasec" width="900" />
+  <img src="assets/operations-demo.gif" alt="creating an operation in numasec" width="900" />
 </p>
 
 The TUI keeps the work readable while the agent is acting:
