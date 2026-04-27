@@ -223,4 +223,29 @@ describe("Doctor.probe", () => {
       delete process.env.NUMASEC_CHROMIUM_PATH
     }
   })
+
+  it(
+    "times out when chromium.launch() hangs instead of blocking forever",
+    async () => {
+      await using fixture = await tmpdir()
+      const executable = path.join(fixture.path, "chromium")
+      await Bun.write(executable, "#!/bin/sh\nexit 0\n")
+      await chmod(executable, 0o755)
+
+      const start = Date.now()
+      const browser = await evaluateBrowserRuntime({
+        chromium: {
+          executablePath: () => executable,
+          launch: () => new Promise(() => {}), // never resolves — simulates hang
+        },
+      })
+
+      const elapsed = Date.now() - start
+      expect(browser.present).toBe(false)
+      expect(browser.reason).toContain("browser launch timed out")
+      // 10s primary timeout + up to 5s fallback timeout + overhead
+      expect(elapsed).toBeLessThan(18_000)
+    },
+    { timeout: 25_000 },
+  )
 })

@@ -29,7 +29,9 @@ export type Report = {
 }
 
 const BROWSER_INSTALL_HINT = "Playwright unavailable. Run: bun add playwright && npx playwright install chromium"
-let browserRuntime: Promise<BrowserReport> | undefined
+const BROWSER_LAUNCH_TIMEOUT_MS = 10_000
+const BROWSER_FALLBACK_TIMEOUT_MS = 5_000
+let browserRuntimeCache: { result: Promise<BrowserReport>; at: number } | undefined
 
 const VERSION_TIMEOUT_MS = 500
 
@@ -129,12 +131,19 @@ async function findSystemChromium(): Promise<string | null> {
 
 async function tryLaunchWithDriver(
   driver: BrowserRuntimeDriver,
+  timeoutMs: number,
   executablePath?: string,
 ): Promise<{ close(): Promise<void> | void }> {
-  if (executablePath) {
-    return driver.chromium.launch({ headless: true, executablePath } as Parameters<typeof driver.chromium.launch>[0])
-  }
-  return driver.chromium.launch({ headless: true })
+  const launchPromise = executablePath
+    ? driver.chromium.launch({ headless: true, executablePath } as Parameters<typeof driver.chromium.launch>[0])
+    : driver.chromium.launch({ headless: true })
+  const result = await Promise.race([
+    launchPromise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("browser launch timed out")), timeoutMs),
+    ),
+  ])
+  return result
 }
 
 async function tryResolveExecutable(driver: BrowserRuntimeDriver): Promise<string> {
@@ -148,18 +157,18 @@ export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Prom
   let firstError: string | undefined
   try {
     const executable = await tryResolveExecutable(driver)
-    const browser = await tryLaunchWithDriver(driver)
+    const browser = await tryLaunchWithDriver(driver, BROWSER_LAUNCH_TIMEOUT_MS)
     await browser.close()
     return { present: true, executable }
   } catch (err) {
     firstError = errorMessage(err)
   }
 
-  // Fallback: system Chromium via env var or PATH
+  // Fallback: system Chromium via env var or PATH — shorter timeout since it's secondary
   try {
     const systemPath = await findSystemChromium()
     if (systemPath) {
-      const browser = await tryLaunchWithDriver(driver, systemPath)
+      const browser = await tryLaunchWithDriver(driver, BROWSER_FALLBACK_TIMEOUT_MS, systemPath)
       await browser.close()
       return { present: true, executable: systemPath }
     }
@@ -174,7 +183,10 @@ export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Prom
 }
 
 async function probeBrowserRuntime(): Promise<BrowserReport> {
-  browserRuntime ??= (async () => {
+  const now = Date.now()
+  if (browserRuntimeCache && now - browserRuntimeCache.at < 30_000) return browserRuntimeCache.result
+
+  const result = (async (): Promise<BrowserReport> => {
     // Try Playwright's built-in import (works in dev mode)
     let driver: BrowserRuntimeDriver | undefined
     try {
@@ -196,14 +208,22 @@ async function probeBrowserRuntime(): Promise<BrowserReport> {
     }
 
     if (driver?.chromium?.launch) {
-      return await evaluateBrowserRuntime(driver)
+      try {
+        return await evaluateBrowserRuntime(driver)
+      } catch (err) {
+        return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`)
+      }
     }
 
     // Playwright unavailable — fallback: detect Chromium on the system
     const systemPath = await findSystemChromium()
     if (systemPath) {
       try {
-        const proc = Bun.spawn([systemPath, "--version"], { stdout: "pipe", stderr: "pipe" })
+        const proc = Bun.spawn([systemPath, "--version"], {
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: BROWSER_LAUNCH_TIMEOUT_MS,
+        })
         const output = await new Response(proc.stdout).text()
         await proc.exited
         if (proc.exitCode === 0 && output.trim()) {
@@ -226,7 +246,8 @@ async function probeBrowserRuntime(): Promise<BrowserReport> {
     return browserUnavailable(BROWSER_INSTALL_HINT)
   })()
 
-  return browserRuntime
+  browserRuntimeCache = { result, at: now }
+  return result
 }
 
 function renderCapabilityLine(item: CapabilityReadiness) {
@@ -241,7 +262,10 @@ export function probe(workspace: string = process.cwd()): Effect.Effect<Report> 
   return Effect.promise(async () => {
     const binaries = await Promise.all(BINARIES.map((item) => probeBinary(item.name)))
     const [browser, vault, cve, ws] = await Promise.all([
-      probeBrowserRuntime(),
+      probeBrowserRuntime().catch(
+        (err): BrowserReport =>
+          browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`),
+      ),
       probeVault(),
       probeCve(workspace),
       probeWorkspace(workspace),
