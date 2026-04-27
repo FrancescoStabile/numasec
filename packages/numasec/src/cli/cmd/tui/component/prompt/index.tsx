@@ -954,7 +954,6 @@ export function Prompt(props: PromptProps) {
             paddingRight={2}
             paddingTop={1}
             flexShrink={0}
-            backgroundColor={theme.backgroundElement}
             flexGrow={1}
             flexDirection="row"
             alignItems="flex-start"
