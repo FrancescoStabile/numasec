@@ -942,30 +942,31 @@ export function Prompt(props: PromptProps) {
       />
       <box ref={(r) => (anchor = r)} visible={props.visible !== false}>
         <box
-          border={["left"]}
-          borderColor={highlight()}
+          height={1}
+          border={["bottom"]}
+          borderColor={theme.borderSubtle}
           customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
+            ...EmptyBorder,
+            horizontal: "─",
           }}
-        >
+        />
+        <box>
           <box
-            paddingLeft={2}
+            paddingLeft={1}
             paddingRight={2}
             paddingTop={1}
             flexShrink={0}
-            backgroundColor={theme.backgroundElement}
             flexGrow={1}
             flexDirection="row"
             alignItems="flex-start"
           >
             <text flexShrink={0} fg={highlight()}>
               {(() => {
-                if (store.mode === "shell") return "[shell]$ "
+                if (store.mode === "shell") return "▐ [shell]$ "
                 const agent = local.agent.current()
                 const pack = Kind.byAgent(agent?.name)
-                if (!pack) return "> "
-                return `[${pack.short}]${pack.glyph} `
+                if (!pack) return "▐ > "
+                return `▐ [${pack.short}]${pack.glyph} `
               })()}
             </text>
             <textarea
@@ -1158,72 +1159,44 @@ export function Prompt(props: PromptProps) {
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
+              focusedBackgroundColor={theme.background}
               cursorColor={theme.text}
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-              <box flexDirection="row" gap={1}>
-                <Show when={local.agent.current()} fallback={<box height={1} />}>
-                  {(agent) => (
-                    <>
-                      <text fg={highlight()}>
-                        {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}{" "}
+          </box>
+          <box flexDirection="row" flexShrink={0} paddingLeft={1} paddingTop={1} gap={1}>
+            <Show when={local.agent.current()} fallback={<box height={1} />}>
+              {(agent) => (
+                <>
+                  <text fg={highlight()}>
+                    {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}{" "}
+                  </text>
+                  <Show when={store.mode === "normal"}>
+                    <box flexDirection="row" gap={1}>
+                      <text flexShrink={0} fg={keybind.leader ? theme.textMuted : theme.text}>
+                        {local.model.parsed().model}
                       </text>
-                      <Show when={store.mode === "normal"}>
-                        <box flexDirection="row" gap={1}>
-                          <text flexShrink={0} fg={keybind.leader ? theme.textMuted : theme.text}>
-                            {local.model.parsed().model}
-                          </text>
-                          <text fg={theme.textMuted}>{currentProviderLabel()}</text>
-                          <Show when={showVariant()}>
-                            <text fg={theme.textMuted}>·</text>
-                            <text>
-                              <span style={{ fg: theme.warning, bold: true }}>{local.model.variant.current()}</span>
-                            </text>
-                          </Show>
-                        </box>
+                      <text fg={theme.textMuted}>{currentProviderLabel()}</text>
+                      <Show when={showVariant()}>
+                        <text fg={theme.textMuted}>·</text>
+                        <text>
+                          <span style={{ fg: theme.warning, bold: true }}>{local.model.variant.current()}</span>
+                        </text>
                       </Show>
-                    </>
-                  )}
-                </Show>
+                    </box>
+                  </Show>
+                </>
+              )}
+            </Show>
+            <Show when={hasRightContent()}>
+              <box flexDirection="row" gap={1} alignItems="center">
+                {props.right}
               </box>
-              <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
-                  {props.right}
-                </box>
-              </Show>
-            </box>
+            </Show>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={highlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <Show when={status().type !== "idle"} fallback={props.hint ?? <text />}>
+        <box width="100%" flexDirection="column">
+          <Show when={status().type !== "idle"} fallback={props.hint}>
             <box
               flexDirection="row"
               gap={1}
@@ -1307,7 +1280,7 @@ export function Prompt(props: PromptProps) {
             </box>
           </Show>
           <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
+            <box gap={2} flexDirection="row" paddingLeft={1}>
               <Switch>
                 <Match when={store.mode === "normal"}>
                   <Switch>

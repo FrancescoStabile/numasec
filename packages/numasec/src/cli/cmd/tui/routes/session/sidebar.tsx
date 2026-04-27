@@ -18,8 +18,9 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   return (
     <Show when={session()}>
       <box
-        backgroundColor={theme.backgroundPanel}
-        width={42}
+        border={["left"]}
+        borderColor={theme.borderSubtle}
+        width={43}
         height="100%"
         paddingTop={1}
         paddingBottom={1}

@@ -131,21 +131,75 @@ async function ensure(abort: AbortSignal): Promise<Session> {
   const existing = sessions.get(id)
   if (existing) return existing
 
-  let pw: typeof import("playwright")
+  let pw: typeof import("playwright") | undefined
   try {
     pw = await import("playwright")
   } catch {
+    // import entirely failed — not installed
+  }
+
+  // In compiled binaries, import("playwright") may succeed but return a
+  // broken module (chromium undefined) due to Bun embedding CI paths into
+  // playwright-core's require.resolve calls. Try local filesystem fallback.
+  if (!pw?.chromium?.launch) {
+    try {
+      const { createRequire } = await import("module")
+      const require = createRequire(process.cwd() + "/package.json")
+      pw = require("playwright") as typeof import("playwright")
+    } catch {
+      // local filesystem fallback also failed
+    }
+  }
+
+  if (!pw?.chromium?.launch) {
     throw new Error(
-      "Playwright is not installed. Run: npx playwright install chromium",
+      "Playwright is not installed. Run: bun add playwright && npx playwright install chromium",
     )
   }
+
+  const launchOptions = (executablePath?: string) =>
+    executablePath
+      ? ({ headless: true, executablePath } as Parameters<typeof pw.chromium.launch>[0])
+      : { headless: true }
+
+  let firstError: string | undefined
   let browser: Awaited<ReturnType<typeof pw.chromium.launch>>
   try {
-    browser = await pw.chromium.launch({ headless: true })
-  } catch {
-    throw new Error(
-      "Chromium browser not found. Run: npx playwright install chromium",
-    )
+    browser = await pw.chromium.launch(launchOptions())
+  } catch (err) {
+    firstError = err instanceof Error ? err.message : String(err)
+
+    // Fallback: NUMASEC_CHROMIUM_PATH env var
+    const envPath = process.env.NUMASEC_CHROMIUM_PATH
+    if (envPath) {
+      try {
+        browser = await pw.chromium.launch(launchOptions(envPath))
+      } catch {
+        // Fallback to system PATH below
+      }
+    }
+
+    // Fallback: search system PATH for chromium / chrome
+    if (!browser!) {
+      const systemNames = ["chromium", "chromium-browser", "google-chrome", "chrome"]
+      for (const name of systemNames) {
+        const found = Bun.which(name)
+        if (!found) continue
+        try {
+          browser = await pw.chromium.launch(launchOptions(found))
+          break
+        } catch {
+          // try next
+        }
+      }
+    }
+
+    if (!browser!) {
+      const pathNote = envPath ? ` | tried NUMASEC_CHROMIUM_PATH=${envPath}` : ""
+      throw new Error(
+        `Chromium browser not found. Run: npx playwright install chromium — ${firstError}${pathNote}`,
+      )
+    }
   }
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,

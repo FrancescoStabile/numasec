@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "path"
 import { mkdir, writeFile } from "node:fs/promises"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
@@ -94,7 +95,7 @@ describe("tool/iac-triage", () => {
           expect(result.metadata.command).toEqual([
             "checkov",
             "-d",
-            `${fixture.path}/iac`,
+            path.join(fixture.path, "iac"),
             "-o",
             "json",
             "--quiet",
@@ -134,7 +135,7 @@ describe("tool/iac-triage", () => {
           expect(result.metadata.command).toEqual([
             "checkov",
             "-f",
-            `${fixture.path}/main.tf`,
+            path.join(fixture.path, "main.tf"),
             "-o",
             "json",
             "--quiet",
@@ -275,7 +276,7 @@ describe("tool/iac-triage", () => {
           const result: any = await exec({ path: "./iac", mode: "quick" })
           expect(result.metadata.available).toBe(true)
           // Command must contain resolved absolute path, not raw relative path
-          expect(capturedCommand).toContain(`${fixture.path}/iac`)
+          expect(capturedCommand).toContain(path.join(fixture.path, "iac"))
           expect(capturedCommand).not.toContain("./iac")
         },
       })
@@ -322,7 +323,7 @@ describe("tool/iac-triage", () => {
           expect(capturedAskMetadata.command).toEqual([
             "checkov",
             "-d",
-            `${fixture.path}/iac`,
+            path.join(fixture.path, "iac"),
             "-o",
             "json",
             "--quiet",

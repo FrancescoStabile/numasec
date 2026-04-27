@@ -60,7 +60,7 @@ describe("Doctor.probe", () => {
         { name: "curl", present: true, path: "/usr/bin/curl", version: "curl 8.7.1" },
         { name: "rg", present: true, path: "/usr/bin/rg", version: "ripgrep 14.1.1" },
       ],
-      browser: { present: false, reason: "Run: npx playwright install chromium" },
+      browser: { present: false, reason: "Playwright unavailable. Run: bun add playwright && npx playwright install chromium" },
       vault: { present: false, path: "/tmp/vault.json" },
       cve: { present: false, path: "/tmp/latest.json" },
       workspace: { path: "/tmp/work", writable: true },
@@ -111,5 +111,141 @@ describe("Doctor.probe", () => {
 
     expect(browser.present).toBe(false)
     expect(browser.reason).toContain("npx playwright install chromium")
+    expect(browser.reason).toContain("missing runtime dependency")
   })
+
+  it("includes the actual launch error in the reason", async () => {
+    await using fixture = await tmpdir()
+    const executable = path.join(fixture.path, "chromium")
+    await Bun.write(executable, "#!/bin/sh\nexit 1\n")
+    await chmod(executable, 0o755)
+
+    const browser = await evaluateBrowserRuntime({
+      chromium: {
+        executablePath: () => executable,
+        launch: async () => {
+          throw new Error("ENOENT: no such file or directory, libnss3.so")
+        },
+      },
+    })
+
+    expect(browser.present).toBe(false)
+    expect(browser.reason).toContain("npx playwright install chromium")
+    expect(browser.reason).toContain("libnss3.so")
+  })
+
+  it("tries system chromium as fallback when playwright chromium fails", async () => {
+    await using fixture = await tmpdir()
+    const pwExecutable = path.join(fixture.path, "pw-chromium")
+    await Bun.write(pwExecutable, "#!/bin/sh\nexit 0\n")
+    await chmod(pwExecutable, 0o755)
+
+    const systemExecutable = path.join(fixture.path, "numasec-test-chromium")
+    await Bun.write(systemExecutable, "#!/bin/sh\nexit 0\n")
+    await chmod(systemExecutable, 0o755)
+
+    // Use env var to point to fixture chromium since PATH manipulation with Bun.which is unreliable in tests
+    process.env.NUMASEC_CHROMIUM_PATH = systemExecutable
+
+    try {
+      const browser = await evaluateBrowserRuntime({
+        chromium: {
+          executablePath: () => pwExecutable,
+          launch: async (opts) => {
+            const execPath = (opts as any).executablePath
+            // Playwright's default executable exists but launch fails
+            if (!execPath) throw new Error("missing runtime dependency")
+            // System fallback via executablePath should succeed
+            return { close: async () => {} }
+          },
+        },
+      })
+
+      expect(browser.present).toBe(true)
+      expect(browser.executable).toBe(systemExecutable)
+    } finally {
+      delete process.env.NUMASEC_CHROMIUM_PATH
+    }
+  })
+
+  it("uses NUMASEC_CHROMIUM_PATH env var as fallback", async () => {
+    await using fixture = await tmpdir()
+    const pwExecutable = path.join(fixture.path, "pw-chromium")
+    await Bun.write(pwExecutable, "#!/bin/sh\nexit 0\n")
+    await chmod(pwExecutable, 0o755)
+
+    const customExecutable = path.join(fixture.path, "my-custom-chromium")
+    await Bun.write(customExecutable, "#!/bin/sh\nexit 0\n")
+    await chmod(customExecutable, 0o755)
+
+    process.env.NUMASEC_CHROMIUM_PATH = customExecutable
+
+    try {
+      const browser = await evaluateBrowserRuntime({
+        chromium: {
+          executablePath: () => pwExecutable,
+          launch: async (opts) => {
+            const execPath = (opts as any).executablePath
+            if (!execPath) throw new Error("no chromium")
+            return { close: async () => {} }
+          },
+        },
+      })
+
+      expect(browser.present).toBe(true)
+      expect(browser.executable).toBe(customExecutable)
+    } finally {
+      delete process.env.NUMASEC_CHROMIUM_PATH
+    }
+  })
+
+  it("reports NUMASEC_CHROMIUM_PATH in reason when env var is set but fails", async () => {
+    await using fixture = await tmpdir()
+    const executable = path.join(fixture.path, "chromium")
+    await Bun.write(executable, "#!/bin/sh\nexit 0\n")
+    await chmod(executable, 0o755)
+
+    process.env.NUMASEC_CHROMIUM_PATH = "/nonexistent/path/chromium"
+
+    try {
+      const browser = await evaluateBrowserRuntime({
+        chromium: {
+          executablePath: () => executable,
+          launch: async () => {
+            throw new Error("no chromium")
+          },
+        },
+      })
+
+      expect(browser.present).toBe(false)
+      expect(browser.reason).toContain("Tried NUMASEC_CHROMIUM_PATH=/nonexistent/path/chromium")
+    } finally {
+      delete process.env.NUMASEC_CHROMIUM_PATH
+    }
+  })
+
+  it(
+    "times out when chromium.launch() hangs instead of blocking forever",
+    async () => {
+      await using fixture = await tmpdir()
+      const executable = path.join(fixture.path, "chromium")
+      await Bun.write(executable, "#!/bin/sh\nexit 0\n")
+      await chmod(executable, 0o755)
+
+      const start = Date.now()
+      const browser = await evaluateBrowserRuntime({
+        chromium: {
+          executablePath: () => executable,
+          launch: () => new Promise(() => {}), // never resolves — simulates hang
+        },
+      })
+
+      const elapsed = Date.now() - start
+      expect(browser.present).toBe(false)
+      expect(browser.reason).toContain("browser launch timed out")
+      // 10s primary timeout + up to 5s fallback timeout + overhead
+      expect(elapsed).toBeLessThan(18_000)
+    },
+    { timeout: 25_000 },
+  )
 })

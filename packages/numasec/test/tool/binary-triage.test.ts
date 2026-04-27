@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "path"
 import { writeFile } from "node:fs/promises"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
@@ -92,7 +93,7 @@ describe("tool/binary-triage", () => {
           expect(result.metadata.command).toEqual([
             "checksec",
             "file",
-            `${fixture.path}/chal.bin`,
+            path.join(fixture.path, "chal.bin"),
             "--output",
             "json",
           ])
@@ -132,7 +133,7 @@ describe("tool/binary-triage", () => {
               },
             } as any,
           )
-          expect(seen).toEqual([["checksec", "file", `${fixture.path}/chal.bin`, "--output", "json"]])
+          expect(seen).toEqual([["checksec", "file", path.join(fixture.path, "chal.bin"), "--output", "json"]])
         },
       })
     } finally {

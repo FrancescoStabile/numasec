@@ -148,10 +148,9 @@ describe("tool.read external_directory permission", () => {
 
         const { items, next } = asks()
         const target = path.join(dir, "test.txt")
-        const alt = target
-          .replace(/^[A-Za-z]:/, "")
-          .replaceAll("\\", "/")
-          .toLowerCase()
+        // Use MSYS2/Cygwin convention (/c/Users/...) so windowsPath can normalize it
+        const drive = target.match(/^[A-Za-z]:/)![0]
+        const alt = "/" + drive[0].toLowerCase() + target.slice(2).replaceAll("\\", "/").toLowerCase()
 
         yield* exec(dir, { filePath: alt }, next)
         const read = items.find((item) => item.permission === "read")

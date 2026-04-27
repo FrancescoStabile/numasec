@@ -28,14 +28,23 @@ export type Report = {
   capability: CapabilitySurface
 }
 
-const BROWSER_INSTALL_HINT = "Run: npx playwright install chromium"
-let browserRuntime: Promise<BrowserReport> | undefined
+const BROWSER_INSTALL_HINT = "Playwright unavailable. Run: bun add playwright && npx playwright install chromium"
+const BROWSER_LAUNCH_TIMEOUT_MS = 10_000
+const BROWSER_FALLBACK_TIMEOUT_MS = 5_000
+let browserRuntimeCache: { result: Promise<BrowserReport>; at: number } | undefined
 
 const VERSION_TIMEOUT_MS = 500
 
 const whichOf = (name: string): string | null => {
   const fn = (Bun as unknown as { which?: (n: string) => string | null }).which
   return typeof fn === "function" ? fn(name) : null
+}
+
+const CHROMIUM_SYSTEM_NAMES = ["chromium", "chromium-browser", "google-chrome", "chrome"] as const
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return String(err)
 }
 
 async function probeVersion(bin: string): Promise<string | undefined> {
@@ -96,35 +105,149 @@ async function probeWorkspace(workspace: string): Promise<WorkspaceReport> {
   }
 }
 
-function browserUnavailable(): BrowserReport {
+function browserUnavailable(reason?: string): BrowserReport {
   return {
     present: false,
-    reason: BROWSER_INSTALL_HINT,
+    reason: reason ?? BROWSER_INSTALL_HINT,
   }
+}
+
+async function findSystemChromium(): Promise<string | null> {
+  const envPath = process.env.NUMASEC_CHROMIUM_PATH
+  if (envPath) {
+    try {
+      await access(envPath, constants.X_OK)
+      return envPath
+    } catch {
+      return null
+    }
+  }
+  for (const name of CHROMIUM_SYSTEM_NAMES) {
+    const found = whichOf(name)
+    if (found) return found
+  }
+  return null
+}
+
+async function tryLaunchWithDriver(
+  driver: BrowserRuntimeDriver,
+  timeoutMs: number,
+  executablePath?: string,
+): Promise<{ close(): Promise<void> | void }> {
+  const launchPromise = executablePath
+    ? driver.chromium.launch({ headless: true, executablePath } as Parameters<typeof driver.chromium.launch>[0])
+    : driver.chromium.launch({ headless: true })
+  const result = await Promise.race([
+    launchPromise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("browser launch timed out")), timeoutMs),
+    ),
+  ])
+  return result
+}
+
+async function tryResolveExecutable(driver: BrowserRuntimeDriver): Promise<string> {
+  const executable = driver.chromium.executablePath()
+  await access(executable, constants.X_OK)
+  return executable
 }
 
 export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Promise<BrowserReport> {
+  // First try Playwright's managed Chromium
+  let firstError: string | undefined
   try {
-    const executable = driver.chromium.executablePath()
-    await access(executable, constants.X_OK)
-    const browser = await driver.chromium.launch({ headless: true })
+    const executable = await tryResolveExecutable(driver)
+    const browser = await tryLaunchWithDriver(driver, BROWSER_LAUNCH_TIMEOUT_MS)
     await browser.close()
     return { present: true, executable }
-  } catch {
-    return browserUnavailable()
+  } catch (err) {
+    firstError = errorMessage(err)
   }
+
+  // Fallback: system Chromium via env var or PATH — shorter timeout since it's secondary
+  try {
+    const systemPath = await findSystemChromium()
+    if (systemPath) {
+      const browser = await tryLaunchWithDriver(driver, BROWSER_FALLBACK_TIMEOUT_MS, systemPath)
+      await browser.close()
+      return { present: true, executable: systemPath }
+    }
+  } catch (err) {
+    // system chromium found but failed to launch
+  }
+
+  const pathHint = process.env.NUMASEC_CHROMIUM_PATH
+    ? ` | Tried NUMASEC_CHROMIUM_PATH=${process.env.NUMASEC_CHROMIUM_PATH}`
+    : ""
+  return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${firstError ?? "unknown error"}${pathHint}`)
 }
 
 async function probeBrowserRuntime(): Promise<BrowserReport> {
-  browserRuntime ??= (async () => {
+  const now = Date.now()
+  if (browserRuntimeCache && now - browserRuntimeCache.at < 30_000) return browserRuntimeCache.result
+
+  const result = (async (): Promise<BrowserReport> => {
+    // Try Playwright's built-in import (works in dev mode)
+    let driver: BrowserRuntimeDriver | undefined
     try {
-      return await evaluateBrowserRuntime(await import("playwright"))
+      driver = await import("playwright")
     } catch {
-      return browserUnavailable()
+      // import failed — not installed or bundled CI path issue
     }
+
+    // In compiled binaries, import may succeed but chromium is undefined.
+    // Try local filesystem fallback via createRequire.
+    if (!driver?.chromium?.launch) {
+      try {
+        const { createRequire } = await import("module")
+        const require = createRequire(process.cwd() + "/package.json")
+        driver = require("playwright") as BrowserRuntimeDriver
+      } catch {
+        // local filesystem fallback also failed
+      }
+    }
+
+    if (driver?.chromium?.launch) {
+      try {
+        return await evaluateBrowserRuntime(driver)
+      } catch (err) {
+        return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // Playwright unavailable — fallback: detect Chromium on the system
+    const systemPath = await findSystemChromium()
+    if (systemPath) {
+      try {
+        const proc = Bun.spawn([systemPath, "--version"], {
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: BROWSER_LAUNCH_TIMEOUT_MS,
+        })
+        const output = await new Response(proc.stdout).text()
+        await proc.exited
+        if (proc.exitCode === 0 && output.trim()) {
+          return {
+            present: true,
+            executable: systemPath,
+            reason: output.trim().split("\n")[0],
+          }
+        }
+      } catch {
+        // binary exists but can't run (missing deps, etc.)
+      }
+      return {
+        present: true,
+        executable: systemPath,
+        reason: "Found on system but Playwright can't load (bundled binary). Set NUMASEC_CHROMIUM_PATH and install playwright locally: bun add playwright",
+      }
+    }
+
+    return browserUnavailable(BROWSER_INSTALL_HINT)
   })()
 
-  return browserRuntime
+  browserRuntimeCache = { result, at: now }
+  return result
 }
 
 function renderCapabilityLine(item: CapabilityReadiness) {
@@ -139,7 +262,10 @@ export function probe(workspace: string = process.cwd()): Effect.Effect<Report> 
   return Effect.promise(async () => {
     const binaries = await Promise.all(BINARIES.map((item) => probeBinary(item.name)))
     const [browser, vault, cve, ws] = await Promise.all([
-      probeBrowserRuntime(),
+      probeBrowserRuntime().catch(
+        (err): BrowserReport =>
+          browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`),
+      ),
       probeVault(),
       probeCve(workspace),
       probeWorkspace(workspace),
