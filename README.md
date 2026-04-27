@@ -316,5 +316,5 @@ Do not run `bun test` from the repository root; package tests run from their pac
 <p align="center">
   Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>
   | <a href="https://x.com/Francesco_Sta">@Francesco_Sta</a>
-  <br/><sub>If numasec saves you a shift, <a href="https://github.com/FrancescoStabile/numasec/stargazers">drop a star</a>. It helps more than you think.</sub>
+  <br/><sub>If numasec helps you, <a href="https://github.com/FrancescoStabile/numasec/stargazers">drop a star</a>. Thanks for the support.</sub>
 </p>

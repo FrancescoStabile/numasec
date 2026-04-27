@@ -1,37 +1,28 @@
 # Security
 
+## Disclaimer
+
+numasec is a security workbench designed for **authorized operations**, you are solely responsible for ensuring you have explicit written authorization before testing any system or network that you do not own.
+Unauthorized access to computer systems is illegal and may result in criminal and civil penalties.
+
+The authors, contributors, and maintainers of numasec assume **no liability** for misuse, damage, or legal consequences arising from the use of this software, by using numasec, you agree that:
+
+- You will only test systems you own or have explicit written permission to test.
+- You understand and comply with all applicable local, national, and international laws.
+- You accept full legal and ethical responsibility for your actions.
+- numasec is provided "as is", without warranty of any kind.
+
+If you are unsure whether your use is authorized, **do not proceed**.
+
 ## Threat Model
 
 ### Overview
 
-numasec is an AI-powered cybersecurity agent that runs locally on your machine. It provides a multi-agent system with access to powerful tools including shell execution, file operations, browser automation, HTTP requests, and web access.
-
-### No Sandbox
-
-numasec does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
-
-If you need true isolation, run numasec inside a Docker container or VM.
-
-### Server Mode
-
-Server mode is opt-in only. When enabled, set `NUMASEC_SERVER_PASSWORD` to require HTTP Basic Auth. Without this, the server runs unauthenticated (with a warning). It is the end user's responsibility to secure the server - any functionality it provides is not a vulnerability.
-
-### Out of Scope
-
-| Category                        | Rationale                                                               |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| **Server access when opted-in** | If you enable server mode, API access is expected behavior              |
-| **Sandbox escapes**             | The permission system is not a sandbox (see above)                      |
-| **LLM provider data handling**  | Data sent to your configured LLM provider is governed by their policies |
-| **MCP server behavior**         | External MCP servers you configure are outside our trust boundary       |
-| **Malicious config files**      | Users control their own config; modifying it is not an attack vector    |
-
----
+Numasec is an AI-powered cybersecurity agent that runs locally on your machine, it provides a multi-agent system with access to powerful tools including shell execution, file operations, browser automation, HTTP requests, and web access.
 
 # Reporting Security Issues
 
 We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
 
-To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/FrancescoStabile/numasec/security/advisories/new) tab.
+To report a security issue, please use the ["Discussions"](https://github.com/FrancescoStabile/numasec/discussions) tab.
 
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.

@@ -37,3 +37,6 @@ session.json
 # Local notes (agent scratchpad)
 notes/
 .superpowers/
+
+# Internal documentation (not for public release)
+/docs
