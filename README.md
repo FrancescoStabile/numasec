@@ -4,7 +4,7 @@
 
 <h1 align="center">numasec</h1>
 
-<p align="center"><b>AI-native security workbench for operators, builders, and hackers.</b></p>
+<p align="center"><b>AI Security Agent for operators, builders, and hackers.</b></p>
 
 <p align="center">
   <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=develop&style=for-the-badge&label=CI&logo=github" alt="CI"></a>
@@ -33,15 +33,15 @@ Security work is not a single prompt.
 
 It is scope, recon, browser state, raw requests, screenshots, notes, payloads, dead ends, local tools, findings, retests, and a report that still makes sense next week.
 
-numasec is a terminal-native AI workbench built around that reality. It gives you specialist security agents, durable operation memory, a real browser, raw HTTP, local tool execution, reusable plays, plugin hooks, and adapter-driven workflows for web, code, cloud, containers, IaC, and binaries.
+numasec is a terminal-native AI workbench built around that reality: it gives you specialist security agents, durable operation memory, a real browser, raw HTTP, local tool execution, reusable plays, plugin hooks, and adapter-driven workflows for web, code, cloud, containers, IaC, and binaries.
 
-If a coding agent is an engineer, **numasec is an operator**.
+If Coding Agents are Software Engineers, **numasec is a Cyber Security Operator**.
 
 <p align="center"><sub>5 primary agents | 7 operation kinds | 11 built-in plays | 30+ built-in tools | embedded skills | plugin API</sub></p>
 
 ## What it can do
 
-numasec sits between a chat agent and a security distribution. It can reason like an assistant, but it can also act through the tools that matter during an assessment.
+numasec sits between a chat agent and a security distribution, it can reason and talk like an assistant, but it can also act through the tools that matter during an assessment.
 
 | Area | What numasec brings |
 |---|---|
@@ -276,23 +276,23 @@ The cleanest community contribution is often a play: pick one repeatable workflo
 
 **Is numasec only for red teams?**
 
-No. It is useful for authorized pentesting, AppSec review, secure design, OSINT, research, CTFs, and training.
+No, it is useful for authorized pentesting, AppSec review, secure design, OSINT, research, CTFs, and training.
 
-**Is it a scanner?**
+**Is it just a scanner?**
 
-No. It can drive scanners, but the product is the workflow around them: scope, context, evidence, decisions, and handoff.
+No, it can drive scanners, but the product is the workflow around them: scope, context, evidence, decisions, and handoff.
 
 **Can it run without external tools?**
 
-Yes. Built-in browser, HTTP, code, methodology, CVE, and file tools work immediately. External adapters unlock deeper checks.
+Yes: built-in browser, HTTP, code, methodology, CVE, and file tools work immediately, external adapters unlock deeper checks.
 
 **Can I use new models as they come out?**
 
-Usually yes through provider configuration/model IDs. SDK upgrades are needed when providers add new APIs or capability semantics, not for every string-only model release.
+Yes through ai-sdk.
 
 **Can I extend it?**
 
-Yes. Skills, plugins, adapters, and plays are first-class extension points.
+Yes: skills, plugins, adapters, and plays are first-class extension points.
 
 ## Development
 
@@ -311,7 +311,7 @@ Do not run `bun test` from the repository root; package tests run from their pac
 
 ## License
 
-[MIT](./LICENSE). Use it for authorized work, research, education, and defense.
+[MIT](./LICENSE). Use it for authorized work, research and education.
 
 <p align="center">
   Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>
