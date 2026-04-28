@@ -24,7 +24,7 @@ import { Spinner } from "@tui/component/spinner"
 import { OperationBanner } from "@tui/component/operation-banner"
 import { FRAME, STATUS } from "@tui/component/glyph"
 import { selectedForeground, useTheme } from "@tui/context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, pathToFiletype } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import type {
   AssistantMessage,
@@ -67,7 +67,6 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
-const LANGUAGE_EXTENSIONS: Record<string, string> = {}
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
 import { Toast, useToast } from "../../ui/toast"
@@ -2344,8 +2343,7 @@ function input(input: Record<string, any>, omit?: string[]): string {
 
 function filetype(input?: string) {
   if (!input) return "none"
-  const ext = path.extname(input)
-  const language = LANGUAGE_EXTENSIONS[ext]
-  if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
+  const language = pathToFiletype(input)
+  if (language && ["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
   return language
 }

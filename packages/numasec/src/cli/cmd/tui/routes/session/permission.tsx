@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { TextareaRenderable } from "@opentui/core"
+import { pathToFiletype, type TextareaRenderable } from "@opentui/core"
 import { useKeybind } from "../../context/keybind"
 import { useTheme, selectedForeground } from "../../context/theme"
 import type { PermissionRequest } from "@numasec/sdk/v2"
@@ -10,7 +10,6 @@ import { SplitBorder } from "../../component/border"
 import { useSync } from "../../context/sync"
 import { useTextareaKeybindings } from "../../component/textarea-keybindings"
 import path from "path"
-const LANGUAGE_EXTENSIONS: Record<string, string> = {}
 import { Keybind } from "@/util"
 import { Locale } from "@/util"
 import { Global } from "@/global"
@@ -40,9 +39,8 @@ function normalizePath(input?: string) {
 
 function filetype(input?: string) {
   if (!input) return "none"
-  const ext = path.extname(input)
-  const language = LANGUAGE_EXTENSIONS[ext]
-  if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
+  const language = pathToFiletype(input)
+  if (language && ["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
   return language
 }
 
