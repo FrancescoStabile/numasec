@@ -41,6 +41,8 @@ function sdkKey(npm: string): string | undefined {
       return "gateway"
     case "@openrouter/ai-sdk-provider":
       return "openrouter"
+    case "@ai-sdk/openai-compatible":
+      return "openaiCompatible"
   }
   return undefined
 }
@@ -177,35 +179,62 @@ function normalizeMessages(
 
   if (typeof model.capabilities.interleaved === "object" && model.capabilities.interleaved.field) {
     const field = model.capabilities.interleaved.field
-    return msgs.map((msg) => {
+    const key = sdkKey(model.api.npm) ?? model.providerID
+    msgs = msgs.map((msg) => {
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
         const reasoningParts = msg.content.filter((part: any) => part.type === "reasoning")
+        const hasToolCalls = msg.content.some((part: any) => part.type === "tool-call")
         const reasoningText = reasoningParts.map((part: any) => part.text).join("")
 
-        // Filter out reasoning parts from content
-        const filteredContent = msg.content.filter((part: any) => part.type !== "reasoning")
-
-        // Include reasoning_content | reasoning_details directly on the message for all assistant messages
-        if (reasoningText) {
+        // Include reasoning_content | reasoning_details directly on the message for all assistant messages.
+        // Keep reasoning parts in the content array so providers that natively handle
+        // type: "reasoning" (e.g. @ai-sdk/openai-compatible, @openrouter/ai-sdk-provider)
+        // can correctly reconstruct reasoning metadata from the parts.
+        if (reasoningText || hasToolCalls) {
           return {
             ...msg,
-            content: filteredContent,
             providerOptions: {
               ...msg.providerOptions,
-              openaiCompatible: {
-                ...(msg.providerOptions as any)?.openaiCompatible,
+              [key]: {
+                ...(msg.providerOptions as any)?.[key],
                 [field]: reasoningText,
               },
             },
           }
         }
-
-        return {
-          ...msg,
-          content: filteredContent,
-        }
       }
 
+      return msg
+    })
+  }
+
+  // Fallback for @ai-sdk/openai-compatible reasoning models without interleaved config.
+  // DeepSeek and other OpenAI-compatible APIs require reasoning_content to be passed back
+  // when the model performed a tool call, even if the reasoning text is empty.
+  if (
+    model.api.npm === "@ai-sdk/openai-compatible" &&
+    model.capabilities.reasoning &&
+    !(typeof model.capabilities.interleaved === "object" && model.capabilities.interleaved.field)
+  ) {
+    msgs = msgs.map((msg) => {
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        const reasoningParts = msg.content.filter((part: any) => part.type === "reasoning")
+        const hasToolCalls = msg.content.some((part: any) => part.type === "tool-call")
+        const reasoningText = reasoningParts.map((part: any) => part.text).join("")
+
+        if (reasoningText || hasToolCalls) {
+          return {
+            ...msg,
+            providerOptions: {
+              ...msg.providerOptions,
+              openaiCompatible: {
+                ...(msg.providerOptions as any)?.openaiCompatible,
+                reasoning_content: reasoningText,
+              },
+            },
+          }
+        }
+      }
       return msg
     })
   }

@@ -896,6 +896,10 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
     expect(result).toHaveLength(1)
     expect(result[0].content).toEqual([
       {
+        type: "reasoning",
+        text: "Let me think about this...",
+      },
+      {
         type: "tool-call",
         toolCallId: "test",
         toolName: "bash",
@@ -958,6 +962,170 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
       { type: "text", text: "Answer" },
     ])
     expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBeUndefined()
+  })
+
+  test("DeepSeek with tool calls injects empty reasoning_content when no reasoning parts", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "test",
+            toolName: "bash",
+            input: { command: "echo hello" },
+          },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(
+      msgs,
+      {
+        id: ModelID.make("deepseek/deepseek-chat"),
+        providerID: ProviderID.make("deepseek"),
+        api: {
+          id: "deepseek-chat",
+          url: "https://api.deepseek.com",
+          npm: "@ai-sdk/openai-compatible",
+        },
+        name: "DeepSeek Chat",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: {
+            field: "reasoning_content",
+          },
+        },
+        cost: {
+          input: 0.001,
+          output: 0.002,
+          cache: { read: 0.0001, write: 0.0002 },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2023-04-01",
+      },
+      {},
+    )
+
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("")
+  })
+
+  test("OpenAI-compatible reasoning model without interleaved config includes reasoning_content", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "Let me think..." },
+          {
+            type: "tool-call",
+            toolCallId: "test",
+            toolName: "bash",
+            input: { command: "echo hello" },
+          },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(
+      msgs,
+      {
+        id: ModelID.make("custom/deepseek-v4-pro"),
+        providerID: ProviderID.make("custom"),
+        api: {
+          id: "deepseek-v4-pro",
+          url: "https://api.custom.com",
+          npm: "@ai-sdk/openai-compatible",
+        },
+        name: "DeepSeek V4 Pro",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: {
+          input: 0.001,
+          output: 0.002,
+          cache: { read: 0.0001, write: 0.0002 },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2023-04-01",
+      },
+      {},
+    )
+
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("Let me think...")
+  })
+
+  test("OpenAI-compatible reasoning model without interleaved and no tool calls leaves reasoning unchanged", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "Just thinking..." },
+          { type: "text", text: "Hello" },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(
+      msgs,
+      {
+        id: ModelID.make("custom/deepseek-v4-pro"),
+        providerID: ProviderID.make("custom"),
+        api: {
+          id: "deepseek-v4-pro",
+          url: "https://api.custom.com",
+          npm: "@ai-sdk/openai-compatible",
+        },
+        name: "DeepSeek V4 Pro",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: {
+          input: 0.001,
+          output: 0.002,
+          cache: { read: 0.0001, write: 0.0002 },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2023-04-01",
+      },
+      {},
+    )
+
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("Just thinking...")
   })
 })
 
@@ -1587,8 +1755,9 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
 
     const result = ProviderTransform.message(msgs, numasecModel, { store: false }) as any[]
 
-    expect(result[0].content[0].providerOptions?.numasec?.itemId).toBe("msg_123")
-    expect(result[0].content[0].providerOptions?.numasec?.otherOption).toBe("value")
+    expect(result[0].content[0].providerOptions?.openaiCompatible?.itemId).toBe("msg_123")
+    expect(result[0].content[0].providerOptions?.openaiCompatible?.otherOption).toBe("value")
+    expect(result[0].content[0].providerOptions?.numasec).toBeUndefined()
   })
 
   test("preserves itemId across all providerOptions keys", () => {
@@ -1626,11 +1795,13 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
     const result = ProviderTransform.message(msgs, numasecModel, { store: false }) as any[]
 
     expect(result[0].providerOptions?.openai?.itemId).toBe("msg_root")
-    expect(result[0].providerOptions?.numasec?.itemId).toBe("msg_numasec")
+    expect(result[0].providerOptions?.openaiCompatible?.itemId).toBe("msg_numasec")
     expect(result[0].providerOptions?.extra?.itemId).toBe("msg_extra")
+    expect(result[0].providerOptions?.numasec).toBeUndefined()
     expect(result[0].content[0].providerOptions?.openai?.itemId).toBe("msg_openai_part")
-    expect(result[0].content[0].providerOptions?.numasec?.itemId).toBe("msg_numasec_part")
+    expect(result[0].content[0].providerOptions?.openaiCompatible?.itemId).toBe("msg_numasec_part")
     expect(result[0].content[0].providerOptions?.extra?.itemId).toBe("msg_extra_part")
+    expect(result[0].content[0].providerOptions?.numasec).toBeUndefined()
   })
 
   test("does not strip metadata for non-openai packages when store is not false", () => {
