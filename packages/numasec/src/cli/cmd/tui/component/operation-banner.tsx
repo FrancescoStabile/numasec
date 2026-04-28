@@ -12,7 +12,7 @@ const KIND_GLYPHS: Record<OperationKind, string> = {
   pentest: "◆",
   appsec: "◈",
   osint: "●",
-  hacking: "✖",
+  hacking: "✕",
   bughunt: "✦",
   ctf: "▲",
   research: "◇",
