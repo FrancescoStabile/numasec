@@ -607,6 +607,10 @@ export function Autocomplete(props: {
     })
   })
 
+  onCleanup(() => {
+    if (store.visible) hide()
+  })
+
   const height = createMemo(() => {
     const count = options().length || 1
     if (!store.visible) return Math.min(10, count)

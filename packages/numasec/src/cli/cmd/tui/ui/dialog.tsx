@@ -82,7 +82,7 @@ function init() {
         renderer.clearSelection()
       }
       const current = store.stack.at(-1)!
-      current.onClose?.()
+      try { current.onClose?.() } catch {}
       setStore("stack", store.stack.slice(0, -1))
       evt.preventDefault()
       evt.stopPropagation()
@@ -111,7 +111,7 @@ function init() {
   return {
     clear() {
       for (const item of store.stack) {
-        if (item.onClose) item.onClose()
+        if (item.onClose) try { item.onClose() } catch {}
       }
       batch(() => {
         setStore("size", "medium")
@@ -125,7 +125,7 @@ function init() {
         focus?.blur()
       }
       for (const item of store.stack) {
-        if (item.onClose) item.onClose()
+        if (item.onClose) try { item.onClose() } catch {}
       }
       setStore("size", "medium")
       setStore("stack", [
