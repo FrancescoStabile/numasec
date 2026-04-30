@@ -28,7 +28,7 @@
     },
     "packages/numasec": {
       "name": "numasec",
-      "version": "1.1.7",
+      "version": "1.1.17",
       "bin": {
         "numasec": "./bin/numasec",
       },
@@ -226,7 +226,7 @@
     },
     "packages/shared": {
       "name": "@numasec/shared",
-      "version": "1.1.7",
+      "version": "1.1.11",
       "bin": {
         "numasec": "./bin/numasec",
       },

@@ -40,4 +40,5 @@ notes/
 
 # Internal documentation (not for public release)
 /docs
+/docs/superpowers
 opencode.json

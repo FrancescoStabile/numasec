@@ -989,6 +989,17 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
+                // Block SGR mouse sequences that leak as unrecognized key
+                // events. @opentui/core v0.1.99 requires exactly 3 semicolon-
+                // separated SGR values (Cb;Cx;Cy) but some terminals (e.g.
+                // Windows Terminal on WSL2 with a trackpad) emit 2-value
+                // sequences like \x1b[<112;34M, which the parser rejects as
+                // mouse and converts to a ParsedKey with name="". Prevent
+                // those from reaching the textarea text buffer.
+                if (e.name === "" && /^\x1b\[<\d+;[\d;]*[Mm]$/.test(e.raw)) {
+                  e.preventDefault()
+                  return
+                }
                 // Check clipboard for images before terminal-handled paste runs.
                 // This helps terminals that forward Ctrl+V to the app; Windows
                 // Terminal 1.25+ usually handles Ctrl+V before this path.

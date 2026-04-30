@@ -157,10 +157,17 @@ async function ensure(abort: AbortSignal): Promise<Session> {
     )
   }
 
-  const launchOptions = (executablePath?: string) =>
-    executablePath
-      ? ({ headless: true, executablePath } as Parameters<typeof pw.chromium.launch>[0])
-      : { headless: true }
+  const launchOptions = (executablePath?: string) => {
+    const base = executablePath ? { executablePath } : {}
+    if (process.platform === "win32" && typeof globalThis.Bun !== "undefined") {
+      return {
+        ...base,
+        headless: false,
+        args: ["--headless=new"],
+      } as Parameters<typeof pw.chromium.launch>[0]
+    }
+    return { ...base, headless: true } as Parameters<typeof pw.chromium.launch>[0]
+  }
 
   let firstError: string | undefined
   let browser: Awaited<ReturnType<typeof pw.chromium.launch>>

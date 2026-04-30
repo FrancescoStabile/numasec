@@ -134,9 +134,13 @@ async function tryLaunchWithDriver(
   timeoutMs: number,
   executablePath?: string,
 ): Promise<{ close(): Promise<void> | void }> {
-  const launchPromise = executablePath
-    ? driver.chromium.launch({ headless: true, executablePath } as Parameters<typeof driver.chromium.launch>[0])
-    : driver.chromium.launch({ headless: true })
+  const launchOpts: any = { headless: true }
+  if (executablePath) launchOpts.executablePath = executablePath
+  if (process.platform === "win32" && typeof globalThis.Bun !== "undefined") {
+    launchOpts.headless = false
+    launchOpts.args = ["--headless=new"]
+  }
+  const launchPromise = driver.chromium.launch(launchOpts)
   const result = await Promise.race([
     launchPromise,
     new Promise<never>((_, reject) =>
