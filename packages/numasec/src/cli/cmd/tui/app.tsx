@@ -62,6 +62,7 @@ import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { shouldEnableMouseMovement } from "./util/mouse"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
@@ -78,6 +79,7 @@ function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
     autoFocus: false,
     openConsoleOnError: false,
     useMouse: mouseEnabled,
+    enableMouseMovement: mouseEnabled && shouldEnableMouseMovement(),
     consoleOptions: {
       keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
       onCopySelection: (text) => {

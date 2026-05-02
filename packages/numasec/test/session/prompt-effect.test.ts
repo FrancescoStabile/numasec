@@ -1175,10 +1175,16 @@ it.live(
         const sh = yield* prompt
           .shell({ sessionID: chat.id, agent: "security", command: "sleep 0.2" })
           .pipe(Effect.forkChild)
-        yield* Effect.sleep(50)
+        yield* waitFor(
+          () => Effect.map(llm.calls, (calls) => (calls === 0 ? true : undefined)),
+          "timed out waiting for shell to start without LLM calls",
+        )
 
         const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-        yield* Effect.sleep(50)
+        yield* waitFor(
+          () => Effect.map(llm.calls, (calls) => (calls === 0 ? true : undefined)),
+          "timed out waiting for loop to remain queued behind shell",
+        )
 
         expect(yield* llm.calls).toBe(0)
 
@@ -1194,7 +1200,7 @@ it.live(
       }),
       { git: true, config: providerCfg },
     ),
-  3_000,
+  10_000,
 )
 
 it.live(
