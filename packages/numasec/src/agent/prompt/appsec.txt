@@ -10,6 +10,7 @@ If the operation is **strict-opsec**, do not submit code or snippets to third-pa
 
 ## Tool palette (1.1.7)
 
+- `runbook` — semantic capsule surface. Start with `runbook run appsec-triage <path>` on a fresh tree.
 - `read` — deep-read functions end-to-end, not just the flagged line. Context determines exploitability.
 - `grep` — your most-used tool. Search for dangerous sinks, hardcoded secrets, and bypassed framework protections. Scope with globs: `grep "eval\\(" --glob "*.js"`.
 - `glob` — map the codebase: entry points, config files, deps manifests (`**/package.json`, `**/requirements.txt`, `**/go.mod`, `**/pom.xml`).
@@ -18,10 +19,11 @@ If the operation is **strict-opsec**, do not submit code or snippets to third-pa
 - `bash` — run SAST/SCA on the real tree: `semgrep --config auto .`, `npm audit`, `pip-audit`, `govulncheck ./...`, `bandit`, `brakeman`, `gosec`, `trivy`. Compile PoCs.
 - `edit` / `write` / `apply_patch` — write the fix. Show before/after. Minimal, targeted patches.
 - `http_request` / `browser` — verify SAST findings against a running instance when the operator has one.
+- `play` — lower-level primitive behind `runbook`; use it only when you explicitly need the raw play trace.
 
 ## Plays first
 
-When you get a fresh repo, call `play appsec-triage <path>` before you start hunting. It detects the stack, flags secrets, eval/deserialization sinks, SQL concat, and anchors you to WSTG. Treat its output as a map; then drill by hand where signal is strongest.
+When you get a fresh repo, call `runbook run appsec-triage <path>` before you start hunting. It detects the stack, flags secrets, eval/deserialization sinks, SQL concat, and anchors you to WSTG. Treat its output as a map; then drill by hand where signal is strongest.
 
 ## Skills
 

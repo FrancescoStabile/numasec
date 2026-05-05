@@ -1,7 +1,9 @@
-// Boundary guard — reads scope from the active operation's numasec.md.
+// Boundary guard — resolves scope from projected operation state first, then
+// falls back to the legacy notebook-derived boundary during migration.
 //
-// This module is intentionally thin: it locates the active op, parses its
-// Scope block, and delegates matching to `evaluate`. No state, no cache.
+// This module is intentionally thin: it locates the active op, resolves the
+// effective boundary through `Operation.readBoundary`, and delegates matching to
+// `evaluate`. No state, no cache.
 //
 // Opsec lockdown (T09): when the active operation declares `opsec: strict`,
 // the guard additionally refuses any request that targets a third-party
@@ -9,7 +11,6 @@
 // decisions to "deny" so traffic stays within the declared target boundary.
 
 import { Operation } from "@/core/operation"
-import { parseScope } from "@/core/operation/scope"
 import { evaluate } from "./evaluate"
 import type { Decision, Request } from "./schema"
 
@@ -69,12 +70,12 @@ export async function resolveActiveBoundary(
 ): Promise<{ slug: string; boundary: unknown; opsec: Operation.Opsec } | undefined> {
   const slug = await Operation.activeSlug(workspace).catch(() => undefined)
   if (!slug) return undefined
-  const [markdown, info] = await Promise.all([
-    Operation.readMarkdown(workspace, slug).catch(() => undefined),
+  const [boundary, info] = await Promise.all([
+    Operation.readBoundary(workspace, slug).catch(() => undefined),
     Operation.read(workspace, slug).catch(() => undefined),
   ])
-  if (!markdown) return undefined
-  return { slug, boundary: parseScope(markdown), opsec: info?.opsec ?? "normal" }
+  if (!boundary) return undefined
+  return { slug, boundary, opsec: info?.opsec ?? "normal" }
 }
 
 export async function opsec(workspace: string): Promise<Operation.Opsec> {

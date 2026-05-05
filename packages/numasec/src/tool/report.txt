@@ -1,0 +1,7 @@
+Build or inspect the active operation report bundle.
+
+Use this tool to:
+- build the current deliverable bundle for the active operation;
+- inspect the latest generated report bundle metadata.
+
+The report bundle is evidence-aware and cyber-kernel-aware. Generated reports should reflect only what the operation can currently support.

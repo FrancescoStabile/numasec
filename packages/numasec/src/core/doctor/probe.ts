@@ -186,7 +186,7 @@ export async function evaluateBrowserRuntime(driver: BrowserRuntimeDriver): Prom
   return browserUnavailable(`${BROWSER_INSTALL_HINT} — ${firstError ?? "unknown error"}${pathHint}`)
 }
 
-async function probeBrowserRuntime(): Promise<BrowserReport> {
+async function probeBrowserRuntime(workspace: string): Promise<BrowserReport> {
   const now = Date.now()
   if (browserRuntimeCache && now - browserRuntimeCache.at < 30_000) return browserRuntimeCache.result
 
@@ -204,7 +204,7 @@ async function probeBrowserRuntime(): Promise<BrowserReport> {
     if (!driver?.chromium?.launch) {
       try {
         const { createRequire } = await import("module")
-        const require = createRequire(process.cwd() + "/package.json")
+        const require = createRequire(path.join(workspace, "package.json"))
         driver = require("playwright") as BrowserRuntimeDriver
       } catch {
         // local filesystem fallback also failed
@@ -266,7 +266,7 @@ export function probe(workspace: string = process.cwd()): Effect.Effect<Report> 
   return Effect.promise(async () => {
     const binaries = await Promise.all(BINARIES.map((item) => probeBinary(item.name)))
     const [browser, vault, cve, ws] = await Promise.all([
-      probeBrowserRuntime().catch(
+      probeBrowserRuntime(workspace).catch(
         (err): BrowserReport =>
           browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`),
       ),

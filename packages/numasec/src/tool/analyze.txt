@@ -1,0 +1,11 @@
+Analyze a concrete cyber artifact or environment slice using the most appropriate first-party analyzer.
+
+Use this semantic entrypoint when you want AppSec-oriented triage without deciding between raw tools yourself.
+
+Targets:
+- `iac` -> delegates to `iac_triage`
+- `container` -> delegates to `container_surface`
+- `cloud` -> delegates to `cloud_posture`
+- `binary` -> delegates to `binary_triage`
+
+The delegated tool remains responsible for evidence capture, graph population, provenance, and degradation when its adapter is missing.

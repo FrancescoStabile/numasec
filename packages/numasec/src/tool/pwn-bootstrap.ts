@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import * as Tool from "./tool"
 import { Instance } from "@/project/instance"
 import { Operation, KIND_AGENT, type OperationKind, type OperationAgentID } from "@/core/operation"
+import { Cyber } from "@/core/cyber"
 
 const parameters = z.object({
   target: z.string().min(1).describe("raw target string — URL, IP, CIDR, or bare domain"),
@@ -54,7 +55,7 @@ export const PwnBootstrapTool = Tool.define<typeof parameters, Metadata, never>(
     return {
       description: DESCRIPTION,
       parameters,
-      execute: (params, _ctx: Tool.Context<Metadata>) =>
+      execute: (params, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const shape = classify(params.target)
           if (!shape) {
@@ -84,6 +85,36 @@ export const PwnBootstrapTool = Tool.define<typeof parameters, Metadata, never>(
             }),
           )
           yield* Effect.promise(() => Operation.activate(workspace, info.slug))
+          const boundary =
+            (yield* Effect.promise(() => Operation.readBoundary(workspace, info.slug).catch(() => undefined))) ?? {
+              default: "allow" as const,
+              in_scope: [],
+              out_of_scope: [],
+            }
+          yield* Cyber.upsertOperationState({
+            slug: info.slug,
+            label: info.label,
+            kind: info.kind,
+            target: info.target,
+            opsec: info.opsec,
+            in_scope: boundary.in_scope,
+            out_of_scope: boundary.out_of_scope,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            source: "pwn_bootstrap",
+            summary: `bootstrapped operation ${info.slug}`,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertScopePolicy({
+            operation_slug: info.slug,
+            default: boundary.default === "allow" ? "allow" : "ask",
+            in_scope: boundary.in_scope,
+            out_of_scope: boundary.out_of_scope,
+            opsec: info.opsec,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            source: "pwn_bootstrap",
+            summary: `scope policy ${info.slug}`,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
 
           return {
             title: `pwn: ${info.slug} · ${plan.kind} · ${plan.playId}`,

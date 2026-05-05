@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
 
-  "version": "1.1.19",
+  "version": "1.2.0",
   "name": "numasec",
   "type": "module",
   "license": "MIT",
@@ -17,7 +17,8 @@
     "dev": "bun run --conditions=browser ./src/index.ts",
     "dev:temporary": "bun run --conditions=browser ./src/temporary.ts",
     "db": "bun drizzle-kit",
-    "bench:local": "bun run script/bench/run.ts"
+    "bench:local": "bun run script/bench/run.ts",
+    "bench:cyber": "bun run script/bench/cyber.ts"
   },
   "bin": {
     "numasec": "./bin/numasec"

@@ -63,6 +63,17 @@ import { Bus } from "../bus"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
+import { WorkspaceTool } from "./workspace"
+import { EvidenceTool } from "./evidence"
+import { RunbookTool } from "./runbook"
+import { ScopeTool } from "./scope"
+import { AnalyzeTool } from "./analyze"
+import { KnowledgeTool } from "./knowledge"
+import { AutonomyTool } from "./autonomy"
+import { FindingTool } from "./finding"
+import { IdentityTool } from "./identity"
+import { ObservationTool } from "./observation"
+import { ReportTool } from "./report"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -149,6 +160,17 @@ export const layer: Layer.Layer<
     const containerSurfaceTool = yield* ContainerSurfaceTool
     const iacTriageTool = yield* IacTriageTool
     const binaryTriageTool = yield* BinaryTriageTool
+    const workspaceTool = yield* WorkspaceTool
+    const evidenceTool = yield* EvidenceTool
+    const runbookTool = yield* RunbookTool
+    const scopeTool = yield* ScopeTool
+    const analyzeTool = yield* AnalyzeTool
+    const knowledgeTool = yield* KnowledgeTool
+    const autonomyTool = yield* AutonomyTool
+    const findingTool = yield* FindingTool
+    const identityTool = yield* IdentityTool
+    const observationTool = yield* ObservationTool
+    const reportTool = yield* ReportTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -245,6 +267,17 @@ export const layer: Layer.Layer<
           container_surface: Tool.init(containerSurfaceTool),
           iac_triage: Tool.init(iacTriageTool),
           binary_triage: Tool.init(binaryTriageTool),
+          workspace: Tool.init(workspaceTool),
+          evidence: Tool.init(evidenceTool),
+          runbook: Tool.init(runbookTool),
+          scope: Tool.init(scopeTool),
+          analyze: Tool.init(analyzeTool),
+          knowledge: Tool.init(knowledgeTool),
+          autonomy: Tool.init(autonomyTool),
+          finding: Tool.init(findingTool),
+          identity: Tool.init(identityTool),
+          observation: Tool.init(observationTool),
+          report: Tool.init(reportTool),
         })
 
         return {
@@ -252,6 +285,17 @@ export const layer: Layer.Layer<
           builtin: [
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
+            tool.workspace,
+            tool.scope,
+            tool.autonomy,
+            tool.identity,
+            tool.evidence,
+            tool.observation,
+            tool.finding,
+            tool.report,
+            tool.runbook,
+            tool.analyze,
+            tool.knowledge,
             tool.bash,
             tool.read,
             tool.glob,

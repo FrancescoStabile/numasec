@@ -7,7 +7,7 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Command.defaultLayer, CrossSpawnSpawner.defaultLayer))
 
-const DEFAULT_NAMES = ["pwn", "play", "doctor", "opsec", "share", "remediate", "teach", "init", "review"] as const
+const DEFAULT_NAMES = ["pwn", "runbook", "play", "doctor", "opsec", "share", "remediate", "teach", "init", "review"] as const
 
 describe("command palette", () => {
   it.live("registers all default commands with short descriptions and priorities", () =>
@@ -41,16 +41,18 @@ describe("command palette", () => {
     ),
   )
 
-  it.live("describes the play command with current play ids", () =>
+  it.live("describes the primary runbook and raw play commands coherently", () =>
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
           const command = yield* Command.Service
-          const play = (yield* command.list()).find((c) => c.name === "play")
+          const all = yield* command.list()
+          const runbook = all.find((c) => c.name === "runbook")
+          const play = all.find((c) => c.name === "play")
 
-          expect(play?.description).toContain("cloud-posture")
-          expect(play?.description).toContain("binary-triage")
-          expect(play?.description).not.toContain("osint,")
+          expect(runbook?.description).toContain("semantic runbook")
+          expect(runbook?.description).toContain("web-surface")
+          expect(play?.description).toContain("low-level play primitive")
         }),
       { git: true },
     ),

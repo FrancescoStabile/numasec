@@ -4,6 +4,9 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./play.txt"
 import { PlayRegistry, PlayRunner, PlayNotFoundError, PlayArgError, isNormalizedStep } from "../core/play"
 import { Doctor } from "../core/doctor"
+import { Cyber } from "@/core/cyber"
+import { Instance } from "@/project/instance"
+import { Operation } from "@/core/operation"
 
 // Mutable so tests can inject a controlled probe without patching module namespaces.
 export const _deps = { probe: Doctor.probe }
@@ -39,6 +42,12 @@ function availabilityOf(result: ReturnType<typeof PlayRunner.run>) {
   return { available: false, degraded: false }
 }
 
+function capsuleStatus(input: { available: boolean; degraded?: boolean }) {
+  if (!input.available) return "unavailable"
+  if (input.degraded) return "degraded"
+  return "ready"
+}
+
 export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
   "play",
   Effect.gen(function* () {
@@ -64,7 +73,7 @@ export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
             }
           }
 
-          const report = yield* _deps.probe(process.cwd())
+          const report = yield* _deps.probe(Instance.directory)
           const environment = {
             binaries: new Set(report.binaries.filter((b) => b.present).map((b) => b.name)),
             runtimes: { browser: report.browser.present },
@@ -97,6 +106,83 @@ export const PlayTool = Tool.define<typeof parameters, Metadata, never>(
 
           const result = outcome.result
           const availability = availabilityOf(result)
+          const workspace = Instance.directory
+          const active = yield* Effect.promise(() => Operation.active(workspace).catch(() => undefined))
+          if (active) {
+            yield* Effect.promise(() =>
+              Operation.writeWorkflow(workspace, active.slug, {
+                kind: "play",
+                id: result.play.id,
+                payload: {
+                  args: params.args ?? {},
+                  available: availability.available,
+                  degraded: availability.degraded ?? false,
+                  trace: result.trace,
+                  skipped: result.skipped.map((item) => ({ reason: item.reason })),
+                },
+              }),
+            ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            yield* Effect.promise(() =>
+              Operation.setActiveWorkflow(workspace, active.slug, {
+                kind: "play",
+                id: result.play.id,
+              }),
+            ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            yield* Cyber.upsertWorkflowTrace({
+              operation_slug: active.slug,
+              workflow_kind: "play",
+              workflow_id: result.play.id,
+              fact_name: "execution_trace",
+              args: params.args ?? {},
+              trace: result.trace.map((item) => ({ ...item })),
+              skipped: result.skipped.map((item) => ({ reason: item.reason })),
+              available: availability.available,
+              degraded: availability.degraded ?? false,
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+              source: "play",
+              summary: `play ${result.play.id}`,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+            yield* Cyber.upsertFact({
+              operation_slug: active.slug,
+              entity_kind: "play",
+              entity_key: result.play.id,
+              fact_name: "capsule_readiness",
+              value_json: {
+                id: result.play.id,
+                name: result.play.name,
+                description: result.play.description,
+                status: capsuleStatus(availability),
+                available: availability.available,
+                degraded: availability.degraded ?? false,
+                required_args: result.play.args.filter((arg) => arg.required).map((arg) => arg.name),
+              },
+              writer_kind: "tool",
+              status: availability.available ? "observed" : "stale",
+              confidence: 1000,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+            yield* Cyber.upsertFact({
+              operation_slug: active.slug,
+              entity_kind: "play",
+              entity_key: result.play.id,
+              fact_name: "capsule_execution",
+              value_json: {
+                id: result.play.id,
+                name: result.play.name,
+                description: result.play.description,
+                status: capsuleStatus(availability),
+                invoked_via: "play",
+                args: params.args ?? {},
+                steps: result.trace.length,
+                skipped: result.skipped.length,
+                available: availability.available,
+                degraded: availability.degraded ?? false,
+              },
+              writer_kind: "tool",
+              status: availability.available ? "observed" : "stale",
+              confidence: 1000,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+          }
           return {
             title: `play: ${result.play.name}`,
             output: PlayRunner.format(result),

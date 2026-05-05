@@ -8,6 +8,10 @@ import { Instance } from "../../src/project/instance"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Truncate } from "../../src/tool"
 import { PlayTool, _deps } from "../../src/tool/play"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
+import path from "path"
 import { tmpdir } from "../fixture/fixture"
 
 const runtime = ManagedRuntime.make(
@@ -376,6 +380,97 @@ describe("tool/play", () => {
       expect(result.metadata.degraded).toBe(false)
       expect(result.output).toContain("missing required capability: checksec adapter")
       expect(result.output).toContain("Binary Triage")
+    } finally {
+      _deps.probe = saved
+    }
+  })
+
+  test("writes play execution trace into the cyber kernel when an operation is active", async () => {
+    const saved = _deps.probe
+    _deps.probe = fakeProbe(true) as any
+    await using fixture = await tmpdir({ git: true })
+    try {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const op = await Operation.create({ workspace: fixture.path, label: "Play Kernel", kind: "pentest" })
+          const result: any = await runtime.runPromise(
+            Effect.gen(function* () {
+              const info = yield* PlayTool
+              const tool = yield* info.init()
+              return yield* tool.execute(
+                { id: "web-surface", args: { target: "https://example.com", domain: "example.com" } } as any,
+                baseCtx,
+              )
+            }) as any,
+          )
+          expect(result.metadata.play).toBe("web-surface")
+
+          const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+          const relations = await AppRuntime.runPromise(Cyber.listRelations({ operation_slug: op.slug, limit: 100 }))
+          const workflowProjection = path.join(
+            fixture.path,
+            ".numasec",
+            "operation",
+            op.slug,
+            "workflow",
+            "play-web-surface.json",
+          )
+
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "play" &&
+              item.entity_key === "web-surface" &&
+              item.fact_name === "capsule_readiness",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "play" &&
+              item.entity_key === "web-surface" &&
+              item.fact_name === "capsule_execution",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+                item.entity_kind === "play" &&
+                item.entity_key === "web-surface" &&
+                item.fact_name === "execution_trace",
+            ),
+          ).toBe(true)
+          expect(
+            relations.some(
+              (item) =>
+                item.src_kind === "operation" &&
+                item.src_key === op.slug &&
+                item.relation === "uses_play" &&
+                item.dst_kind === "play" &&
+                item.dst_key === "web-surface",
+            ),
+          ).toBe(true)
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "workflow_step" &&
+                item.entity_key.startsWith("play:web-surface:planned:") &&
+                item.fact_name === "planned_step",
+            ),
+          ).toBe(true)
+          expect(
+            relations.some(
+              (item) =>
+                item.src_kind === "play" &&
+                item.src_key === "web-surface" &&
+                item.relation === "has_step" &&
+                item.dst_kind === "workflow_step",
+            ),
+          ).toBe(true)
+          expect(await Bun.file(workflowProjection).exists()).toBe(true)
+        },
+      })
     } finally {
       _deps.probe = saved
     }

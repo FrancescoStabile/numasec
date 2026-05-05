@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import * as Tool from "./tool"
 import DESCRIPTION from "./remediate.txt"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
 import { Observation } from "@/core/observation"
 import { Operation } from "@/core/operation"
 import { Instance } from "@/project/instance"
@@ -98,6 +100,62 @@ function adviceReferences(o: Observation.Observation): string[] {
   return refs
 }
 
+function recordRemediation(input: {
+  slug: string
+  output: string
+  observation_id: string
+  title: string
+  mode: "patch" | "advice"
+  severity?: string
+  source: "generated" | "not_found" | "no_active_operation" | "refused_fixture" | "unreadable"
+  session_id: Tool.Context["sessionID"]
+  message_id: Tool.Context["messageID"]
+}) {
+  return Effect.gen(function* () {
+    const workspace = Instance.directory
+    const evidence = yield* Effect.promise(() =>
+      Evidence.put(workspace, input.slug, input.output, {
+        mime: "application/json",
+        ext: "json",
+        label: `remediate ${input.observation_id} ${input.mode}`,
+        source: "remediate",
+      }),
+    ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const evidenceRefs = evidence ? [evidence.sha256] : undefined
+    const eventID = yield* Cyber.appendLedger({
+      kind: "fact.observed",
+      source: "remediate",
+      summary: `remediate ${input.mode} ${input.observation_id}`,
+      session_id: input.session_id,
+      message_id: input.message_id,
+      evidence_refs: evidenceRefs,
+      data: {
+        observation_id: input.observation_id,
+        title: input.title,
+        mode: input.mode,
+        severity: input.severity ?? null,
+        source: input.source,
+      },
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    yield* Cyber.upsertFact({
+      entity_kind: "observation",
+      entity_key: input.observation_id,
+      fact_name: input.mode === "patch" ? "remediation_patch_scaffold" : "remediation_advice",
+      value_json: {
+        title: input.title,
+        mode: input.mode,
+        severity: input.severity,
+        source: input.source,
+      },
+      writer_kind: "tool",
+      status: input.source === "generated" ? "observed" : "candidate",
+      confidence: input.source === "generated" ? 900 : 700,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+  })
+}
+
 export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
   "remediate",
   Effect.gen(function* () {
@@ -122,9 +180,10 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
               error: "no_active_operation",
               message: "No active operation — start one with /pwn before calling remediate.",
             }
+            const output = JSON.stringify(payload, null, 2)
             return {
               title: "remediate: no active op",
-              output: JSON.stringify(payload, null, 2),
+              output,
               metadata: {
                 mode,
                 observation_id: params.observation_id,
@@ -134,16 +193,30 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
             }
           }
 
-          const items = yield* Effect.promise(() => Observation.list(workspace, slug))
-          const obs = items.find((o) => o.id === params.observation_id)
+          const obs =
+            (yield* Effect.promise(() => Observation.getProjected(workspace, slug, params.observation_id)).pipe(
+              Effect.catch(() => Effect.succeed(undefined)),
+            )) ??
+            (yield* Effect.promise(() => Observation.list(workspace, slug))).find((o) => o.id === params.observation_id)
           if (!obs) {
             const payload = {
               error: "observation_not_found",
               message: `No observation with id "${params.observation_id}" in operation "${slug}".`,
             }
+            const output = JSON.stringify(payload, null, 2)
+            yield* recordRemediation({
+              slug,
+              output,
+              observation_id: params.observation_id,
+              title: "observation not found",
+              mode,
+              source: "not_found",
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+            })
             return {
               title: "remediate: not found",
-              output: JSON.stringify(payload, null, 2),
+              output,
               metadata: {
                 mode,
                 observation_id: params.observation_id,
@@ -163,9 +236,21 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
               steps: adviceSteps(obs),
               references: adviceReferences(obs),
             }
+            const output = JSON.stringify(payload, null, 2)
+            yield* recordRemediation({
+              slug,
+              output,
+              observation_id: obs.id,
+              title: obs.title,
+              mode: "advice",
+              severity: obs.severity,
+              source: "generated",
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+            })
             return {
               title: `remediate · advice · ${obs.severity ?? "n/a"}`,
-              output: JSON.stringify(payload, null, 2),
+              output,
               metadata: {
                 mode,
                 observation_id: obs.id,
@@ -191,9 +276,21 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
               ],
               references: adviceReferences(obs),
             }
+            const output = JSON.stringify(payload, null, 2)
+            yield* recordRemediation({
+              slug,
+              output,
+              observation_id: obs.id,
+              title: obs.title,
+              mode,
+              severity: obs.severity,
+              source: "refused_fixture",
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+            })
             return {
               title: "remediate · refused (fixture)",
-              output: JSON.stringify(payload, null, 2),
+              output,
               metadata: {
                 mode,
                 observation_id: obs.id,
@@ -219,9 +316,21 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
               ],
               references: adviceReferences(obs),
             }
+            const output = JSON.stringify(payload, null, 2)
+            yield* recordRemediation({
+              slug,
+              output,
+              observation_id: obs.id,
+              title: obs.title,
+              mode,
+              severity: obs.severity,
+              source: "unreadable",
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+            })
             return {
               title: "remediate · advice · unreadable",
-              output: JSON.stringify(payload, null, 2),
+              output,
               metadata: {
                 mode,
                 observation_id: obs.id,
@@ -272,10 +381,22 @@ export const RemediateTool = Tool.define<typeof parameters, Metadata, never>(
             risk,
             tested: false,
           }
+          const output = JSON.stringify(payload, null, 2)
+          yield* recordRemediation({
+            slug,
+            output,
+            observation_id: obs.id,
+            title: obs.title,
+            mode: "patch",
+            severity: obs.severity,
+            source: "generated",
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+          })
 
           return {
             title: `remediate · patch · ${ref.file}:${line}`,
-            output: JSON.stringify(payload, null, 2),
+            output,
             metadata: {
               mode,
               observation_id: obs.id,

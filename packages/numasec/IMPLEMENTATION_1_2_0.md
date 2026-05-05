@@ -1,0 +1,776 @@
+# Release 1.2.0 Implementation Tracker
+
+This file tracks implementation progress for the release 1.2.0 PRD.
+
+It is intentionally concise and should be kept current as work lands so an agent can resume without reconstructing the entire state from chat history.
+
+## Current Status
+
+- Branch: `release/1.2.0`
+- PRD: `packages/numasec/FINAL_NUMASEC_PRD.md`
+- Root guide: `AGENTS.md`
+- Delivery state: PRD implementation advanced beyond skeleton; kernel truth, finding proof semantics, and runbook surface have been hardened, with broader end-to-end validation still in progress.
+
+## Completed
+
+- Replaced the PRD with the Cyber Code CLI direction.
+- Rewrote the root `AGENTS.md` around the actual product direction.
+- Locked key product decisions:
+  - full `1.2.0` scope target;
+  - AppSec and Pentest are hard-gated;
+  - installed tools only;
+  - new semantic tools are desired;
+  - `permissioned` and `auto` modes;
+  - graph is provenance-first and LLM candidate-only.
+- Added `src/core/cyber` foundation:
+  - `cyber_ledger`, `cyber_fact`, `cyber_relation` schema;
+  - Effect helpers for append/upsert/list/context-pack;
+  - migration `20260502151706_cyber-foundation`.
+- Integrated automatic tool-call ledgering in the generic tool wrapper.
+- Added semantic tools:
+  - `workspace`;
+  - `evidence`;
+  - `runbook`;
+  - `scope`;
+  - `analyze`;
+  - `knowledge`.
+- Injected generated cyber context into session instructions.
+- Connected first graph/evidence writers:
+  - `http_request` now stores request/response evidence and writes host/service/route facts;
+  - `scanner` now stores scan artifacts and writes crawl/js/ports/service observations into the graph.
+- Wired browser into the cyber kernel:
+  - browser actions now emit ledger events and evidence;
+  - `passive_appsec` produces candidate findings with provenance;
+  - DOM/network/browser observations now populate route/form/script facts.
+- Implemented actual ambient identity propagation:
+  - `vault use_as` now affects `http_request` and `browser`;
+  - active identities are resolved into headers/cookies and linked into the graph.
+- Connected `cve` lookup to ledger/evidence/graph so advisory results persist as structured facts.
+- Connected `iac_triage` to ledger/evidence/graph:
+  - Checkov output is persisted as evidence;
+  - IaC target summaries become structured facts;
+  - failed checks are promoted to candidate findings.
+- Connected additional AppSec flows to ledger/evidence/graph:
+  - `container_surface` now persists Trivy evidence, writes container summary facts, and emits candidate vuln/secret findings;
+  - `cloud_posture` now persists Prowler evidence, writes cloud-account posture summaries, and emits candidate posture signals;
+  - `remediate` now persists remediation outputs and records patch/advice state against observations;
+  - `binary_triage` now persists checksec evidence, writes binary hardening summaries, and emits candidate hardening-gap findings.
+- Started consolidating the model-facing tool surface:
+  - `analyze` now delegates to `iac_triage`, `container_surface`, `cloud_posture`, and `binary_triage`;
+  - `knowledge` now delegates to `cve` and `websearch`.
+- Structured installed-tool inventory now persists in the kernel:
+  - `doctor` writes environment summary, per-tool presence, and play/vertical readiness facts and relations.
+- Added `bench:cyber` entrypoint with domain gates for `appsec` and `pentest`.
+- Extracted benchmark gate policy into a testable module (`script/bench/cyber-lib.ts`) and tightened scenario pass conditions.
+- Tightened the AppSec release gate again:
+  - `appsec-triage` now requires both vulnerability-threshold passage and at least one captured evidence artifact.
+- Added a first operation/session bridge:
+  - sessions now attach themselves to the active operation;
+  - operation stores per-session attachment artifacts under `.numasec/operation/<slug>/sessions/`.
+- Exposed the graph read path:
+  - `Cyber.listRelations` is now available;
+  - `Cyber.contextPack` now includes relations as well as facts and ledger;
+  - `workspace graph_digest` now surfaces relation-aware graph state from the active operation.
+- Reduced prompt dependence on `numasec.md`:
+  - the active operation markdown is no longer auto-loaded as a system instruction file;
+  - session instructions now inject a structured active-operation block plus cyber context instead.
+- Connected scope state to the kernel:
+  - `scope` now reads actual in/out patterns from the operation boundary;
+  - scope status/set writes `operation -> scope_policy` facts and scope ledger events.
+- Centralized immediate operation-state persistence:
+  - added `Cyber.upsertOperationState`;
+  - `workspace start`, `pwn_bootstrap`, and `opsec set` now write operation state into the kernel immediately.
+- Connected runbook/capsule planning to the kernel:
+  - `runbook run` now writes an `execution_plan` fact and corresponding ledger event.
+- Connected play execution planning to the kernel:
+  - `play` now writes an `execution_trace` fact and `operation -> uses_play` relation.
+- Centralized workflow trace persistence:
+  - added `Cyber.upsertWorkflowTrace`;
+  - `play` and `runbook` now both emit workflow status plus planned/skipped `workflow_step` facts and relations.
+- Added workflow projection files under operations:
+  - `Operation.writeWorkflow` now writes workflow JSON under `.numasec/operation/<slug>/workflow/`;
+  - `play` and `runbook` both project their workflow traces there for bench/replay use.
+- Added active-workflow and step-outcome bridging:
+  - `Operation.setActiveWorkflow`, `activeWorkflow`, `readWorkflow`, and `recordWorkflowStep` now exist;
+  - the generic tool wrapper now marks matching planned tool steps as completed/failed inside the active workflow projection.
+- Synced workflow progress back into the cyber kernel:
+  - added `Cyber.syncWorkflowProgress`;
+  - after matching a tool call to an active workflow step, the wrapper now refreshes `workflow_status` with completed/failed/pending counts.
+- Restored per-step workflow state in the cyber graph:
+  - `Cyber.syncWorkflowProgress` now upserts `workflow_step -> step_status` facts as outcomes change;
+  - `workspace status` now exposes active-workflow step outcomes, not only aggregate counters.
+- Exposed step outcomes in the prompt-facing cyber context:
+  - `Cyber.contextPack` now renders a dedicated `Workflow Steps` section instead of burying step state only inside generic fact listings.
+- Added JSONL cyber projections under each operation:
+  - ledger, facts, and relations are now mirrored under `.numasec/operation/<slug>/cyber/` for audit, replay, and benchmark consumption without a live DB dependency.
+- Tightened release gates against structured cyber state:
+  - benchmarks now inspect projected route facts, step-status facts, candidate findings, and operation-state facts instead of relying only on free-text corpus.
+- Tightened the workspace surface around structured cyber state:
+  - `workspace graph_digest` and `workspace status` now expose route-fact counts, candidate-finding counts, and workflow step-status counts directly in metadata/output.
+- Started turning runbooks into a capsule surface:
+  - `runbook list` now reports readiness/degradation/unavailability across registered plays;
+  - `runbook status` now writes `capsule_readiness` facts into the cyber kernel for the active operation;
+  - when no runbook id is provided, `runbook status` now suggests domain-relevant capsules from the active operation kind.
+- Added explicit autonomy control:
+  - `autonomy` now surfaces `permissioned` vs `auto` as session policy and mirrors the active operation mode into the cyber kernel as `autonomy_policy`.
+- Surfaced autonomy in the workspace view:
+  - `workspace status` and `workspace graph_digest` now expose the current session autonomy mode directly.
+- Added explicit finding lifecycle control:
+  - `finding` now lists candidate/promoted findings, promotes evidence-backed candidates into findings, persists replay bundles, and supports rejection flows.
+- Surfaced promoted findings in the workspace view:
+  - `workspace status` and `workspace graph_digest` now expose promoted finding counts alongside candidates.
+- Surfaced reportability state in the cyber context:
+  - `Cyber.contextPack` now renders an explicit Findings section with candidate/promoted/replay visibility.
+- Surfaced verification/reportability in workspace metrics:
+  - `workspace` now exposes verified-finding and replay-backed-finding counts in both output and metadata.
+- Added a semantic identity surface:
+  - `identity` now manages named auth identities above the vault, records non-secret descriptors in the kernel, and makes active-identity switching explicit.
+- Surfaced active identity in workspace state:
+  - `workspace` now exposes the current ambient identity alongside autonomy and finding/reportability counts.
+- Added a semantic report surface:
+  - `report` now builds deliverable bundles explicitly, records them in the cyber kernel, and exposes latest-bundle status.
+- Made deliverable/share state explicit in the kernel:
+  - `Cyber.contextPack` now exposes deliverables;
+  - `share` now records share bundles and operation->share relations in the kernel.
+- Fixed workspace-root consistency in share execution:
+  - `ShareTool.execute` now uses `Instance.directory` instead of `process.cwd()`.
+- Broadened workspace-root consistency:
+  - `doctor`, `runbook`, `play`, `evidence`, `cve`, `http_request`, `browser`, `scanner`, and `webfetch` now use `Instance.directory` instead of implicit cwd lookups.
+- Surfaced share-bundle visibility:
+  - `Cyber.contextPack` now renders explicit share bundles;
+  - `workspace` now exposes share-bundle counts alongside deliverables and findings.
+- Tightened live knowledge provenance:
+  - `knowledge source=web` now persists evidence and a `knowledge_query -> web_result` fact for the active operation.
+- Added a derived operation context artifact:
+  - the prompt-facing active operation + cyber context is now projected to `.numasec/operation/<slug>/context/active-context.md`, reducing dependence on the legacy markdown notebook.
+- Updated session prompt guidance to match the new architecture:
+  - prompt templates no longer describe `numasec.md` as the system-loaded single source of truth, and instead point the agent toward the cyber kernel and derived context artifacts.
+- Improved workflow-step matching:
+  - `recordWorkflowStep` no longer takes the first unresolved same-tool step blindly;
+  - it now prefers the unresolved step whose planned args match the actual tool args.
+- Tightened release gating further:
+  - benchmark artifact collection now also sums completed workflow steps from workflow projections;
+  - benchmark gates now require not only workflow artifacts, but at least one completed workflow step.
+- Extended deliverable/share outputs to include cyber-native state:
+  - `share` now bundles `cyber/`, `workflow/`, and `context/` projections;
+  - deliverable reports and manifests now include projected cyber finding counts and render cyber findings in the report body.
+- Pushed deliverables further toward kernel-first state:
+  - deliverable bundles now include workflow summaries, per-step outcomes, and cyber timeline sections derived from projections;
+  - deliverable manifests now count verified findings, replay-backed findings, workflows, completed steps, and ledger events, not only raw cyber finding totals;
+  - `report status/build` now surface these richer kernel-driven counts directly.
+- Tightened report claim semantics:
+  - deliverable reports now split cyber findings into `Reportable`, `Suspected`, and `Rejected Or Stale` buckets instead of flattening candidates and confirmed findings together;
+  - deliverable manifests now track `reportable_findings`, `suspected_findings`, and `rejected_findings`.
+- Aligned operator/runtime views with the same finding taxonomy:
+  - `Cyber.contextPack` now splits findings into `Reportable`, `Suspected`, and `Rejected Or Stale` sections;
+  - `workspace status` and `workspace graph_digest` now expose `reportable_findings`, `suspected_findings`, and `rejected_findings` instead of showing only a flat verified count.
+- Aligned benchmark semantics with the same taxonomy:
+  - bench artifact collection now counts `reportable_findings`, `suspected_findings`, and `rejected_findings`;
+  - rubric metadata now exposes those counts for AppSec and Pentest scenarios;
+  - scenario gates now fail explicitly on promoted findings without any reportable finding state, instead of reasoning only in terms of flat verified counts.
+- Reduced drift between runtime state and the derived prompt artifact:
+  - the generic tool wrapper now refreshes `.numasec/operation/<slug>/context/active-context.md` after workflow-aware tool execution paths, so the derived context file tracks current operation/kernel state more closely instead of only updating on prompt rebuild.
+- Aligned the `finding` operator surface with the same taxonomy:
+  - `finding list` now renders explicit `Reportable`, `Suspected`, and `Rejected Or Stale` sections;
+  - `finding` metadata now exposes `reportable_findings`, `suspected_findings`, and `rejected_findings`.
+- Added first-class replay exemptions:
+  - deliverable manifests, workspace metadata, and benchmark artifacts now distinguish `replay_backed_findings` from `replay_exempt_findings`;
+  - benchmark gates now allow verified findings to pass the replay gate when a structured `replay_reason` exemption exists, instead of treating all non-replay findings as failures.
+- Propagated replay exemptions into the operator/prompt surfaces:
+  - `finding status/list` now renders replay state as `present` / `exempt` / `missing` and exposes `replay_exempt` metadata;
+  - `Cyber.contextPack` now renders `replay=exempt` plus `replay_reason=...` for verified findings with structured exemptions.
+- Removed more legacy notebook-first guidance from model prompts:
+  - prompt templates no longer instruct the model to maintain durable finding state with `[proposed]` / `[confirmed]` notebook edits;
+  - they now direct the model toward `candidate` / `finding` / `rejected|stale` persistence through first-party tools and the cyber kernel.
+- Removed more legacy notebook-first guidance from the operation layer itself:
+  - `core/operation` comments and skeleton text no longer claim that markdown is the canonical state;
+  - migrated and newly created notebook text now describes `numasec.md` as a legacy human-readable scratchpad beside the cyber kernel, not the source of truth.
+- Started centralizing finding taxonomy in the core cyber layer:
+  - added shared helpers for `reportable` / `suspected` / `rejected` and replay state classification;
+  - rewired `workspace`, `finding`, and `Cyber.contextPack` to consume the shared taxonomy instead of duplicating local rules.
+- Extended the same shared taxonomy into deliverables:
+  - `core/deliverable` now computes reportable/suspected/rejected and replay state via the shared cyber helper instead of its own local rules.
+- Improved prompt-side deliverable visibility:
+  - `Cyber.contextPack` deliverable summaries now include richer counts such as `reportable_findings` and `replay_exempt_findings`, so the prompt can inspect exported bundle quality without reopening the report.
+- Pushed deliverables further toward kernel-first reporting:
+  - deliverable reports now include an `Operation State` section derived from projected `operation_state`, `scope_policy`, and `autonomy_policy` facts, so the report opens with current cyber state instead of only legacy notebook metadata.
+- Made capsule state more explicit in the kernel and deliverables:
+  - `runbook status` without `id` now persists `capsule_recommendation` facts plus `operation -> recommends_play` relations for domain-relevant plays;
+  - `Cyber.contextPack` now renders a `Capsules` section from projected readiness/recommendation facts;
+  - deliverable reports now include `## Capsules` with readiness and recommendation subsections;
+  - deliverable manifests and `report status/build` now count `capsules`, `recommended_capsules`, and readiness buckets (`ready/degraded/unavailable`).
+- Extended workspace capsule visibility:
+  - `workspace status` and `workspace graph_digest` now expose `ready_capsules`, `degraded_capsules`, `unavailable_capsules`, and `recommended_capsules`.
+- Tightened the semantic knowledge surface:
+  - `knowledge source=cve` now persists a first-class `knowledge_query -> cve_result` fact instead of only delegating to the raw `cve` tool outputs;
+  - `cve` relation provenance now uses the same `knowledge_query` key shape (`cve:<query>`) as the semantic `knowledge` wrapper, so facts and relations line up cleanly in the graph;
+  - `Cyber.contextPack` now renders a dedicated `Knowledge` section from persisted `knowledge_query` facts;
+  - deliverable reports/manifests and `report status/build` now count and render `knowledge_queries`;
+  - `workspace status` now surfaces `knowledge_queries` explicitly in both text output and metadata.
+- Extended benchmark telemetry to match the richer kernel:
+  - bench artifact collection now counts `knowledge_queries`, capsule readiness facts, capsule recommendations, and readiness buckets;
+  - rubric metadata now exposes those knowledge/capsule counts for AppSec and Pentest scenarios without turning them into hard release gates yet.
+- Removed another notebook-first instruction from the operator flow:
+  - `/pwn` template no longer tells the agent to maintain findings in `numasec.md` while running; it now points the loop toward `evidence`, `finding`, `workspace`, and the cyber context first.
+- Centralized effective scope reads behind the operation layer:
+  - added `Operation.readBoundary`, which prefers projected `scope_policy` from the cyber kernel and falls back to legacy markdown only when needed;
+  - rewired `boundary/guard`, `scope`, `opsec`, `workspace start`, `pwn_bootstrap`, the generic tool wrapper, and session instruction building to use that shared boundary read path instead of duplicating `scope_policy -> markdown` logic.
+- Started pulling the legacy plan layer into the cyber kernel:
+  - `todowrite` now mirrors session todo state into cyber facts/relations via `operation -> plan_summary`, `plan_node -> todo_state`, and `operation -> has_plan_node`;
+  - `Cyber.contextPack` now renders a dedicated `Plan` section from those projected facts, so the prompt can inspect live todo-derived plan state without reopening the legacy plan store.
+- Surfaced projected plan state in operator/report surfaces:
+  - `workspace status` now exposes `plan_nodes`, `running_plan_nodes`, and `done_plan_nodes`;
+  - deliverable manifests and `report status/build` now count `plan_nodes_projected`.
+- Extended benchmark telemetry:
+  - bench artifact collection and rubric metadata now track candidate/promoted/verified/replay-backed finding counts from cyber projections.
+- Tightened benchmark reportability semantics:
+  - AppSec and Pentest gates now fail when promoted findings exist without verified state, or verified findings exist without replay-backed proof.
+- Reduced markdown-first operation reads:
+  - `Operation.read()` now prefers projected `operation_state` facts from the cyber kernel over legacy markdown header metadata when available.
+- Tightened workspace/scope state visibility:
+  - `scope` now refreshes both `scope_policy` and `operation_state`;
+  - `workspace status` now reports fact/relation/ledger/workflow counts for the active operation.
+- Tightened release-gate inputs:
+  - benchmark runner now counts workflow artifacts from the operation directory;
+  - rubric/gates now require workflow artifacts for AppSec and Pentest scenarios.
+- Fixed `scope_policy` default drift:
+  - added `Cyber.upsertScopePolicy` and rewired `scope`, `workspace start`, and `pwn_bootstrap` to persist the real `default` (`allow` vs `ask`) explicitly instead of degrading empty-scope operations to `ask`.
+- Started converging the legacy observation store into the cyber kernel:
+  - `core/observation/store` now mirrors observation add/update/remove/evidence-link events into cyber ledger/facts/relations plus JSONL cyber projections;
+  - observations now persist as `observation -> record` facts and `observation -> supported_by -> evidence_artifact` relations.
+- Pulled projected observations into operator/report surfaces:
+  - `Cyber.contextPack` now renders a dedicated `Observations` section from `observation -> record` facts;
+  - `workspace status` / `graph_digest` now expose `observations_projected`;
+  - deliverables now prefer projected observations over the legacy observation JSONL when available and count `observations_projected`.
+- Reduced deliverable dependence on the legacy plan store:
+  - deliverables now prefer projected `plan_node -> todo_state` facts over legacy plan JSONL when rendering the `## Plan` section;
+  - `report.json` now exports both legacy and projected plan/observation state for audit.
+- Added a first-class semantic `observation` surface:
+  - `observation` now supports `add`, `list`, `status`, `update`, `link_evidence`, and `remove` against the active operation;
+  - it gives operators a direct lifecycle for `observation_id` workflows instead of forcing raw JSONL access or indirect `remediate` usage.
+- Locked projected-observation visibility in prompt/operator tests:
+  - `Cyber.contextPack` is now covered for `## Observations`;
+  - `workspace status` metadata/output is now covered for `observations_projected`.
+- Tightened benchmark telemetry and gates around observation projections:
+  - bench artifact collection now counts `observations_projected` from `observation -> record` facts;
+  - AppSec and Pentest scenario metadata now expose `observations_projected`;
+  - AppSec/Pentest gates now fail when legacy observation artifacts exist but no observation state is projected into the cyber kernel.
+- Reduced remediation dependence on the legacy observation store:
+  - `remediate` now resolves `observation_id` from projected `observation -> record` facts first and falls back to the legacy observation JSONL only when needed;
+  - remediation flows now keep working even when only the kernel projection exists.
+- Closed a kernel source-of-truth gap at operation bootstrap:
+  - `Operation.create` now seeds the cyber ledger/fact/relation tables as canonical state at creation time, and writes JSONL as projection/export instead of projection-only bootstrap.
+- Hardened finding proof semantics:
+  - shared finding taxonomy now treats `reportable` as `verified + evidence + (replay or structured replay exemption)` rather than `verified` alone;
+  - structured replay exemptions now exist in the core finding model, while legacy free-form reasons remain compatibility-only.
+- Added a first real oracle path:
+  - `core/cyber/oracle` now verifies finding proof contracts and persists oracle verdicts with `writer_kind=oracle`;
+  - `finding promote` now routes proof through the oracle before a finding becomes `verified`.
+- Strengthened the capsule surface:
+  - `runbook` now persists capsule readiness/recommendation/execution as `runbook` entities instead of leaking everything through `play`;
+  - generic workflow tracking now treats `runbook` as workflow-aware rather than excluding it from step completion.
+- Tightened benchmark semantics further:
+  - rubric scoring now leans more heavily on projected kernel state for web-surface and pwn scenarios, instead of relying only on assistant text matches.
+- Updated release hygiene:
+  - command palette tests now cover `/runbook` as a first-class default command;
+  - package version is aligned to `1.2.0`.
+- Reduced export status dependence on filesystem discovery:
+  - `report status` now prefers `deliverable -> report_bundle` facts from the cyber kernel and falls back to filesystem bundle discovery only when needed;
+  - `share` now supports `action=status` and reads the latest `share_bundle -> archive` fact from the kernel instead of requiring tarball directory inspection.
+- Added shared kernel-first observation reads:
+  - `core/observation/store` now exposes `listProjected` and `getProjected`, reading `observation -> record` state directly from the cyber kernel;
+  - `observation` and `remediate` now use those shared projected reads first and only fall back to legacy observation JSONL when needed.
+- Added shared kernel-first plan reads:
+  - `core/plan/store` now exposes `listProjected` and `projectedSummary`, reading `plan_node -> todo_state` and `operation -> plan_summary` directly from the cyber kernel;
+  - this closes another gap where projected plan state existed but only ad hoc consumers could read it.
+- Reused shared projected-read APIs inside deliverables:
+  - `core/deliverable/build` now prefers `Plan.listProjected` / `Observation.listProjected` directly instead of relying only on its local projected-state parser for those domains.
+- Validation status:
+  - `bun run typecheck` passes;
+  - `bun test --timeout 30000 test/tool/registry.test.ts` passes.
+  - `bun test --timeout 30000 test/browser/passive-run.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/browser.test.ts` passes.
+  - `bun test --timeout 30000 test/core/vault.test.ts` passes.
+  - `bun test --timeout 30000 test/core/observation/store.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/observation.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/remediate.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/observation/store.test.ts` passes with projected-read coverage.
+  - `bun test --timeout 30000 test/core/plan/store.test.ts` passes with projected-read coverage.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/boundary/opsec.test.ts test/session/instruction.test.ts test/tool/scope.test.ts test/tool/workspace.test.ts test/tool/opsec.test.ts test/tool/pwn-bootstrap.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/todowrite.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/todowrite.test.ts test/tool/workspace.test.ts test/tool/report.test.ts test/core/deliverable/build.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/finding.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts test/tool/report.test.ts test/tool/workspace.test.ts test/core/deliverable/build.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/finding.test.ts test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/session/instruction.test.ts` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/finding.test.ts test/tool/workspace.test.ts test/tool/finding.test.ts test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/runbook.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts test/tool/workspace.test.ts test/core/cyber/cyber.test.ts` passes.
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/knowledge.test.ts test/core/cyber/cyber.test.ts test/core/deliverable/build.test.ts test/tool/workspace.test.ts test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` passes.
+  - `bun test --timeout 30000 test/session/session.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/container-surface.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/cloud-posture.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/remediate.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` passes.
+  - `bun test --timeout 30000 test/session/instruction.test.ts` passes.
+  - `bun test --timeout 30000 test/core/boundary/opsec.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/scope.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/pwn-bootstrap.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/opsec.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/runbook.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/play.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/scope.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/finding.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/share.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/identity.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/share.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/doctor.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/runbook.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/play.test.ts` passes.
+
+## In Progress
+
+- End-to-end release validation and cleanup.
+
+## Next
+
+- Run broader package validation and fix any fallout.
+- Decide whether to collapse more legacy low-level surfaces in a later release.
+- Extend benchmark scenario realism beyond the current hard-gated AppSec/Pentest suite.
+
+## Open Technical Risks
+
+- `src/core/operation` still contains compatibility logic for the legacy notebook layer, even though the kernel is now the source of truth.
+- Evidence is hash-based already, but provenance contracts remain somewhat heterogeneous across tools and could be normalized further.
+- Finding promotion is now evidence/replay-aware, but automated oracle promotion policy is still thinner than the long-term PRD ideal.
+- The generated migration snapshot reflects current schema state, but the SQL migration had to be manually made conservative to avoid dropping legacy tables.
+
+## Resume Notes
+
+- Prefer extending the new `core/cyber` module rather than deepening old markdown-first operation behavior.
+- Treat `.numasec/operation/<slug>/numasec.md` as an optional derived projection, not operation state.
+- Release gating is real: AppSec and Pentest benchmarks must block the release.
+- Be careful with migrations: do not accept generated `DROP TABLE` statements on legacy tables without an explicit removal decision.
+
+## Latest Progress
+
+- Promoted `runbook` to the primary operator entrypoint over raw `play`:
+  - added a new `/runbook` slash command template;
+  - registered `runbook` in the command layer ahead of `play`;
+  - changed `/pwn` to launch the chosen capsule through `runbook`;
+  - changed benchmark scenarios `web-surface` and `appsec-triage` to use `/runbook` instead of `/play`.
+- Realigned model-facing prompt surfaces with the same choice:
+  - `pentest`, `appsec`, `osint`, `hacking`, and `security` prompts now present `runbook` as the default capsule surface;
+  - `play` is now described as the lower-level primitive behind `runbook`, not the recommended first touch.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts test/tool/runbook.test.ts test/tool/registry.test.ts` passes (`46 pass`).
+
+- Raised the optional markdown projection closer to the kernel:
+  - derived `numasec.md` output now includes `Identities`, `Knowledge`, `Tool Runtime`, and `Exports` sections;
+  - identity counts now also show active identity keys when present, and export summaries now include latest deliverable/share paths when available;
+  - the fallback markdown no longer presents a materially weaker operation view than workspace/report/deliverable.
+- Reduced another notebook-first write path:
+  - `setOpsec()` no longer rewrites `numasec.md` when the on-disk file is itself only a derived projection; the kernel remains the source of truth and the projection is regenerated on read/export.
+- Made export behavior match the same rule:
+  - `share` now always stages the markdown view via `Operation.readMarkdown(...)`, so a stale derived notebook on disk is regenerated instead of copied blindly.
+- Fixed a real projection bug:
+  - derived markdown `completed_steps` now counts actually completed workflow steps instead of incorrectly echoing the total number of workflow-step status facts.
+- Verification:
+  - `bun run typecheck` passes.
+  - `test/core/operation/operation.test.ts` remains subject to the environment's Bun tail-hang, but the touched path was exercised under timeout without type/runtime failure.
+
+- Fully aligned deliverable JSON exports with the projected kernel:
+  - `report.json` now exports `identities` and the projected cyber `summary`, so the JSON bundle exposes the same identity/runtime summary already visible in markdown/workspace/report status.
+- Tightened benchmark corpus coherence:
+  - the projected-state JSON injected into benchmark corpus now includes `identities`, not only findings/knowledge/capsules/tool adapters.
+- Tightened release gating around auth-aware state:
+  - AppSec and Pentest scenario failures now trigger when `identities` / `active_identities` checks are present but no projected identity state exists in the cyber kernel.
+- Tightened finding promotion semantics:
+  - `finding promote` now rejects conflicting `replay` + `replay_reason` input instead of allowing semantically incoherent proof state.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes (`37 pass`).
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts test/tool/report.test.ts` passes (`37 pass`).
+  - `bun test --timeout 30000 test/tool/finding.test.ts` passes (`5 pass`).
+
+- Closed the remaining identity/authz graph gap:
+  - `vault use_as` now mirrors the same structured identity state as `identity use`, including descriptor facts, active facts, and `operation -> uses_identity` relations;
+  - `vault delete` now marks the deleted identity descriptor as `stale` and clears active state in the kernel when applicable;
+  - `identity use` now also records `operation -> uses_identity`, so auth-aware workflows no longer depend on which identity surface the model happened to call.
+- Extended projected cyber state and prompt/report surfaces with explicit identity telemetry:
+  - `ProjectedState` now includes `identities`;
+  - `Cyber.summarizeFacts(...)` now counts `identities` and `active_identities`;
+  - `Cyber.contextPack`, `workspace`, deliverables, and report counts now expose identity state directly.
+- Extended benchmark telemetry with identity state:
+  - `bench/run.ts` and `rubric.ts` now surface `identities` and `active_identities` alongside other projected cyber facts for AppSec/Pentest scenario metadata.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/vault.test.ts test/tool/identity.test.ts test/script/bench-cyber.test.ts` passes (`40 pass`).
+
+- Centralized projected operation reads in `core/operation`:
+  - `readProjectedState`
+  - `readProjectedScopePolicy`
+  - `readProjectedAutonomyPolicy`
+- Refactored `readBoundary(...)` to reuse the shared projected scope reader instead of parsing `facts.jsonl` itself.
+- Refactored `core/deliverable/build.ts` to stop parsing `operation_state`, `scope_policy`, and `autonomy_policy` inline; it now reuses the shared `Operation` read APIs.
+- Added direct tests for projected scope/autonomy reads in `test/core/operation/operation.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts test/core/deliverable/build.test.ts test/tool/report.test.ts` passes.
+- Centralized graph counters in `Cyber.summarizeFacts(...)`.
+- Refactored `tool/workspace` (`status` and `graph_digest`) to reuse the shared cyber summary instead of counting facts in two separate places.
+- Added direct coverage for `Cyber.summarizeFacts(...)` in `test/core/cyber/cyber.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts test/tool/workspace.test.ts` passes.
+- Moved `Fact -> FindingRecord` reduction into `core/cyber/finding.ts` via `summarizeFindingFact(...)`, plus shared candidate title/summary helpers.
+- Refactored `tool/finding` to consume the shared finding reducers instead of keeping its own private copy.
+- Refactored deliverable manifest counts to reuse `cyber.summary` for knowledge/capsule/finding/replay counts, reducing divergence with `workspace`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts test/core/cyber/finding.test.ts test/tool/finding.test.ts` passes.
+- Refactored `script/bench/run.ts` to reuse `Cyber.summarizeFacts(...)` when collecting projected fact counters for release gating.
+- This reduces another duplicated counting path between the product runtime and the benchmark harness.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts test/core/cyber/cyber.test.ts` passes.
+- Centralized finding bucketization in `core/cyber/finding.ts` with `bucketFindings(...)`.
+- Refactored `tool/finding`, `core/cyber/contextPack`, and the deliverable report renderer to reuse the shared finding buckets instead of privately classifying reportable/suspected/rejected findings.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts test/core/cyber/finding.test.ts test/tool/finding.test.ts test/core/deliverable/build.test.ts` passes.
+- Added shared projected fact readers/hydrators in `core/cyber/cyber.ts`:
+  - `Cyber.readProjectedFacts(...)`
+  - `Cyber.hydrateProjectedFacts(...)`
+- Refactored `core/deliverable/build.ts` and `script/bench/run.ts` to reuse the shared projected fact hydration path instead of parsing/normalizing `facts.jsonl` independently.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts test/core/deliverable/build.test.ts test/script/bench-cyber.test.ts` passes.
+- Added shared projected ledger reader in `core/cyber/cyber.ts`:
+  - `Cyber.readProjectedLedger(...)`
+- Refactored `core/deliverable/build.ts` to reuse the shared projected ledger reader for timeline hydration instead of parsing `ledger.jsonl` inline.
+- Added direct coverage for projected fact + ledger hydration in `test/core/cyber/cyber.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts test/core/deliverable/build.test.ts` passes.
+- Added shared projected relation hydration in `core/cyber/cyber.ts`:
+  - `Cyber.readProjectedRelations(...)`
+  - `Cyber.hydrateProjectedRelationRecords(...)`
+- Added direct coverage for projected relation hydration in `test/core/cyber/cyber.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` passes.
+- Tightened the AppSec release gate in `script/bench/cyber-lib.ts`:
+  - fail when `knowledge_queries` is expected but zero
+  - fail when capsule checks are present but both readiness and recommendation counts are zero
+- Added dedicated gate tests in `test/script/bench-cyber.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Extended the deliverable/export surface to include projected graph relations:
+  - `report.md` now renders `## Cyber Relations`
+  - `report.json` now exports `relations`
+  - manifest counts now include `relations_projected`
+  - `tool/report` status/build formatting now exposes `relations_projected`
+- Added deliverable test coverage for projected relations.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts` passes.
+- Tightened the Pentest/Pwn release gate in `script/bench/cyber-lib.ts`:
+  - fail when `knowledge_queries` is expected but zero
+  - fail when capsule checks are present but both readiness and recommendation counts are zero
+- Added dedicated pwn gate tests in `test/script/bench-cyber.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Tightened the `web-surface` benchmark gate to require at least one projected relation in the cyber graph when the relation check is present.
+- Added `relations_projected` to bench artifact collection and zero-point rubric evidence.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts test/core/cyber/cyber.test.ts` passes.
+- Added a shared projected cyber snapshot reader in `core/cyber/cyber.ts`:
+  - `Cyber.readProjectedState(...)` now assembles findings, knowledge, capsules, observations, plan nodes, workflows, workflow steps, relations, timeline, and graph summary from projected kernel files plus projected operation/scope/autonomy state.
+  - this moves another derived product view into the kernel instead of leaving it local to `deliverable`.
+- Refactored `core/deliverable/build.ts` to consume the shared projected cyber snapshot instead of locally re-parsing and classifying `facts.jsonl` / `ledger.jsonl` / `relations.jsonl`.
+- Added direct coverage for the shared projected snapshot in `test/core/cyber/cyber.test.ts`.
+- Reduced legacy drift in scope comments and migration paths:
+  - `core/boundary/guard.ts` and `core/operation/scope.ts` now document projected-scope-first behavior explicitly instead of describing `numasec.md` as the primary boundary source.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` shows the updated projected-state coverage passing in this environment.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts test/tool/report.test.ts` shows the touched report/deliverable tests passing before the Bun process sticks open after test completion in this environment.
+- Refactored the benchmark runner to consume the shared projected cyber snapshot:
+  - `script/bench/run.ts` no longer hydrates projected facts and relations through private benchmark-only parsers;
+  - it now uses `Cyber.readProjectedState(...)`, so release gates read the same kernel snapshot shape as deliverables.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Moved the CLI `operation show` surface to projected-first state:
+  - `operation show` now defaults to a kernel-first summary instead of printing `numasec.md`;
+  - it supports `--format summary|json|context|markdown`, so legacy notebook output is still available but no longer the default.
+- Reduced more notebook-first operator guidance:
+  - `operation new` now points users at the operation directory instead of advertising only `numasec.md`;
+  - the TUI home tip no longer tells users to drop `.numasec.md` for persistent target context and instead points them toward starting an operation.
+  - `share.txt` now documents the bundle as projected cyber/workflow/context state plus the legacy notebook when present.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts test/session/instruction.test.ts` passes.
+- Connected `webfetch` to the cyber kernel:
+  - fetched pages now persist as evidence artifacts when an operation is active;
+  - `webfetch` now emits `web_page -> fetch_result` facts and `host -> hosts -> web_page` relations with provenance;
+  - this pushes OSINT/knowledge page retrieval into the same evidence-first lifecycle as AppSec/Pentest tooling.
+- Refactored `test/tool/webfetch.test.ts` away from local listener dependence:
+  - the test now uses an in-memory Effect `HttpClient` layer instead of `Bun.serve`, avoiding the local bind issues seen elsewhere in this environment.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/webfetch.test.ts test/tool/knowledge.test.ts` passes.
+- Connected direct `websearch` to the cyber kernel:
+  - direct Exa/MCP search results now persist evidence and `knowledge_query -> web_result` facts instead of bypassing the kernel unless they happen to be invoked through the higher-level `knowledge` wrapper;
+  - this keeps the direct tool path and the semantic `knowledge source=web` path aligned.
+- Added dedicated `websearch` tool coverage with an in-memory Effect `HttpClient` layer.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/websearch.test.ts test/tool/knowledge.test.ts test/tool/webfetch.test.ts` passes.
+- Reduced another hard dependency on the legacy notebook:
+  - `Operation.activeSlug(...)` now treats the operation directory as the source of existence, not `numasec.md`;
+  - `Operation.read(...)` now still works when the notebook is missing, provided the operation directory and projected kernel state exist.
+- Added direct coverage for the “kernel-only operation” case in `test/core/operation/operation.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts test/session/instruction.test.ts` passes.
+- Closed a kernel-only operation bug in `opsec` / `scope`:
+  - when the legacy notebook is missing, `opsec set` and `scope set` now trust the requested level instead of accidentally reusing stale projected opsec readback;
+  - output formatting was aligned too, so operator-facing status matches persisted kernel state.
+- Added direct kernel-only tests in `test/tool/opsec.test.ts` and `test/tool/scope.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/opsec.test.ts test/tool/scope.test.ts` passes.
+- Expanded cyber graph summary for web/OSINT surfaces:
+  - `Cyber.summarizeFacts(...)` now tracks `hosts`, `services`, and `web_pages` in addition to routes, findings, capsules, knowledge, and reportability counts.
+  - `workspace status` now exposes those surface-entity counts directly, making kernel state more useful outside pure AppSec/Pentest flows.
+- Added coverage for the richer summary in `test/core/cyber/cyber.test.ts` and `test/tool/workspace.test.ts`.
+- Verification:
+  - `bun run typecheck` passes.
+  - the touched `core/cyber` and `workspace` tests print their updated pass cases in this environment before Bun occasionally sticks open after completion.
+- Reduced scanner runtime test fragility:
+  - `test/tool/scanner.test.ts` no longer depends on `Bun.serve` or local HTTP listeners for crawl/js/dir-fuzz coverage;
+  - web scanner tests now use an in-memory `fetch` stub, so crawl/js/dir-fuzz behavior is exercised deterministically in this environment;
+  - the remaining socket-based `ports` test now runs only when localhost listeners are available.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/scanner.test.ts` passes with crawl/js/dir-fuzz plus conditional ports coverage.
+- Tightened capsule execution persistence:
+  - `play` now writes `play -> capsule_readiness` facts in addition to `execution_trace`, so capsule telemetry no longer depends on a prior `runbook` call;
+  - this keeps direct play execution aligned with the capsule readiness/recommendation model already used by `runbook`, `workspace`, deliverables, and release gates.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/play.test.ts` passes.
+- Removed another export-status duplication:
+  - `core/cyber` now exposes shared helpers for projected deliverables and share bundles:
+    - `projectedDeliverableState`
+    - `projectedShareBundleState`
+    - `latestDeliverableFromFacts`
+    - `latestShareBundleFromFacts`
+  - `readProjectedState(...)` now includes `deliverables` and `share_bundles` in the shared kernel snapshot.
+  - `tool/report` and `tool/share` now use those shared kernel helpers instead of maintaining local fact parsers.
+- Tightened runbook/play capsule parity:
+  - `runbook run` now writes `play -> capsule_readiness` facts too, not only `runbook -> execution_plan`.
+  - this removes another asymmetry between direct `play` execution and capsule-oriented `runbook` execution.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` shows the updated projected-state coverage passing in this environment.
+  - `bun test --timeout 30000 test/tool/report.test.ts test/tool/share.test.ts test/tool/runbook.test.ts` passes.
+- Reduced benchmark notebook bias further:
+  - `script/bench/run.ts` now feeds the scoring corpus from `context/active-context.md` first and falls back to legacy `numasec.md` only when the derived context artifact is missing.
+  - rubric comments/documentation now describe the context-first corpus path instead of implying a notebook-first benchmark model.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Extended inventory/state visibility in the kernel summary:
+  - `Cyber.summarizeFacts(...)` now counts:
+    - `tool_adapters_present`
+    - `tool_adapters_missing`
+    - `ready_verticals`
+    - `degraded_verticals`
+    - `unavailable_verticals`
+  - `workspace status` now surfaces those inventory/vertical counts directly, alongside latest deliverable/share bundle paths from shared kernel helpers.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/doctor.test.ts` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` prints the updated coverage pass cases in this environment before Bun occasionally sticks open after completion.
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` still shows the recurring Bun hang in this environment after partial pass output; the touched `start` and `graph_digest` cases print green before that hang.
+- Extended projected inventory state:
+  - `readProjectedState(...)` now carries:
+    - `tool_adapters`
+    - `verticals`
+  - `contextPack` now renders explicit `## Tool Adapters` and `## Verticals` sections, so model-facing context can reason about installed capability state without reopening raw doctor output.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/cyber/cyber.test.ts` prints the updated projected-state/context coverage pass cases in this environment before the recurring Bun hang pattern.
+- Extended deliverable/report exports with environment readiness:
+  - deliverable reports now render dedicated `## Tool Adapters` and `## Verticals` sections from the projected cyber kernel;
+  - deliverable manifests and `report build/status` now count `tool_adapters_present`, `tool_adapters_missing`, and vertical readiness buckets (`ready/degraded/unavailable`), so export status reflects operator-environment readiness alongside findings and workflows.
+- Extended machine-readable deliverables to match the same kernel state:
+  - `report.json` now exports `operation_state`, `scope_policy`, `autonomy_policy`, `tool_adapters`, `verticals`, `deliverables`, and `share_bundles` from the shared projected kernel snapshot instead of dropping that operator-readiness state on the floor.
+  - the freshly built bundle now includes itself inside `report.json.deliverables`, so machine-readable exports are self-describing even before the outer `report` tool writes the deliverable fact back into the kernel.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts` still exhibits the recurring Bun hang in this environment after the new assertions; it emits no failure output before timeout.
+- Extended the benchmark harness through report generation:
+  - `script/bench/run.ts` now executes `report build` after a successful scenario command, so benchmarked runs exercise the export path instead of stopping at raw tool/workflow state.
+  - bench artifact collection now counts projected `deliverables` and includes deliverable state in the machine-readable corpus snapshot.
+  - AppSec and Pentest rubrics/gates now expose deliverable bundle checks and fail when deliverable expectations are present but no bundle is projected from the cyber kernel.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Tightened proof semantics around findings:
+  - `Cyber.summarizeFacts(...)` now counts `evidence_backed_findings`, meaning verified findings that actually carry evidence refs;
+  - `workspace`, `report`, and deliverable manifests now expose that count alongside replay-backed/replay-exempt state;
+  - AppSec and Pentest release gates now fail when verified findings outnumber evidence-backed findings, so “verified” findings without linked evidence no longer pass the benchmark path.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+- Tightened proof visibility in operator-facing tests:
+  - `workspace` fixtures now seed evidence-backed verified findings explicitly and assert the new `Evidence-backed` status line;
+  - `core/cyber` and deliverable tests now assert `evidence_backed_findings` in summaries/manifests/context output where applicable.
+- Verification:
+  - `bun test --timeout 30000 test/tool/workspace.test.ts` still shows the recurring Bun hang in this environment after the touched pass cases print green.
+- Closed another export parity gap:
+  - deliverable markdown now renders a dedicated `## Deliverables` section, not just `report.json` and the prompt context;
+  - the freshly built bundle is included there immediately, so the human-readable report is self-describing about its own export artifact just like the machine-readable payload.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+  - `bun test --timeout 30000 test/core/deliverable/build.test.ts` still exhibits the recurring Bun hang in this environment without emitting failure output first.
+- Reduced another hard dependency on the legacy notebook:
+  - `Operation.read()` now derives `updated_at` from the operation directory state, not just the notebook file mtime;
+  - `Operation.touch()` now writes an operation activity marker instead of rewriting `numasec.md`, so workflow/context/session updates no longer need the notebook to keep operation ordering and freshness correct.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` passes.
+- Reduced markdown-first bootstrap during operation creation:
+  - `Operation.create()` now seeds minimal cyber projections immediately (`operation_state`, `scope_policy`, creation ledger, and `operation -> targets` relation when a target exists);
+  - direct operation creation paths no longer need a later semantic tool call just to make projected kernel state exist.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` passes.
+- Strengthened capsule/operator execution state:
+  - `play` and `runbook run` now persist `play -> capsule_execution` facts, not only readiness plus workflow traces;
+  - capsule execution metadata includes invocation path (`play` vs `runbook`), args, steps, skipped steps, and degraded/availability status.
+  - deliverables, reports, and workspace status now surface executed capsule state via `executed_capsules` and a dedicated `Capsules / Executions` section.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/play.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/runbook.test.ts` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts` passes.
+- Tightened release gates around real capsule execution:
+  - benchmark artifact collection now carries `executed_capsules` from the projected kernel summary;
+  - AppSec and Pentest rubrics expose `executed_capsules` explicitly alongside capsule readiness and recommendation facts;
+  - release gating now fails when capsule telemetry exists but no capsule execution fact was projected, so readiness alone is no longer enough to pass.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Reduced another markdown-first read path:
+  - `Operation.readMarkdown(...)` now falls back to a derived markdown projection from the cyber kernel when `numasec.md` is absent;
+  - `operation show --format markdown` can now work in kernel-only operations instead of failing just because the legacy notebook is gone.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` prints the touched cases green in this environment before the recurring Bun tail hang; no failure output was emitted before process cleanup.
+- Tightened AppSec release gating symmetry with Pentest:
+  - AppSec rubrics now expose `operation_state_facts` explicitly from the projected kernel;
+  - the AppSec gate now fails when operation state is expected but not materialized, so both hard-gated domains require concrete operation bootstrap state in the kernel.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes.
+- Switched operation bootstrap to kernel-first without auto-creating the notebook:
+  - `Operation.create()` now seeds the operation exclusively through the cyber kernel plus activity marker and does not create `numasec.md` by default;
+  - the initial kernel projection now also infers target scope (`in_scope`) and seeds `scope_policy.default=ask` when a target exists, preserving the old notebook-driven scope affordance in structured state instead of markdown;
+  - `share` now exports a markdown view regardless: it copies the legacy notebook when present, otherwise writes a derived markdown projection from the kernel into the archive staging dir.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/opsec.test.ts test/tool/scope.test.ts` prints the touched scope/opsec cases green before the recurring Bun tail hang in this environment.
+- Aligned prompts/docs with the kernel-only bootstrap:
+  - operation-memory guidance in the default/kimi/trinity prompts now describes `numasec.md` as optional rather than always present;
+  - operation/share inline docs now describe markdown as a compatibility/export surface rather than canonical state.
+- Removed another notebook-first write path from the core:
+  - `Operation.setOpsec()` now updates projected `operation_state` and `scope_policy` even when no legacy notebook exists;
+  - this keeps the core operation setter coherent in kernel-only workspaces instead of relying on higher-level tools to mirror the change afterward.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/opsec.test.ts test/tool/scope.test.ts` prints all touched opsec/scope cases green.
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` remains subject to the recurring Bun tail hang in this environment, but the directly related operation cases emit no failure output before timeout cleanup.
+- Tightened release gating on projected scope state:
+  - benchmark artifact collection now carries `scope_policy_facts`;
+  - AppSec and Pentest rubrics expose `scope_policy_facts` and fail when scope policy is expected but absent from the projected kernel;
+  - this makes scope persistence a first-class hard requirement in both hard-gated domains instead of an implicit side effect.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes (`33 pass`).
+- Hardened the new kernel-only bootstrap with explicit tests:
+  - operation core tests now assert that fresh operations do not create `numasec.md` by default;
+  - share tests now assert that the archive still contains a useful `numasec.md` generated from the kernel projection when no notebook exists on disk.
+- Verification:
+  - `bun run typecheck` passes.
+  - the combined `operation/share` Bun test run in this environment continues to exhibit the recurring output/tail issue, so no clean terminal proof was obtained from that combined run before manual cleanup.
+- Seeded the initial context artifact at operation creation time:
+  - `Operation.create()` now writes a first `context/active-context.md` immediately from bootstrap state (`slug`, `kind`, `target`, `opsec`, inferred scope, empty kernel summary);
+  - new engagements therefore start with a prompt/debug artifact even before the first workflow or tool-wrapper update.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes (`33 pass`).
+  - `bun test --timeout 30000 test/core/operation/operation.test.ts` remains subject to the recurring Bun tail hang in this environment after the touched file begins running.
+- Tightened release gating on context-pack production:
+  - benchmark artifact collection now carries `context_artifacts` by counting projected `context/active-context.md` files;
+  - AppSec and Pentest rubrics expose `context_artifacts` and fail when the operation does not materialize an active context artifact;
+  - this makes the derived memory/context surface a hard product requirement for both hard-gated domains.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/script/bench-cyber.test.ts` passes (`35 pass`).
+- Aligned deliverable/report counts with the hardened release signals:
+  - deliverable manifests and `report build/status` now expose `context_artifacts` and `scope_policy_facts` alongside the other kernel-derived counts;
+  - report/export surfaces therefore describe the same hard signals that the benchmark gate now enforces.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts test/script/bench-cyber.test.ts` passes (`37 pass`).
+- Closed the autonomy/session bridge:
+  - creating a session while an operation is active now seeds `autonomy_policy` in the kernel immediately, even when the session still has the default/custom ruleset;
+  - `Session.setPermission(...)` now re-syncs the active operation’s `autonomy_policy`, so permissioned/auto mode becomes durable kernel state even when changed outside the `autonomy` tool surface.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/session/session.test.ts test/tool/autonomy.test.ts test/script/bench-cyber.test.ts` passes (`43 pass`).
+- Aligned export counts with operation bootstrap/autonomy signals:
+  - deliverable manifests and `report build/status` now also expose `operation_state_facts` and `autonomy_policy_facts`, completing the parity with the benchmark gate’s core bootstrap/autonomy checks;
+  - report/export counts now cover operation state, scope policy, autonomy policy, and context artifact production consistently.
+- Verification:
+  - `bun run typecheck` passes.
+  - `bun test --timeout 30000 test/tool/report.test.ts test/script/bench-cyber.test.ts` passes (`37 pass`).

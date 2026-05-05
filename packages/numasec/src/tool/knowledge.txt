@@ -1,0 +1,9 @@
+Query curated cyber knowledge sources through a semantic surface instead of picking raw lookup tools manually.
+
+Use this when the task is knowledge-driven rather than execution-driven.
+
+Sources:
+- `cve` -> local bundled CVE/advisory index with structured results, evidence, and graph links
+- `web` -> live web search for current or external information when local bundles are insufficient
+
+This tool delegates to the first-party source adapters. Evidence and graph persistence are owned by the delegated tool when supported.

@@ -7,6 +7,8 @@ import { Instance } from "../../src/project/instance"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { AppRuntime } from "../../src/effect/app-runtime"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
 import { tmpdir } from "../fixture/fixture"
 
 const projectRoot = path.join(__dirname, "../..")
@@ -177,5 +179,73 @@ describe("Session", () => {
     })
 
     expect(missing).toBe(true)
+  })
+
+  test("creating a session attaches it to the active operation and cyber kernel", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const op = await Operation.create({ workspace: tmp.path, label: "Bridge", kind: "pentest" })
+        const info = await create({ title: "attached-session" })
+
+        const sessionFile = path.join(tmp.path, ".numasec", "operation", op.slug, "sessions", `${info.id}.json`)
+        expect(await Bun.file(sessionFile).exists()).toBe(true)
+
+        const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+        const relations = await AppRuntime.runPromise(
+          Cyber.listLedger({ operation_slug: op.slug, limit: 100 }),
+        )
+
+        expect(facts.some((item) => item.entity_kind === "session" && item.entity_key === info.id)).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "operation" &&
+              item.entity_key === op.slug &&
+              item.fact_name === "autonomy_policy" &&
+              JSON.stringify(item.value_json).includes("\"mode\":\"custom\""),
+          ),
+        ).toBe(true)
+        expect(relations.some((item) => item.summary?.includes(String(info.id)))).toBe(true)
+
+        await remove(info.id)
+      },
+    })
+  })
+
+  test("setting session permission syncs autonomy policy into the active operation kernel", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const op = await Operation.create({ workspace: tmp.path, label: "Autonomy Sync", kind: "pentest" })
+        const info = await create({ title: "autonomy-sync" })
+
+        await AppRuntime.runPromise(
+          SessionNs.Service.use((svc) =>
+            svc.setPermission({
+              sessionID: info.id,
+              permission: [{ permission: "*", pattern: "*", action: "allow" }],
+            }),
+          ),
+        )
+
+        const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "operation" &&
+              item.entity_key === op.slug &&
+              item.fact_name === "autonomy_policy" &&
+              JSON.stringify(item.value_json).includes("\"mode\":\"auto\""),
+          ),
+        ).toBe(true)
+
+        await remove(info.id)
+      },
+    })
   })
 })

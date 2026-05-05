@@ -23,16 +23,18 @@ If the banner flags **strict-opsec**, skip third-party lookups (VT, urlscan, san
 - `read` / `write` / `edit` — drop exploit scripts into the operator's workspace and run them.
 - `cve` — offline CVE lookup. `websearch` only for current intel you do not already know.
 - `methodology` — quick ATT&CK / PTES id confirmation.
+- `runbook` — semantic capsule surface for fresh targets.
+- `play` — lower-level primitive behind `runbook`; use it only if you explicitly want the raw trace.
 
 ## Plays first
 
-When the operator hands you a fresh target, reach for `play` before typing raw commands:
+When the operator hands you a fresh target, reach for `runbook` before typing raw commands:
 
-- URL or web challenge → `play web-surface <url>`.
-- IP / network range → `play network-surface <target>`.
-- A CTF challenge file, binary, or unclassified artifact → `play ctf-warmup <path|url>` (uses the **`forensics-kit`** skill to triage category and suggest starting moves).
+- URL or web challenge → `runbook run web-surface <url>`.
+- IP / network range → `runbook run network-surface <target>`.
+- A CTF challenge file, binary, or unclassified artifact → `runbook run ctf-warmup <path|url>` (uses the **`forensics-kit`** skill to triage category and suggest starting moves).
 
-Use the play's output as your jumping-off inventory; deviate freely once you have signal.
+Use the capsule's output as your jumping-off inventory; deviate freely once you have signal.
 
 ## Skills
 

@@ -1,92 +1,179 @@
-- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-- The default branch in this repo is `develop`.
-- Local `main` ref may not exist; use `develop` or `origin/develop` for diffs.
-- Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
-- Bun is the only runtime. Use Bun APIs (e.g. `Bun.file()`) when possible.
+# numasec Agent Guide
 
-## Package boundaries
+This file is for AI agents working in this repository.
 
-- `packages/numasec` — core app: TUI, server, agents, tools, CLI, Effect services
-- `packages/plugin` — `@numasec/plugin`: tool/TUI extension API for third-party plugins
-- `packages/sdk` — `@numasec/sdk`: JS/TypeScript client and server SDK. Build with `bun run build` from `packages/sdk`.
-- `packages/script` — `@numasec/script`: build/release scripting utilities
-- `packages/shared` — `@numasec/shared`: cross-package utilities (filesystem, npm, globals)
+numasec is not a generic coding assistant. It is intended to become the Codex CLI for cyber security: a terminal-native cyber operator harness that wraps frontier LLMs with the right environment, tools, memory, evidence, replay, oracles and benchmarks.
+
+When you work here, optimize for that product shape.
+
+## Operating Rules
+
+- Always use parallel tools when applicable.
+- Prefer automation: execute requested actions without confirmation unless blocked by missing info, sandbox limits, or destructive/irreversible risk.
+- Use `rg`/`rg --files` for search.
+- Use Bun only. Do not introduce Node/npm/yarn/pnpm workflows.
+- Use Bun APIs such as `Bun.file()` when they fit.
+- Do not run `bun test` from the repo root. Root tests are intentionally guarded.
+- Keep changes scoped. Do not refactor unrelated systems while implementing a feature.
+- Do not revert user changes.
+- Do not use mocks for core behavior; test the actual implementation.
+
+## Branches
+
+- The historical default branch is `develop`, but it can lag.
+- For release work in this workspace, `release/1.2.0` is based on `main` by explicit user decision.
+- Do not assume `main` or `develop` is the correct diff base without checking current branch and user intent.
+- Local refs may be missing. Prefer explicit refs after inspection.
+
+## Product Direction
+
+Build toward the PRD in `packages/numasec/FINAL_NUMASEC_PRD.md`.
+
+Core thesis:
+
+- numasec is a cyber operator harness, not an authz scanner.
+- The LLM is not modified; the product leverage is the wrapper.
+- The wrapper must provide workspace, terminal, installed security tools, browser, HTTP, knowledge, memory, evidence, replay, permissions, oracles and benchmarks.
+- Claims must be classified as candidate, observed, verified, rejected or stale.
+- Confirmed findings require evidence. Active findings require replay unless a domain explicitly defines why replay is impossible.
+- AppSec and Pentest are the first hard-gated capsules for release 1.2.0.
+- OSINT, CTF/Hacking, Cloud/Container/IaC and Forensics can ship only with explicit maturity labels unless benchmark-gated.
+
+Avoid:
+
+- flat "200 tools" designs with no semantic parsing;
+- LLM-maintained state with no provenance;
+- polished reports from weak evidence;
+- universal cyber capability claims without benchmark coverage;
+- container/lab-image work for this release unless the user reopens that decision.
+
+## Architecture Direction
+
+The current codebase already has a TUI, server, providers, agents, tools, operations, evidence, replay, plays, scanner, browser, vault, permissions and plugins. Do not replace that foundation casually.
+
+The target architecture is:
+
+- Operation Ledger: append-only record of goals, scope, tool calls, approvals, outputs, hypotheses, findings and reports.
+- Cyber Workspace Graph: queryable derived fact index with provenance.
+- Evidence and Replay Store: immutable proof artifacts and replay bundles.
+- Tool Runtime and Adapter Registry: installed tool inventory, tool cards, parsers, degradation when absent.
+- Knowledge Service: CVE/advisory/exploit/source lookup with freshness and citations.
+- Memory System: session, operation, graph, artifact, procedural and team memory with context packing.
+- Oracle Engine: code/procedure based verification, never LLM confidence as final proof.
+- Permission and Autonomy Controller: `permissioned` and `auto` modes.
+- Domain Capsules: Pentest, AppSec, OSINT, CTF/Hacking, Cloud/Container/IaC, Forensics.
+
+### Graph Rule
+
+Do not make the agent manually maintain the graph.
+
+Graph population must flow through provenance:
+
+```text
+ledger event -> deterministic parser/extractor -> candidate fact -> provenance link -> graph projection
+```
+
+Allowed graph writers:
+
+- deterministic parsers for tool outputs;
+- first-party semantic tools;
+- oracle engine;
+- explicit operator correction/promotion;
+- LLM extractor only for candidate facts.
+
+Forbidden graph writers:
+
+- raw assistant prose;
+- unparsed generic output with no evidence;
+- LLM-only confirmed facts;
+- report generation side effects.
+
+Graph facts must carry status, confidence, source event, evidence link when available, writer kind and timestamps.
+
+Use SQLite/Drizzle for queryable graph and operation metadata. Use JSONL for replay/audit exports. Do not use markdown as canonical state.
+
+### Operation Context
+
+`numasec.md` may exist as an agent-facing context pack, not as canonical state.
+
+The old operation notebook was useful because it helped the agent stay oriented. Keep that benefit, but derive it from ledger, graph, memory and open hypotheses. It should be disposable once context packing is strong enough.
+
+## Package Boundaries
+
+- `packages/numasec` - core app: TUI, server, agents, tools, CLI, Effect services.
+- `packages/plugin` - `@numasec/plugin`: tool/TUI extension API.
+- `packages/sdk` - `@numasec/sdk`: JS/TypeScript client and server SDK. Build from `packages/sdk`.
+- `packages/script` - `@numasec/script`: build/release scripting utilities.
+- `packages/shared` - `@numasec/shared`: cross-package filesystem, npm and utility code.
 
 ## Commands
 
-- **dev:** `bun dev` from repo root (runs TUI in `packages/numasec`). Pass a directory to run against a different project: `bun dev <dir>`. Starts server in a worker thread.
-- **dev (direct):** `bun dev spawn` from repo root runs the TUI with server in main thread (needed for breakpoints).
-- **serve:** `bun dev serve` starts headless API server on port 4096.
-- **typecheck:** `bun typecheck` from repo root runs turbo typecheck across all packages. Each package uses `tsgo --noEmit` (the TypeScript native type checker from `@typescript/native-preview`), never `tsc`.
-- **lint:** `bun run lint` runs `oxlint` with `typeAware: true`.
-- **build:** `bun run build` from `packages/numasec` (builds standalone binaries). Env vars: `NUMASEC_BUILD_OS` (linux|darwin|win32), `NUMASEC_VERSION`, `NUMASEC_CHANNEL`.
-- **single binary:** `bun run build --single` from `packages/numasec` produces a distributable at `packages/numasec/dist/numasec-<platform>/bin/numasec`.
-- **test:** `bun test --timeout 30000` from within `packages/numasec`. NEVER run `bun test` from repo root — it's guarded (`bunfig.toml` sets `test.root = "./do-not-run-tests-from-root"`).
-- **drizzle:** `bun run db generate --name <slug>` from `packages/numasec` generates a migration from `src/**/*.sql.ts` into `migration/`.
+From repo root:
 
-## Build / release
+- `bun dev` - run the TUI in `packages/numasec`.
+- `bun dev <dir>` - run against another project directory.
+- `bun dev spawn` - run TUI with server in main thread for breakpoints.
+- `bun dev serve` - start headless API server on port 4096.
+- `bun typecheck` - turbo typecheck across packages using `tsgo --noEmit`.
+- `bun run lint` - oxlint with type-aware rules.
 
-- `NUMASEC_VERSION` and `NUMASEC_BUILD_OS` control build output. Platform-specific artifact dirs follow the pattern `numasec-linux-x64`, `numasec-darwin-arm64`, `numasec-win32-x64`.
-- NPM publish uses platform-specific packages (`@numasec/numasec-linux-x64` etc.) as optionalDependencies of the main `numasec` package.
-- Release version is resolved by `script/version.ts`.
+From `packages/numasec`:
 
-## Environment variables
+- `bun test --timeout 30000` - package tests.
+- `bun run build` - standalone binary build.
+- `bun run build --single` - single distributable binary.
+- `bun run db generate --name <slug>` - Drizzle migration generation.
+- `bun run bench:local` - local benchmark runner where applicable.
 
-- `NUMASEC_DB=:memory:` — use for tests to get in-memory SQLite.
-- `NUMASEC_DISABLE_FILEWATCHER=true` — set on Windows CI since file watcher doesn't work.
-- `NUMASEC_PURE=1` / `--pure` flag — skip external plugins.
-- `NUMASEC_MODELS_PATH` — path to models API snapshot for testing.
-- `NUMASEC_TEST_HOME`, `NUMASEC_TEST_MANAGED_CONFIG_DIR` — test isolation directories.
-- `NUMASEC_DISABLE_DEFAULT_PLUGINS=true` — skip built-in plugins in tests.
-- `NUMASEC_SERVER_PASSWORD`, `NUMASEC_SERVER_USERNAME` — headless server auth.
-- Provider API keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, etc.
+From `packages/sdk`:
+
+- `bun run build` - SDK build.
+
+Never use `tsc`; this repo uses `tsgo` from `@typescript/native-preview`.
+
+## Environment
+
+Useful variables:
+
+- `NUMASEC_DB=:memory:` - in-memory SQLite for tests.
+- `NUMASEC_DISABLE_FILEWATCHER=true` - Windows CI workaround.
+- `NUMASEC_PURE=1` or `--pure` - skip external plugins.
+- `NUMASEC_MODELS_PATH` - models API snapshot for testing.
+- `NUMASEC_TEST_HOME`, `NUMASEC_TEST_MANAGED_CONFIG_DIR` - test isolation.
+- `NUMASEC_DISABLE_DEFAULT_PLUGINS=true` - skip built-in plugins in tests.
+- `NUMASEC_SERVER_PASSWORD`, `NUMASEC_SERVER_USERNAME` - headless server auth.
+- Provider keys include `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`.
 
 ## Testing
 
-- Test preload file at `packages/numasec/test/preload.ts` sets isolation: XDG dirs in `/tmp/numasec-test-data-<pid>`, clears all provider auth env vars, sets `NUMASEC_DB=:memory:`, disables default plugins.
-- Effect-based tests use `testEffect(layer)` from `test/lib/effect.ts` — returns `{ effect, live }` test helpers.
-- Use `it.live(...)` for tests needing real time/filesystem/git; `it.effect(...)` for tests with `TestClock`/`TestConsole`.
-- Temp directory fixtures: `tmpdir()` for Promise-based tests, `provideTmpdirInstance()` / `tmpdirScoped()` for Effect-based tests.
-- Full test fixture and effect patterns detailed in `packages/numasec/test/AGENTS.md`.
-- Avoid mocks; test the actual implementation.
-- Windows tests run with `continue-on-error: true` in CI.
+- Test preload lives at `packages/numasec/test/preload.ts`.
+- It isolates XDG dirs under `/tmp/numasec-test-data-<pid>`, clears provider auth vars, sets `NUMASEC_DB=:memory:` and disables default plugins.
+- Use `testEffect(layer)` from `packages/numasec/test/lib/effect.ts` for Effect services.
+- Use `it.live(...)` for real filesystem/time/git/process behavior.
+- Use `it.effect(...)` for `TestClock`/`TestConsole`.
+- Use `tmpdir()` for Promise tests.
+- Use `provideTmpdirInstance()`, `tmpdirScoped()` or `provideInstance()` for Effect tests.
+- See `packages/numasec/test/AGENTS.md` for fixture patterns.
+- Windows tests may be continue-on-error in CI; still write portable code where practical.
 
-## Architecture
+Benchmark expectations for release 1.2.0:
 
-- **Effect** is the core framework for services, layering, and error handling. See `packages/numasec/AGENTS.md` for detailed Effect rules.
-- **`makeRuntime`** (from `src/effect/run-service.ts`) is the factory for all Effect runtimes. It provides `runSync`, `runPromise`, `runFork`, `runCallback` backed by a shared `memoMap`.
-- **`InstanceState`** (from `src/effect/instance-state.ts`) manages per-directory/per-project state via `ScopedCache`. Services keyed by project directory get automatically cleaned up on disposal.
-- **`Instance`** (from `src/project/instance.ts`) holds the current project directory context via `AsyncLocalStorage`. Use `Instance.bind(fn)` for native addon callbacks that need the directory context.
-- **Server** uses Hono, runs on port 4096 by default. TUI connects via WebSocket. `bun dev` spawns the server in a worker thread.
-- **Database** is SQLite via Drizzle ORM (bun-sqlite). Schema files in `src/**/*.sql.ts`. Migrations in `migration/`. `drizzle.config.ts` at `packages/numasec/drizzle.config.ts`.
-- **CVE bundle** lives at `assets/cve/index.json.gz` — refreshed weekly by `cve-refresh.yml` workflow. Size budget ≤ 8 MB.
+- AppSec and Pentest benchmarks must gate the release.
+- Kernel, graph, evidence, replay, installed-tool inventory, permissioned mode and auto mode need tests.
+- Missing optional installed tools should degrade clearly, not pretend success.
 
-## Style Guide
+## Database And Storage
 
-### General
+- Drizzle schemas live in `src/**/*.sql.ts`.
+- Table and column names use snake_case.
+- Join columns are `<entity>_id`.
+- Index names should be descriptive and stable.
+- Generate migrations from `packages/numasec` with `bun run db generate --name <slug>`.
+- Use SQLite/Drizzle for queryable operation metadata, graph, facts, relations and proof indexes.
+- Store immutable artifacts by hash in evidence storage.
+- Keep replay/audit exports as JSONL.
 
-- Keep things in one function unless composable or reusable.
-- Avoid `try`/`catch` where possible; prefer `.catch()`.
-- Avoid `any` type.
-- Rely on type inference; avoid explicit type annotations unless necessary for exports or clarity.
-- Prefer functional array methods (`flatMap`, `filter`, `map`) over for loops.
-- Inline variables that are only used once.
-
-### Destructuring
-
-Avoid unnecessary destructuring. Use dot notation to preserve context.
-
-### Variables
-
-Prefer `const`. Use ternaries or early returns instead of `let` + reassignment.
-
-### Control Flow
-
-Avoid `else`. Use early returns.
-
-### Schema Definitions (Drizzle)
-
-Use snake_case field names so column names don't need to be redefined:
+Schema style:
 
 ```ts
 const table = sqliteTable("session", {
@@ -95,3 +182,46 @@ const table = sqliteTable("session", {
   created_at: integer().notNull(),
 })
 ```
+
+## Effect Rules
+
+See `packages/numasec/AGENTS.md` for detailed Effect migration rules.
+
+Core points:
+
+- Use `Effect.gen(function* () { ... })` for composition.
+- Use `Effect.fn("Domain.method")` for named/traced effects.
+- Use `Effect.fnUntraced` for internal hot helpers.
+- Use `makeRuntime` from `src/effect/run-service.ts` for service runtimes.
+- Use `InstanceState` for per-directory/per-project state.
+- Do not add manual `started` flags or custom singleton promises around `InstanceState`.
+- Prefer existing Effect services over raw platform APIs when already inside Effect code.
+- Prefer `FileSystem.FileSystem`, `ChildProcessSpawner`, `HttpClient.HttpClient`, `Path.Path`, `Clock` and `DateTime` when available.
+- `Effect.fork` and `Effect.forkDaemon` do not exist in the current Effect version; use scoped fork APIs documented in package guides.
+
+## Style
+
+- Prefer `const`.
+- Prefer early returns over `else`.
+- Prefer functional array methods where readable.
+- Avoid `any`.
+- Rely on inference unless export clarity requires a type annotation.
+- Avoid unnecessary destructuring; use dot notation when it preserves context.
+- Avoid `try`/`catch` where `.catch()` or Effect errors fit better.
+- Keep things in one function unless extraction removes real complexity.
+- Add comments only when they explain non-obvious intent or constraints.
+
+## Security Product Standards
+
+When implementing cyber functionality:
+
+- Store raw secrets by reference, not in graph facts or summaries.
+- Redact secrets in default output.
+- Every finding must link to evidence or remain suspected.
+- Every active finding should have replay material.
+- Tool output should become evidence first, then parsed facts.
+- Parser failures should degrade visibly.
+- The model may propose hypotheses; code, replay, independent source corroboration or operator action must verify them.
+- Reports must refuse unsupported confirmed claims.
+
+This repository should move toward an industry-standard cyber agent. Treat benchmarked proof, replay and operator trust as product requirements, not polish.

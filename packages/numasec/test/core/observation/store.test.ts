@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "fs"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -76,6 +77,57 @@ describe("core/observation store", () => {
       const a = await Observation.list(dir, "op1")
       const b = await Observation.list(dir, "op1")
       expect(a).toEqual(b)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test("syncs observation state into the cyber projection", async () => {
+    const { dir, cleanup } = mkws()
+    try {
+      const observation = await Observation.add(dir, "op1", {
+        subtype: "vuln",
+        title: "Stored XSS on profile",
+        severity: "high",
+        confidence: 0.8,
+      })
+      await Observation.linkEvidence(dir, "op1", observation.id, "sha256:abc123")
+      await Observation.update(dir, "op1", observation.id, { status: "confirmed", note: "reproduced manually" })
+
+      const facts = readFileSync(path.join(dir, ".numasec", "operation", "op1", "cyber", "facts.jsonl"), "utf8")
+      const relations = readFileSync(path.join(dir, ".numasec", "operation", "op1", "cyber", "relations.jsonl"), "utf8")
+
+      expect(facts).toContain('"entity_kind":"observation"')
+      expect(facts).toContain(`"entity_key":"${observation.id}"`)
+      expect(facts).toContain('"fact_name":"record"')
+      expect(facts).toContain('"status":"verified"')
+      expect(facts).toContain('"reproduced manually"')
+      expect(relations).toContain('"src_kind":"observation"')
+      expect(relations).toContain('"relation":"supported_by"')
+      expect(relations).toContain('"dst_kind":"evidence_artifact"')
+    } finally {
+      cleanup()
+    }
+  })
+
+  test("listProjected and getProjected read observation state from the cyber kernel", async () => {
+    const { dir, cleanup } = mkws()
+    try {
+      const slug = `op_projected_${Date.now().toString(36)}`
+      const observation = await Observation.add(dir, slug, {
+        subtype: "vuln",
+        title: "Reflected XSS",
+        severity: "medium",
+      })
+      await Observation.update(dir, slug, observation.id, { status: "confirmed", note: "reproduced" })
+
+      const projected = await Observation.listProjected(dir, slug)
+      const item = await Observation.getProjected(dir, slug, observation.id)
+
+      expect(projected.length).toBe(1)
+      expect(projected[0]?.id).toBe(observation.id)
+      expect(projected[0]?.status).toBe("confirmed")
+      expect(item?.note).toBe("reproduced")
     } finally {
       cleanup()
     }

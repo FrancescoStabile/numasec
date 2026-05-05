@@ -3,11 +3,17 @@ import { Effect } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION from "./scanner.txt"
 import { Guard, ScopeDeniedError } from "@/core/boundary"
-import { crawl } from "../scanner/crawl"
+import { createHash } from "crypto"
+import { crawl, type CrawlResult } from "../scanner/crawl"
 import { dirFuzz } from "../scanner/dir-fuzzer"
-import { analyzeJs } from "../scanner/js-analyzer"
-import { scanPorts } from "../scanner/port-scanner"
-import { probeServices } from "../scanner/service-prober"
+import { analyzeJs, type JsAnalysisResult } from "../scanner/js-analyzer"
+import { scanPorts, type PortScanResult } from "../scanner/port-scanner"
+import { probeServices, type ServiceProbeResult } from "../scanner/service-prober"
+import type { DirFuzzResult } from "../scanner/dir-fuzzer"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
+import { Operation } from "@/core/operation"
+import { Instance } from "@/project/instance"
 
 const TIMEOUTS = {
   crawl: 60_000,
@@ -74,6 +80,340 @@ function baseUrl(target: string): string {
   throw new Error(`target must be an absolute URL (http:// or https://) for this mode, got: ${target}`)
 }
 
+function normalizeRoute(target: string, value: string) {
+  try {
+    return new URL(value, target).href
+  } catch {
+    return undefined
+  }
+}
+
+function factName(prefix: string, value: string | number) {
+  return `${prefix}:${String(value).toLowerCase().replace(/[^a-z0-9._:-]+/g, "_")}`
+}
+
+function fingerprint(value: string) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16)
+}
+
+function persistScanResult(input: {
+  workspace: string
+  slug?: string
+  mode: Params["mode"]
+  target: string
+  result: unknown
+}) {
+  if (!input.slug) return Effect.succeed(undefined)
+  const slug = input.slug
+  return Effect.promise(() =>
+    Evidence.put(input.workspace, slug, JSON.stringify(input.result, null, 2), {
+      mime: "application/json",
+      ext: "json",
+      label: `scanner ${input.mode} ${input.target}`,
+      source: "scanner",
+    }),
+  )
+}
+
+function writeCrawlFacts(input: { target: string; result: CrawlResult; eventID?: string; evidenceRefs?: string[] }) {
+  const origin = new URL(input.target).origin
+  const hostKey = new URL(input.target).hostname
+  const port = new URL(input.target).port || (input.target.startsWith("https://") ? "443" : "80")
+  const serviceKey = `${hostKey}:${port}`
+  return Effect.all([
+    Cyber.upsertRelation({
+      src_kind: "host",
+      src_key: hostKey,
+      relation: "exposes",
+      dst_kind: "service",
+      dst_key: serviceKey,
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: input.eventID,
+      evidence_refs: input.evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ...input.result.urls.map((url) =>
+      Effect.all([
+        Cyber.upsertFact({
+          entity_kind: "http_route",
+          entity_key: url,
+          fact_name: "discovered_by:crawl",
+          value_json: true,
+          writer_kind: "tool",
+          status: "observed",
+          confidence: 1000,
+          source_event_id: input.eventID,
+          evidence_refs: input.evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed(""))),
+        Cyber.upsertRelation({
+          src_kind: "service",
+          src_key: serviceKey,
+          relation: "serves",
+          dst_kind: "http_route",
+          dst_key: url,
+          writer_kind: "tool",
+          status: "observed",
+          confidence: 1000,
+          source_event_id: input.eventID,
+          evidence_refs: input.evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed(""))),
+      ]),
+    ),
+    ...input.result.forms.map((form) =>
+      Cyber.upsertFact({
+        entity_kind: "http_form",
+        entity_key: `${form.method}:${form.action}`,
+        fact_name: "shape",
+        value_json: { action: form.action, method: form.method, inputs: form.inputs },
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 900,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+    ...input.result.technologies.map((technology) =>
+      Cyber.upsertFact({
+        entity_kind: "host",
+        entity_key: hostKey,
+        fact_name: factName("technology", technology),
+        value_json: technology,
+        writer_kind: "parser",
+        status: "observed",
+        confidence: 700,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+    ...(input.result.openapi
+      ? [
+          Cyber.upsertFact({
+            entity_kind: "service",
+            entity_key: serviceKey,
+            fact_name: "openapi_spec",
+            value_json: input.result.openapi,
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+            source_event_id: input.eventID,
+            evidence_refs: input.evidenceRefs,
+          }).pipe(Effect.catch(() => Effect.succeed(""))),
+        ]
+      : []),
+    ...input.result.sitemap.map((url) =>
+      Cyber.upsertFact({
+        entity_kind: "http_route",
+        entity_key: url,
+        fact_name: "listed_in:sitemap",
+        value_json: origin,
+        writer_kind: "parser",
+        status: "observed",
+        confidence: 850,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+    ...input.result.robotsDisallowed.map((route) =>
+      Cyber.upsertFact({
+        entity_kind: "http_route",
+        entity_key: normalizeRoute(origin, route) ?? `${origin}${route}`,
+        fact_name: "listed_in:robots_disallow",
+        value_json: true,
+        writer_kind: "parser",
+        status: "observed",
+        confidence: 850,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+  ])
+}
+
+function writeDirFuzzFacts(input: { target: string; result: DirFuzzResult; eventID?: string; evidenceRefs?: string[] }) {
+  const origin = new URL(input.target).origin
+  const hostKey = new URL(input.target).hostname
+  const port = new URL(input.target).port || (input.target.startsWith("https://") ? "443" : "80")
+  const serviceKey = `${hostKey}:${port}`
+  return Effect.forEach(input.result.found, (item) =>
+    Effect.all([
+      Cyber.upsertFact({
+        entity_kind: "http_route",
+        entity_key: normalizeRoute(origin, item.path) ?? `${origin}${item.path}`,
+        fact_name: "dir_fuzz_observation",
+        value_json: item,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+      Cyber.upsertRelation({
+        src_kind: "service",
+        src_key: serviceKey,
+        relation: "serves",
+        dst_kind: "http_route",
+        dst_key: normalizeRoute(origin, item.path) ?? `${origin}${item.path}`,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ]),
+  )
+}
+
+function writeJsFacts(input: { target: string; result: JsAnalysisResult; eventID?: string; evidenceRefs?: string[] }) {
+  const hostKey = new URL(input.target).hostname
+  return Effect.all([
+    ...input.result.endpoints.flatMap((endpoint) => {
+      const routeKey = normalizeRoute(input.target, endpoint)
+      if (!routeKey) return []
+      return [
+        Cyber.upsertFact({
+          entity_kind: "http_route",
+          entity_key: routeKey,
+          fact_name: "discovered_by:js_analysis",
+          value_json: endpoint,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: input.eventID,
+          evidence_refs: input.evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed(""))),
+      ]
+    }),
+    ...input.result.spaRoutes.flatMap((route) => {
+      const routeKey = normalizeRoute(input.target, route)
+      if (!routeKey) return []
+      return [
+        Cyber.upsertFact({
+          entity_kind: "http_route",
+          entity_key: routeKey,
+          fact_name: "spa_route",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: input.eventID,
+          evidence_refs: input.evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed(""))),
+      ]
+    }),
+    ...input.result.chatbotIndicators.map((indicator) =>
+      Cyber.upsertFact({
+        entity_kind: "host",
+        entity_key: hostKey,
+        fact_name: factName("chatbot", indicator),
+        value_json: indicator,
+        writer_kind: "parser",
+        status: "observed",
+        confidence: 700,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+    ...input.result.jsFiles.map((file) =>
+      Cyber.upsertFact({
+        entity_kind: "artifact",
+        entity_key: file,
+        fact_name: "javascript_resource",
+        value_json: true,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+    ...input.result.secrets.map((secret) =>
+      Cyber.upsertFact({
+        entity_kind: "secret_candidate",
+        entity_key: fingerprint(secret.value),
+        fact_name: factName("detected", secret.type),
+        value_json: {
+          type: secret.type,
+          file: secret.file,
+          context: secret.context,
+          preview: secret.value.slice(0, 8),
+          length: secret.value.length,
+        },
+        writer_kind: "parser",
+        status: "candidate",
+        confidence: 650,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ),
+  ])
+}
+
+function writePortFacts(input: { target: string; result: PortScanResult; eventID?: string; evidenceRefs?: string[] }) {
+  return Effect.forEach(input.result.openPorts, (item) =>
+    Effect.all([
+      Cyber.upsertFact({
+        entity_kind: "service",
+        entity_key: `${input.result.host}:${item.port}`,
+        fact_name: "port_scan",
+        value_json: item,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+      Cyber.upsertRelation({
+        src_kind: "host",
+        src_key: input.result.host,
+        relation: "exposes",
+        dst_kind: "service",
+        dst_key: `${input.result.host}:${item.port}`,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ]),
+  )
+}
+
+function writeServiceFacts(input: {
+  target: string
+  result: ServiceProbeResult
+  eventID?: string
+  evidenceRefs?: string[]
+}) {
+  return Effect.forEach(input.result.services, (item) =>
+    Effect.all([
+      Cyber.upsertFact({
+        entity_kind: "service",
+        entity_key: `${extractHost(input.target)}:${item.port}`,
+        fact_name: "service_probe",
+        value_json: item,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+      Cyber.upsertRelation({
+        src_kind: "host",
+        src_key: extractHost(input.target),
+        relation: "exposes",
+        dst_kind: "service",
+        dst_key: `${extractHost(input.target)}:${item.port}`,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: input.eventID,
+        evidence_refs: input.evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed(""))),
+    ]),
+  )
+}
+
 export const ScannerTool = Tool.define<typeof parameters, Metadata, never>(
   "scanner",
   Effect.gen(function* () {
@@ -91,7 +431,7 @@ export const ScannerTool = Tool.define<typeof parameters, Metadata, never>(
             : { kind: "host" as const, value: host }
 
           const scope = yield* Effect.tryPromise({
-            try: () => Guard.check(process.cwd(), scopeReq),
+            try: () => Guard.check(Instance.directory, scopeReq),
             catch: (e) =>
               e instanceof ScopeDeniedError
                 ? new Error(`out-of-scope: ${params.target} is not allowed by the active operation's scope`)
@@ -170,6 +510,72 @@ export const ScannerTool = Tool.define<typeof parameters, Metadata, never>(
           })
 
           const elapsed = (result as { elapsed?: number }).elapsed
+          const workspace = Instance.directory
+          const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+          const evidence = yield* persistScanResult({
+            workspace,
+            slug,
+            mode: params.mode,
+            target: params.target,
+            result: { mode: params.mode, target: params.target, ...result },
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const evidenceRefs = evidence ? [evidence.sha256] : undefined
+          const eventID = yield* Cyber.appendLedger({
+            kind: "fact.observed",
+            source: "scanner",
+            summary: summarize(params.mode, result) ?? `scanner ${params.mode} ${params.target}`,
+            evidence_refs: evidenceRefs,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            data: {
+              mode: params.mode,
+              target: params.target,
+              elapsed,
+              host,
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+
+          if (params.mode === "crawl") {
+            yield* writeCrawlFacts({
+              target: params.target,
+              result: result as CrawlResult,
+              eventID: eventID || undefined,
+              evidenceRefs,
+            })
+          }
+          if (params.mode === "dir-fuzz") {
+            yield* writeDirFuzzFacts({
+              target: params.target,
+              result: result as DirFuzzResult,
+              eventID: eventID || undefined,
+              evidenceRefs,
+            })
+          }
+          if (params.mode === "js") {
+            yield* writeJsFacts({
+              target: params.target,
+              result: result as JsAnalysisResult,
+              eventID: eventID || undefined,
+              evidenceRefs,
+            })
+          }
+          if (params.mode === "ports") {
+            yield* writePortFacts({
+              target: params.target,
+              result: result as PortScanResult,
+              eventID: eventID || undefined,
+              evidenceRefs,
+            })
+          }
+          if (params.mode === "service") {
+            yield* writeServiceFacts({
+              target: params.target,
+              result: result as ServiceProbeResult,
+              eventID: eventID || undefined,
+              evidenceRefs,
+            })
+          }
+
           return {
             title: summarize(params.mode, result) ?? `scanner ${params.mode} ${params.target}`,
             output: JSON.stringify({ mode: params.mode, target: params.target, ...result }, null, 2),

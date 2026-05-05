@@ -133,4 +133,39 @@ describe("core/boundary opsec guard", () => {
       cleanup()
     }
   })
+
+  test("projected scope_policy overrides legacy markdown scope when present", async () => {
+    const { dir, cleanup } = mkws()
+    try {
+      const info = await Operation.create({
+        workspace: dir,
+        label: "projected scope",
+        kind: "pentest",
+        target: "https://target.test",
+      })
+      const cyberDir = path.join(dir, ".numasec", "operation", info.slug, "cyber")
+      await Bun.write(
+        path.join(cyberDir, "facts.jsonl"),
+        [
+          JSON.stringify({
+            entity_kind: "operation",
+            entity_key: info.slug,
+            fact_name: "scope_policy",
+            value_json: {
+              default: "ask",
+              in_scope: ["api.target.test"],
+              out_of_scope: [],
+            },
+          }),
+          "",
+        ].join("\n"),
+      )
+      const d = await checkUrl(dir, "https://api.target.test/v1/status")
+      expect(d.mode).toBe("allow")
+      const fallback = await checkUrl(dir, "https://target.test/login")
+      expect(fallback.mode).toBe("ask")
+    } finally {
+      cleanup()
+    }
+  })
 })

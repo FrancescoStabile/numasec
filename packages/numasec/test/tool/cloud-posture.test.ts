@@ -3,6 +3,9 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { Format } from "../../src/format"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Truncate } from "../../src/tool"
@@ -94,6 +97,56 @@ describe("tool/cloud-posture", () => {
             "--region",
             "eu-west-1",
           ])
+        },
+      })
+    } finally {
+      _deps.which = whichSaved
+      _deps.run = runSaved
+    }
+  })
+
+  test("writes cloud posture facts into the cyber kernel when an operation is active", async () => {
+    await using fixture = await tmpdir({ git: true })
+    const whichSaved = _deps.which
+    const runSaved = _deps.run
+    _deps.which = () => "/usr/bin/prowler"
+    _deps.run = () =>
+      Effect.succeed({
+        argv: ["prowler"],
+        stdout: [
+          "FAIL check iam-public-access-key rotation missing",
+          "PASS check cloudtrail enabled",
+          "HIGH severity bucket public-read",
+        ].join("\n"),
+        stderr: "",
+        exitCode: 0,
+      } as any)
+    try {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const op = await Operation.create({ workspace: fixture.path, label: "Cloud", kind: "appsec" })
+          await exec({ provider: "aws", mode: "quick", profile: "dev", region: "eu-west-1" })
+          const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+          const ledger = await AppRuntime.runPromise(Cyber.listLedger({ operation_slug: op.slug, limit: 100 }))
+
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "cloud_account" &&
+                item.entity_key === "aws:dev:eu-west-1" &&
+                item.fact_name === "prowler_summary",
+            ),
+          ).toBe(true)
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "finding_candidate" &&
+                item.fact_name === "cloud_posture_signal" &&
+                item.entity_key.includes("aws:dev:eu-west-1:"),
+            ),
+          ).toBe(true)
+          expect(ledger.some((item) => item.source === "cloud_posture" && item.summary?.includes("aws:dev:eu-west-1"))).toBe(true)
         },
       })
     } finally {

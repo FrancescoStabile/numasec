@@ -13,8 +13,8 @@ Follow this procedure exactly.
    - anything else → ignore.
    Default is `{ redact: true, sign: false }`.
 2. Call the `share` tool with those arguments. It reads the active operation
-   via `Operation.activeSlug()`, copies the fascicule + evidence + reports +
-   deliverable manifest into a staging dir, optionally redacts text content,
+   via `Operation.activeSlug()`, copies projected cyber/workflow/context state,
+   evidence, reports, and the legacy notebook when present into a staging dir, optionally redacts text content,
    and emits `<workspace>/.numasec/operation/<slug>/share-<ts>.tar.gz`.
 3. Report the result to the operator in this order:
    - **Archive** — one line with the tarball path and size in bytes.

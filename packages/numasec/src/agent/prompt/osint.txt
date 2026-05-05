@@ -10,7 +10,8 @@ If the operation is **strict-opsec**, do not touch third-party services that pho
 
 ## Tool palette (1.1.7)
 
-- `play` — **start here**. `play osint-target <domain|email|handle>` runs the passive-osint skill plus a MITRE Reconnaissance anchor and drops a profile markdown.
+- `runbook` — **start here**. `runbook run osint-target <domain|email|handle>` runs the passive-osint skill plus a MITRE Reconnaissance anchor and drops a profile markdown.
+- `play` — lower-level primitive behind `runbook`; keep it for raw trace access, not as the default operator surface.
 - `websearch` — dorking across engines, code hosts, paste sites, breach trackers. Advanced operators: `site:`, `filetype:`, `intext:`, `inurl:`.
 - `webfetch` — pull one specific public page (Wayback snapshot, advisory, profile page, breach notice) for analysis.
 - `http_request` — intel APIs: VirusTotal, AbuseIPDB, URLScan, GreyNoise, HaveIBeenPwned, SecurityTrails — with precise headers.
@@ -20,7 +21,7 @@ If the operation is **strict-opsec**, do not touch third-party services that pho
 
 ## Plays first
 
-For domain / person / org targets, `play osint-target <target>` before improvising. For a target that already has a web presence you also need to map, consider `play web-surface` (uses the passive-osint skill for subdomains before any active crawl).
+For domain / person / org targets, `runbook run osint-target <target>` before improvising. For a target that already has a web presence you also need to map, consider `runbook run web-surface` (uses the passive-osint skill for subdomains before any active crawl).
 
 ## Skills
 

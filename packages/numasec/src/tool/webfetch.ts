@@ -5,6 +5,10 @@ import * as Tool from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { Guard, ScopeDeniedError } from "@/core/boundary"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
+import { Operation } from "@/core/operation"
+import { Instance } from "@/project/instance"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
@@ -35,7 +39,7 @@ export const WebFetchTool = Tool.define(
           }
 
           const scope = yield* Effect.tryPromise({
-            try: () => Guard.checkUrl(process.cwd(), params.url),
+            try: () => Guard.checkUrl(Instance.directory, params.url),
             catch: (e) => (e instanceof ScopeDeniedError ? e : new Error(String(e))),
           })
 
@@ -112,11 +116,75 @@ export const WebFetchTool = Tool.define(
           const contentType = response.headers["content-type"] || ""
           const mime = contentType.split(";")[0]?.trim().toLowerCase() || ""
           const title = `${params.url} (${contentType})`
+          const workspace = Instance.directory
+          const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+          const hostKey = new URL(params.url).hostname
 
           // Check if response is an image
           const isImage = mime.startsWith("image/") && mime !== "image/svg+xml" && mime !== "image/vnd.fastbidsheet"
 
+          const evidence =
+            !slug
+              ? undefined
+              : yield* Effect.promise(() =>
+                  Evidence.put(workspace, slug, new Uint8Array(arrayBuffer), {
+                    mime: mime || undefined,
+                    label: `webfetch ${params.url}`,
+                    source: "webfetch",
+                  }),
+                ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const evidenceRefs = evidence ? [evidence.sha256] : undefined
+          const eventID = yield* Cyber.appendLedger({
+            operation_slug: slug,
+            kind: "fact.observed",
+            source: "webfetch",
+            summary: `webfetch ${params.url}`,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            evidence_refs: evidenceRefs,
+            data: {
+              url: params.url,
+              host: hostKey,
+              format: params.format,
+              content_type: mime || null,
+              bytes: arrayBuffer.byteLength,
+              image: isImage,
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+
           if (isImage) {
+            yield* Cyber.upsertFact({
+              operation_slug: slug,
+              entity_kind: "web_page",
+              entity_key: params.url,
+              fact_name: "fetch_result",
+              value_json: {
+                url: params.url,
+                host: hostKey,
+                format: params.format,
+                content_type: mime || null,
+                bytes: arrayBuffer.byteLength,
+                image: true,
+              },
+              writer_kind: "tool",
+              status: "observed",
+              confidence: 1000,
+              source_event_id: eventID || undefined,
+              evidence_refs: evidenceRefs,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+            yield* Cyber.upsertRelation({
+              operation_slug: slug,
+              src_kind: "host",
+              src_key: hostKey,
+              relation: "hosts",
+              dst_kind: "web_page",
+              dst_key: params.url,
+              writer_kind: "tool",
+              status: "observed",
+              confidence: 1000,
+              source_event_id: eventID || undefined,
+              evidence_refs: evidenceRefs,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
             const base64Content = Buffer.from(arrayBuffer).toString("base64")
             return {
               title,
@@ -133,32 +201,62 @@ export const WebFetchTool = Tool.define(
           }
 
           const content = new TextDecoder().decode(arrayBuffer)
+          const output =
+            params.format === "markdown" && contentType.includes("text/html")
+              ? convertHTMLToMarkdown(content)
+              : params.format === "text" && contentType.includes("text/html")
+                ? yield* Effect.promise(() => extractTextFromHTML(content))
+                : content
+
+          yield* Cyber.upsertFact({
+            operation_slug: slug,
+            entity_kind: "web_page",
+            entity_key: params.url,
+            fact_name: "fetch_result",
+            value_json: {
+              url: params.url,
+              host: hostKey,
+              format: params.format,
+              content_type: mime || null,
+              bytes: arrayBuffer.byteLength,
+              image: false,
+              title,
+              preview: output.slice(0, 4000),
+              preview_truncated: output.length > 4000,
+            },
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 900,
+            source_event_id: eventID || undefined,
+            evidence_refs: evidenceRefs,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertRelation({
+            operation_slug: slug,
+            src_kind: "host",
+            src_key: hostKey,
+            relation: "hosts",
+            dst_kind: "web_page",
+            dst_key: params.url,
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+            source_event_id: eventID || undefined,
+            evidence_refs: evidenceRefs,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
 
           // Handle content based on requested format and actual content type
           switch (params.format) {
             case "markdown":
-              if (contentType.includes("text/html")) {
-                const markdown = convertHTMLToMarkdown(content)
-                return {
-                  output: markdown,
-                  title,
-                  metadata: {},
-                }
-              }
-              return { output: content, title, metadata: {} }
+              return { output, title, metadata: {} }
 
             case "text":
-              if (contentType.includes("text/html")) {
-                const text = yield* Effect.promise(() => extractTextFromHTML(content))
-                return { output: text, title, metadata: {} }
-              }
-              return { output: content, title, metadata: {} }
+              return { output, title, metadata: {} }
 
             case "html":
-              return { output: content, title, metadata: {} }
+              return { output, title, metadata: {} }
 
             default:
-              return { output: content, title, metadata: {} }
+              return { output, title, metadata: {} }
           }
         }).pipe(Effect.orDie),
     }

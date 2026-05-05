@@ -75,7 +75,7 @@ const TIPS = [
   "Use {highlight}PageUp{/highlight}/{highlight}PageDown{/highlight} to navigate through conversation history",
   "Press {highlight}Shift+Enter{/highlight} or {highlight}Ctrl+J{/highlight} to add newlines in your prompt",
   "Press {highlight}Escape{/highlight} to stop the AI mid-response",
-  "Drop a {highlight}.numasec.md{/highlight} in your project root to give the agent persistent target context",
+  "Start an operation with {highlight}/pwn{/highlight} or {highlight}/new{/highlight} to persist target context in the cyber kernel",
   "numasec has full shell access — run {highlight}nmap{/highlight}, {highlight}sqlmap{/highlight}, {highlight}nuclei{/highlight}, {highlight}burp{/highlight}, anything",
   "Run numasec inside {highlight}Kali Linux{/highlight} for instant access to 600+ security tools",
   "Use {highlight}@agent-name{/highlight} in prompts to invoke specialized subagents",

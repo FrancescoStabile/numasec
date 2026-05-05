@@ -1,5 +1,7 @@
 Named-secret store + ambient auth identity for reuse across tool calls in an engagement.
 
+For auth/authz workflows, prefer the `identity` tool as the primary operator-facing surface. Use `vault` directly for low-level secret storage, retrieval, and compatibility flows.
+
 Storage: plaintext JSON at `~/.config/numasec/vault.json`, mode 0600, not encrypted at rest. Never claim otherwise. OS filesystem permissions are the only protection — treat the file accordingly.
 
 Single subcommand tool. Arguments: `{ action, key?, value?, reveal? }`.
@@ -13,5 +15,6 @@ Actions:
 
 Guidelines:
 - Prefer passing `[VAULT:<key>]` placeholders in shell commands so values never land in the transcript.
+- Prefer `identity add/use/status/clear` when the task is about named identities, role switching, or identity-aware HTTP/browser work.
 - `use_as` is secret-touching: it implies subsequent http traffic will carry that credential. Treat it with care.
 - Do not log or paraphrase secret values back to the user.

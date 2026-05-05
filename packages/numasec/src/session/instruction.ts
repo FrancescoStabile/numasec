@@ -8,6 +8,7 @@ import { Flag } from "@/flag/flag"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Operation } from "@/core/operation"
+import { Cyber } from "@/core/cyber"
 import { Global } from "../global"
 import { Instance } from "../project/instance"
 import { Log } from "../util"
@@ -51,6 +52,21 @@ function extract(messages: MessageV2.WithParts[]) {
     }
   }
   return paths
+}
+
+function formatBoundary(parsed?: { default?: string; in_scope?: string[]; out_of_scope?: string[] }) {
+  if (!parsed) return undefined
+  const inScope = parsed.in_scope ?? []
+  const outOfScope = parsed.out_of_scope ?? []
+  const lines = ["## Scope"]
+  if (inScope.length === 0 && outOfScope.length === 0) {
+    lines.push(`- default: ${parsed.default ?? "allow"}`)
+    return lines.join("\n")
+  }
+  lines.push(`- default: ${parsed.default ?? "ask"}`)
+  if (inScope.length > 0) lines.push(...inScope.map((item) => `- in: ${item}`))
+  if (outOfScope.length > 0) lines.push(...outOfScope.map((item) => `- out: ${item}`))
+  return lines.join("\n")
 }
 
 export namespace Instruction {
@@ -146,15 +162,6 @@ export namespace Instruction {
               if (yield* fs.existsSafe(p)) paths.add(path.resolve(p))
             }
 
-            // Active operation's numasec.md — per-engagement persistent memory.
-            const activeSlug = yield* Effect.tryPromise({
-              try: () => Operation.activeSlug(Instance.directory),
-              catch: () => undefined,
-            }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-            if (activeSlug) {
-              const opFile = path.join(dotDir, "operation", activeSlug, "numasec.md")
-              if (yield* fs.existsSafe(opFile)) paths.add(path.resolve(opFile))
-            }
           }
 
           for (const file of globalFiles()) {
@@ -190,11 +197,52 @@ export namespace Instruction {
           const urls = (config.instructions ?? []).filter(
             (item) => item.startsWith("https://") || item.startsWith("http://"),
           )
+          const active = yield* Effect.tryPromise({
+            try: () => Operation.active(Instance.directory),
+            catch: () => undefined,
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const boundary =
+            !active
+              ? undefined
+              : yield* Effect.tryPromise({
+                  try: () => Operation.readBoundary(Instance.directory, active.slug),
+                  catch: () => undefined,
+                }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const operationBlock =
+            !active
+              ? undefined
+              : [
+                  "Active operation",
+                  `slug: ${active.slug}`,
+                  `label: ${active.label}`,
+                  `kind: ${active.kind}`,
+                  ...(active.target ? [`target: ${active.target}`] : []),
+                  `opsec: ${active.opsec}`,
+                  "",
+                  formatBoundary(boundary),
+                ]
+                  .filter(Boolean)
+                  .join("\n")
+          const contextPack = yield* Cyber.contextPack().pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (active && (operationBlock || contextPack)) {
+            const derived = [
+              "# Active Operation Context",
+              "",
+              ...(operationBlock ? [operationBlock, ""] : []),
+              ...(contextPack ? [`Active cyber context\n${contextPack}`] : []),
+            ].join("\n")
+            yield* Effect.tryPromise({
+              try: () => Operation.writeContextPack(Instance.directory, active.slug, derived),
+              catch: () => undefined,
+            }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          }
 
           const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
           const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
           return [
+            ...(operationBlock ? [operationBlock] : []),
+            ...(contextPack ? [`Active cyber context\n${contextPack}`] : []),
             ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
             ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
           ]

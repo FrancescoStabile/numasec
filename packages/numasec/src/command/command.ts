@@ -13,6 +13,7 @@ import PROMPT_REVIEW from "./template/review.txt"
 import PROMPT_TEACH from "./template/teach.txt"
 import PROMPT_DOCTOR from "./template/doctor.txt"
 import PROMPT_PLAY from "./template/play.txt"
+import PROMPT_RUNBOOK from "./template/runbook.txt"
 import PROMPT_PWN from "./template/pwn.txt"
 import PROMPT_OPSEC from "./template/opsec.txt"
 import PROMPT_SHARE from "./template/share.txt"
@@ -70,6 +71,7 @@ export const Default = {
   REVIEW: "review",
   TEACH: "teach",
   DOCTOR: "doctor",
+  RUNBOOK: "runbook",
   PLAY: "play",
   PWN: "pwn",
   OPSEC: "opsec",
@@ -106,11 +108,21 @@ export const layer = Layer.effect(
         },
         hints: hints(PROMPT_PWN),
       }
-      commands[Default.PLAY] = {
-        name: Default.PLAY,
-        description: "run a named play such as web-surface, cloud-posture, or binary-triage",
+      commands[Default.RUNBOOK] = {
+        name: Default.RUNBOOK,
+        description: "run a semantic runbook such as web-surface, appsec-triage, or osint-target",
         source: "command",
         priority: 20,
+        get template() {
+          return PROMPT_RUNBOOK
+        },
+        hints: hints(PROMPT_RUNBOOK),
+      }
+      commands[Default.PLAY] = {
+        name: Default.PLAY,
+        description: "low-level play primitive behind runbook; use when you need raw trace directly",
+        source: "command",
+        priority: 25,
         get template() {
           return PROMPT_PLAY
         },

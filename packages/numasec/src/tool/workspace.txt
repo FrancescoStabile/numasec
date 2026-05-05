@@ -1,0 +1,10 @@
+Manage the active security workspace.
+
+Use this tool to:
+- inspect the active operation;
+- list operations;
+- start a new operation;
+- inspect the current graph digest;
+- inspect the recent cyber timeline.
+
+Prefer this over ad hoc filesystem inspection when you need operation-level state.

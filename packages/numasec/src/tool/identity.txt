@@ -1,0 +1,11 @@
+Manage named auth identities for the active operation.
+
+Use this tool to:
+- list stored identities and the active one;
+- inspect the active identity status and transport mode;
+- add or update a named identity without exposing its raw secret in the graph;
+- switch the active identity used by browser/http tools;
+- clear the active identity.
+
+Identity values are stored in the vault, but this surface is the semantic operator entrypoint.
+Prefer this tool over raw `vault use_as` whenever the task is identity-aware and should leave structured state in the cyber kernel.

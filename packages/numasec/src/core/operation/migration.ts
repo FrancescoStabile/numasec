@@ -1,9 +1,10 @@
-// One-shot migration from Operation v1 (event-sourced) to v3 (single markdown file).
+// One-shot migration from Operation v1 (event-sourced) to the current
+// operation layout with a legacy notebook plus cyber projections.
 //
 // Runs at boot. Detects each legacy operation directory under
 // <workspace>/.numasec/operation/<slug>/ that contains `events.jsonl` or v1-only
-// files, renames them into <slug>/_legacy/, and writes a fresh numasec.md
-// skeleton with a `## Historical notes` section pointing at _legacy/.
+// files, renames them into <slug>/_legacy/, and writes a fresh legacy
+// notebook skeleton with a `## Historical notes` section pointing at _legacy/.
 // Idempotent: if `_legacy/` already exists, skips.
 
 import { existsSync } from "fs"
@@ -19,7 +20,8 @@ kind: pentest · started: ${new Date().toISOString().slice(0, 10)}
 
 <!--
 Migrated from a previous Operations v1 event store. The raw v1 files were
-preserved under _legacy/ in this directory for reference.
+preserved under _legacy/ in this directory for reference. Canonical state for
+new work now lives in the cyber kernel and derived projections.
 -->
 
 ## Scope

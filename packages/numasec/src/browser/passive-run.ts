@@ -144,8 +144,10 @@ export async function collectPassiveInput(
 export function formatPassiveAppSecResult(input: {
   title: string
   report: ReturnType<typeof analyzePassiveAppSec>
+  passive?: PassiveInput
   max_bytes?: number
 }): Tool.ExecuteResult {
+  const passive = input.passive ?? { url: "" }
   return {
     title: `Passive AppSec → ${input.title}`,
     metadata: {
@@ -155,6 +157,11 @@ export function formatPassiveAppSecResult(input: {
       low: input.report.summary.low,
       console_errors: input.report.summary.console_errors,
       request_count: input.report.summary.request_count,
+      request_urls: (passive.requests ?? []).map((item) => item.url).slice(0, 100),
+      form_actions: (passive.forms ?? []).map((item) => item.action).slice(0, 50),
+      script_urls: (passive.scripts?.external ?? []).slice(0, 100),
+      cookie_names: (passive.cookies ?? []).map((item) => item.name).slice(0, 50),
+      finding_ids: input.report.findings.map((item) => item.id),
     },
     output: truncateOutput(
       JSON.stringify(
@@ -184,20 +191,20 @@ export async function buildPassiveAppSecResult(input: {
   max_bytes?: number
   clear?: boolean
 }) {
-  const report = analyzePassiveAppSec(
-    await collectPassiveInput(
-      input.page,
-      input.context,
-      input.session,
-      input.headers,
-      input.startIndexes,
-      input.clear,
-    ),
+  const passive = await collectPassiveInput(
+    input.page,
+    input.context,
+    input.session,
+    input.headers,
+    input.startIndexes,
+    input.clear,
   )
+  const report = analyzePassiveAppSec(passive)
 
   return formatPassiveAppSecResult({
     title: input.title,
     report,
+    passive,
     max_bytes: input.max_bytes,
   })
 }

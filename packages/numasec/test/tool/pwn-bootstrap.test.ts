@@ -9,6 +9,8 @@ import { AppFileSystem } from "@numasec/shared/filesystem"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instance } from "../../src/project/instance"
 import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { tmpdir } from "../fixture/fixture"
 
 const runtime = ManagedRuntime.make(
@@ -63,6 +65,16 @@ describe("tool/pwn-bootstrap", () => {
         const info = await Operation.read(fixture.path, r.metadata.slug)
         expect(info?.kind).toBe("pentest")
         expect(info?.target).toBe("https://acme.example.com")
+
+        const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: r.metadata.slug, limit: 100 }))
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "operation" &&
+              item.entity_key === r.metadata.slug &&
+              item.fact_name === "operation_state",
+          ),
+        ).toBe(true)
       },
     })
   })

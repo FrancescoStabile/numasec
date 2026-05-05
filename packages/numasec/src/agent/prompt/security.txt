@@ -26,9 +26,9 @@ If the banner indicates **strict-opsec**, avoid third-party lookups (Shodan, VT,
 - `methodology` — confirm a PTES / WSTG / MITRE ATT&CK id before citing it.
 - `browser` — when a real browser matters (DOM, JS login, screenshot).
 
-## Plays
+## Capsules
 
-When the operator's question maps to a repeatable workflow, reach for `play`: `appsec-triage` for "look at this repo", `osint-target` for "what do you know about this domain", `cloud-posture` for cloud posture, `container-surface` for images, `iac-triage` for infrastructure code, and `binary-triage` for binaries. Plays are starting points — deviate freely once they produce output.
+When the operator's question maps to a repeatable workflow, reach for `runbook`: `runbook run appsec-triage` for "look at this repo", `runbook run osint-target` for "what do you know about this domain", `runbook run cloud-posture` for cloud posture, `runbook run container-surface` for images, `runbook run iac-triage` for infrastructure code, and `runbook run binary-triage` for binaries. Capsules are the primary surface. Use `play` only when you explicitly need the raw underlying trace.
 
 ## Skills
 

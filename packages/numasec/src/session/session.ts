@@ -30,6 +30,7 @@ import { Permission } from "@/permission"
 import { Global } from "@/global"
 import { Effect, Layer, Option, Context } from "effect"
 import { Operation } from "@/core/operation"
+import { Cyber } from "@/core/cyber"
 
 const log = Log.create({ service: "session" })
 
@@ -114,6 +115,14 @@ function getForkedTitle(title: string): string {
     return `${base} (fork #${num + 1})`
   }
   return `${title} (fork #1)`
+}
+
+function inferAutonomyMode(ruleset?: Permission.Ruleset): "permissioned" | "auto" | "custom" {
+  const wildcard = [...(ruleset ?? [])].reverse().find((rule) => rule.permission === "*" && rule.pattern === "*")
+  if (!wildcard) return "custom"
+  if (wildcard.action === "allow") return "auto"
+  if (wildcard.action === "ask") return "permissioned"
+  return "custom"
 }
 
 export const Info = z
@@ -417,13 +426,30 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
 
       yield* Effect.sync(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
 
-      yield* Effect.sync(() => {
-        void (async () => {
-          const slug = await Operation.activeSlug(input.directory).catch(() => undefined)
-          if (!slug) return
-          await Operation.touch(input.directory, slug).catch(() => undefined)
-        })()
-      })
+      const slug = yield* Effect.promise(() => Operation.activeSlug(input.directory).catch(() => undefined))
+      if (slug) {
+        yield* Effect.promise(() => Operation.attachSession(input.directory, slug, result.id)).pipe(Effect.ignore)
+        yield* Cyber.attachSession({
+          project_id: ctx.project.id,
+          operation_slug: slug,
+          session_id: result.id,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+        yield* Cyber.upsertFact({
+          operation_slug: slug,
+          entity_kind: "operation",
+          entity_key: slug,
+          fact_name: "autonomy_policy",
+          value_json: {
+            mode: inferAutonomyMode(result.permission),
+            rules: result.permission,
+            session_id: result.id,
+          },
+          writer_kind: "tool",
+          status: "observed",
+          confidence: 1000,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+        yield* Effect.promise(() => Operation.touch(input.directory, slug)).pipe(Effect.ignore)
+      }
 
       if (!Flag.NUMASEC_EXPERIMENTAL_WORKSPACES) {
         // This only exist for backwards compatibility. We should not be
@@ -594,6 +620,23 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       permission: Permission.Ruleset
     }) {
       yield* patch(input.sessionID, { permission: input.permission, time: { updated: Date.now() } })
+      const info = yield* get(input.sessionID)
+      const slug = yield* Effect.promise(() => Operation.activeSlug(info.directory).catch(() => undefined))
+      if (!slug) return
+      yield* Cyber.upsertFact({
+        operation_slug: slug,
+        entity_kind: "operation",
+        entity_key: slug,
+        fact_name: "autonomy_policy",
+        value_json: {
+          mode: inferAutonomyMode(input.permission),
+          rules: input.permission,
+          session_id: input.sessionID,
+        },
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+      }).pipe(Effect.catch(() => Effect.succeed("")))
     })
 
     const setRevert = Effect.fn("Session.setRevert")(function* (input: {

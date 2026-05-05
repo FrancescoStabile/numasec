@@ -1,0 +1,7 @@
+Manage the operator autonomy mode for the current session.
+
+Modes:
+- `permissioned`: tool calls default to ask/approval
+- `auto`: tool calls default to allow
+
+Use this tool to inspect or change the current session autonomy policy in a way that is explicit, reversible, and visible to the cyber kernel.

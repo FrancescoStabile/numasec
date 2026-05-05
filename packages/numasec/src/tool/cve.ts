@@ -4,6 +4,10 @@ import { gunzipSync } from "node:zlib"
 import fs from "node:fs"
 import * as Tool from "./tool"
 import DESCRIPTION from "./cve.txt"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
+import { Operation } from "@/core/operation"
+import { Instance } from "@/project/instance"
 // Bundle lives at repo-root `assets/cve/index.json.gz` and is embedded via
 // Bun's `type: "file"` import so the compiled binary ships with it.
 import BUNDLE_PATH from "../../../../assets/cve/index.json.gz" with { type: "file" }
@@ -117,20 +121,73 @@ export const CVETool = Tool.define<typeof parameters, Metadata, never>(
             returned: hits.length,
             total_indexed: bundle.entries.length,
           }
+          const output = JSON.stringify(
+            {
+              available: true,
+              total_indexed: bundle.entries.length,
+              returned: hits.length,
+              query: params.query,
+              severity_floor: params.severity ?? null,
+              results: hits,
+            },
+            null,
+            2,
+          )
+          const workspace = Instance.directory
+          const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+          const evidence =
+            !slug
+              ? undefined
+              : yield* Effect.promise(() =>
+                  Evidence.put(workspace, slug, output, {
+                    mime: "application/json",
+                    ext: "json",
+                    label: `cve ${params.query}`,
+                    source: "cve",
+                  }),
+                )
+          const evidenceRefs = evidence ? [evidence.sha256] : undefined
+          const eventID = yield* Cyber.appendLedger({
+            kind: "fact.observed",
+            source: "cve",
+            summary: `cve lookup ${params.query}: ${hits.length} hit${hits.length === 1 ? "" : "s"}`,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            evidence_refs: evidenceRefs,
+            data: {
+              query: params.query,
+              severity: params.severity ?? null,
+              returned: hits.length,
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          for (const hit of hits) {
+            yield* Cyber.upsertFact({
+              entity_kind: "cve",
+              entity_key: hit.id,
+              fact_name: "details",
+              value_json: hit,
+              writer_kind: "tool",
+              status: "observed",
+              confidence: 1000,
+              source_event_id: eventID || undefined,
+              evidence_refs: evidenceRefs,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+            yield* Cyber.upsertRelation({
+              src_kind: "knowledge_query",
+              src_key: `cve:${params.query}`,
+              relation: "matched",
+              dst_kind: "cve",
+              dst_key: hit.id,
+              writer_kind: "tool",
+              status: "observed",
+              confidence: 1000,
+              source_event_id: eventID || undefined,
+              evidence_refs: evidenceRefs,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+          }
           return {
             title: `cve: ${hits.length} hit${hits.length === 1 ? "" : "s"} for "${params.query}"`,
-            output: JSON.stringify(
-              {
-                available: true,
-                total_indexed: bundle.entries.length,
-                returned: hits.length,
-                query: params.query,
-                severity_floor: params.severity ?? null,
-                results: hits,
-              },
-              null,
-              2,
-            ),
+            output,
             metadata,
           }
         }).pipe(Effect.orDie),

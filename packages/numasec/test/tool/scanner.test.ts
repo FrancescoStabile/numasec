@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, ManagedRuntime, Layer } from "effect"
+import { Effect, Layer, ManagedRuntime } from "effect"
 import * as net from "node:net"
 import { ScannerTool } from "../../src/tool/scanner"
 import { Format } from "../../src/format"
@@ -43,99 +43,148 @@ async function exec(params: any) {
   )
 }
 
-function startServer(): Promise<{ port: number; stop: () => void }> {
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch(req) {
-      const u = new URL(req.url)
-      if (u.pathname === "/") {
-        return new Response(
-          `<html><head><title>t</title><script src="/app.js"></script></head>
+function withFetchMock<T>(handler: (url: string) => Response | Promise<Response>, fn: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+    return await handler(url)
+  }) as typeof fetch
+  return fn().finally(() => {
+    globalThis.fetch = original
+  })
+}
+
+function scannerResponse(url: string) {
+  const u = new URL(url)
+  if (u.pathname === "/") {
+    return new Response(
+      `<html><head><title>t</title><script src="/app.js"></script></head>
 <body>
 <a href="/about">about</a>
 <a href="/contact">contact</a>
 <form action="/login" method="POST"><input name="user" type="text"/><input name="pw" type="password"/></form>
+<a href="/hidden">hidden</a>
 </body></html>`,
-          { headers: { "content-type": "text/html", "x-powered-by": "Express" } },
-        )
-      }
-      if (u.pathname === "/app.js") {
-        return new Response(
-          `const API = "/api/v1/users"; fetch("/api/v1/orders"); const key = "AIzaSyA1234567890abcdef1234567890abcdef12";`,
-          { headers: { "content-type": "application/javascript" } },
-        )
-      }
-      if (u.pathname === "/about" || u.pathname === "/contact") {
-        return new Response("<html><body>page</body></html>", { headers: { "content-type": "text/html" } })
-      }
-      if (u.pathname === "/robots.txt") {
-        return new Response("User-agent: *\nDisallow: /admin\n", { headers: { "content-type": "text/plain" } })
-      }
-      return new Response("nf", { status: 404 })
-    },
-  })
-  return Promise.resolve({
-    port: server.port!,
-    stop: () => server.stop(true),
+      { status: 200, headers: { "content-type": "text/html", "x-powered-by": "Express" } },
+    )
+  }
+  if (u.pathname === "/app.js") {
+    return new Response(
+      `const API = "/api/v1/users"; fetch("/api/v1/orders"); const key = "AIzaSyA1234567890abcdef1234567890abcdef12";`,
+      { status: 200, headers: { "content-type": "application/javascript" } },
+    )
+  }
+  if (u.pathname === "/about" || u.pathname === "/contact" || u.pathname === "/hidden") {
+    return new Response("<html><body>page</body></html>", { status: 200, headers: { "content-type": "text/html" } })
+  }
+  if (u.pathname === "/robots.txt") {
+    return new Response("User-agent: *\nDisallow: /admin\n", { status: 200, headers: { "content-type": "text/plain" } })
+  }
+  if (u.pathname === "/sitemap.xml") {
+    return new Response(
+      `<?xml version="1.0" encoding="UTF-8"?><urlset><url><loc>${u.origin}/hidden</loc></url></urlset>`,
+      { status: 200, headers: { "content-type": "application/xml" } },
+    )
+  }
+  if (u.pathname === "/openapi.json") {
+    return new Response(JSON.stringify({ openapi: "3.1.0", info: { title: "demo", version: "1.0.0" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
+  }
+  if (u.pathname === "/admin") {
+    return new Response("forbidden", { status: 403, headers: { "content-type": "text/plain" } })
+  }
+  if (u.pathname.includes("numasec_404_check_")) {
+    return new Response("nf", { status: 404, headers: { "content-type": "text/plain" } })
+  }
+  return new Response("nf", { status: 404, headers: { "content-type": "text/plain" } })
+}
+
+async function canBindLocalhost() {
+  return await new Promise<boolean>((resolve) => {
+    const server = net.createServer()
+    server.once("error", () => resolve(false))
+    server.listen(0, "127.0.0.1", () => {
+      server.close(() => resolve(true))
+    })
   })
 }
 
 describe("tool/scanner", () => {
-  test("crawl enumerates same-origin links and forms", async () => {
+  test("crawl enumerates same-origin links, forms, robots, sitemap, and openapi", async () => {
     await using fixture = await tmpdir()
-    const { port, stop } = await startServer()
-    try {
+    await withFetchMock(async (url) => scannerResponse(url), async () => {
       await Instance.provide({
         directory: fixture.path,
         fn: async () => {
           const r: any = await exec({
             mode: "crawl",
-            target: `http://127.0.0.1:${port}`,
+            target: "https://scanner.test",
             options: { maxUrls: 10, maxDepth: 2, timeout: 3000 },
           })
           const data = JSON.parse(r.output)
           expect(data.mode).toBe("crawl")
           expect(Array.isArray(data.urls)).toBe(true)
-          expect(data.urls.length).toBeGreaterThanOrEqual(1)
+          expect(data.urls).toContain("https://scanner.test")
+          expect(data.urls).toContain("https://scanner.test/about")
           expect(data.forms.length).toBeGreaterThanOrEqual(1)
           expect(data.technologies).toContain("Express")
           expect(data.robotsDisallowed).toContain("/admin")
+          expect(data.sitemap).toContain("https://scanner.test/hidden")
+          expect(data.openapi).toBe("https://scanner.test/openapi.json")
           expect(r.metadata.mode).toBe("crawl")
         },
       })
-    } finally {
-      stop()
-    }
+    })
   })
 
   test("js extracts endpoints and secrets from bundles", async () => {
     await using fixture = await tmpdir()
-    const { port, stop } = await startServer()
-    try {
+    await withFetchMock(async (url) => scannerResponse(url), async () => {
       await Instance.provide({
         directory: fixture.path,
         fn: async () => {
           const r: any = await exec({
             mode: "js",
-            target: `http://127.0.0.1:${port}/`,
+            target: "https://scanner.test/",
             options: { maxFiles: 5, timeout: 3000 },
           })
           const data = JSON.parse(r.output)
           expect(data.mode).toBe("js")
-          expect(data.jsFiles.length).toBeGreaterThanOrEqual(1)
-          const joined = data.endpoints.join(" ")
-          expect(joined).toContain("/api/v1/")
+          expect(data.jsFiles).toContain("https://scanner.test/app.js")
+          expect(data.endpoints.join(" ")).toContain("/api/v1/")
           expect(data.secrets.length).toBeGreaterThanOrEqual(1)
           expect(data.secrets.some((s: any) => s.type === "Google API Key")).toBe(true)
         },
       })
-    } finally {
-      stop()
-    }
+    })
   })
 
-  test("ports detects the open port", async () => {
+  test("dir-fuzz finds filtered paths from the target surface", async () => {
+    await using fixture = await tmpdir()
+    await withFetchMock(async (url) => scannerResponse(url), async () => {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const r: any = await exec({
+            mode: "dir-fuzz",
+            target: "https://scanner.test",
+            options: { wordlist: ["admin"], timeout: 3000, concurrency: 1, filterStatus: [403] },
+          })
+          const data = JSON.parse(r.output)
+          expect(data.mode).toBe("dir-fuzz")
+          expect(data.found).toHaveLength(1)
+          expect(data.found[0].path).toBe("/admin")
+          expect(data.found[0].status).toBe(403)
+          expect(r.metadata.mode).toBe("dir-fuzz")
+        },
+      })
+    })
+  })
+
+  test("ports detects the open port when local listeners are available", async () => {
+    if (!(await canBindLocalhost())) return
     await using fixture = await tmpdir()
     const server = net.createServer((sock) => {
       sock.write("HELLO\r\n")

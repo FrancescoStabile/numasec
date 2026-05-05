@@ -1,0 +1,7 @@
+Inspect or change scope enforcement for the active operation.
+
+Today this wraps the existing opsec control and exposes it through a future-facing scope tool.
+
+Use it to:
+- inspect the current scope enforcement level;
+- switch between normal and strict enforcement.

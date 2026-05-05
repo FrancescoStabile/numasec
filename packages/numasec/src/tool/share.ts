@@ -8,11 +8,14 @@ import path from "node:path"
 import * as Tool from "./tool"
 import DESCRIPTION from "./share.txt"
 import { Operation } from "@/core/operation"
+import { Cyber } from "@/core/cyber"
 import { Deliverable } from "@/core/deliverable"
+import { Instance } from "@/project/instance"
 import { redactString } from "@/core/replay/redact"
 import { which } from "@/util/which"
 
 const parameters = z.object({
+  action: z.enum(["build", "status"]).default("build"),
   redact: z.boolean().default(true).describe("apply replay redactor to text files before packing (default true)"),
   sign: z.boolean().default(false).describe("sign the tarball's sha256 with minisign/cosign if a key is configured"),
 })
@@ -124,11 +127,14 @@ export async function run(input: {
   const tarballPath = path.join(opDir, `share-${stamp}.tar.gz`)
   await mkdir(stagingDir, { recursive: true })
 
-  const fascicule = Operation.opFile(workspace, slug)
-  if (existsSync(fascicule)) {
-    await copyFile(fascicule, path.join(stagingDir, Operation.OP_FILENAME))
+  const markdownView = await Operation.readMarkdown(workspace, slug).catch(() => undefined)
+  if (markdownView) {
+    await writeFile(path.join(stagingDir, Operation.OP_FILENAME), markdownView, "utf8")
   }
   await copyDir(path.join(opDir, "evidence"), path.join(stagingDir, "evidence"))
+  await copyDir(path.join(opDir, "cyber"), path.join(stagingDir, "cyber"))
+  await copyDir(path.join(opDir, "workflow"), path.join(stagingDir, "workflow"))
+  await copyDir(path.join(opDir, "context"), path.join(stagingDir, "context"))
   const entries = await readdir(opDir, { withFileTypes: true }).catch(() => [])
   for (const entry of entries) {
     if (entry.isFile() && entry.name.startsWith("report-") && entry.name.endsWith(".md")) {
@@ -220,13 +226,7 @@ export const ShareTool = Tool.define<typeof parameters, Metadata, never>(
       parameters,
       execute: (params: Params, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
-          const workspace = process.cwd()
-          yield* ctx.ask({
-            permission: "share",
-            patterns: [workspace],
-            always: ["*"],
-            metadata: { redact: params.redact, sign: params.sign },
-          })
+          const workspace = Instance.directory
           const slug = yield* Effect.promise(() => Operation.activeSlug(workspace))
           if (!slug) {
             return {
@@ -235,9 +235,97 @@ export const ShareTool = Tool.define<typeof parameters, Metadata, never>(
               metadata: { signed: false, redacted: params.redact },
             }
           }
+          if (params.action === "status") {
+            const facts = yield* Cyber.listFacts({ operation_slug: slug, limit: 200 }).pipe(
+              Effect.catch(() => Effect.succeed([])),
+            )
+            const latest = Cyber.latestShareBundleFromFacts(facts)
+            if (!latest) {
+              return {
+                title: "share · none",
+                output: "No share bundle generated yet.",
+                metadata: { slug, signed: false, redacted: true },
+              }
+            }
+            return {
+              title: `share · ${path.basename(latest.path ?? "unknown")}`,
+              output: formatOutput({
+                path: latest.path!,
+                size: latest.size ?? 0,
+                sha256: latest.sha256!,
+                signed: latest.signed,
+                redacted: latest.redacted,
+                warning: latest.warning,
+                slug,
+              }),
+              metadata: {
+                slug,
+                path: latest.path,
+                size: latest.size,
+                sha256: latest.sha256,
+                signed: latest.signed,
+                redacted: latest.redacted,
+                warning: latest.warning,
+              },
+            }
+          }
+          yield* ctx.ask({
+            permission: "share",
+            patterns: [workspace],
+            always: ["*"],
+            metadata: { action: params.action, redact: params.redact, sign: params.sign },
+          })
           const result = yield* Effect.promise(() =>
             run({ workspace, redact: params.redact, sign: params.sign }),
           )
+          const shareKey = path.basename(result.path)
+          const eventID = yield* Cyber.appendLedger({
+            operation_slug: slug,
+            kind: "fact.verified",
+            source: "share",
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            status: "completed",
+            summary: `built share bundle ${shareKey}`,
+            data: {
+              path: result.path,
+              size: result.size,
+              sha256: result.sha256,
+              signed: result.signed,
+              redacted: result.redacted,
+              warning: result.warning,
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertFact({
+            operation_slug: slug,
+            entity_kind: "share_bundle",
+            entity_key: shareKey,
+            fact_name: "archive",
+            value_json: {
+              path: result.path,
+              size: result.size,
+              sha256: result.sha256,
+              signed: result.signed,
+              redacted: result.redacted,
+              warning: result.warning,
+            },
+            writer_kind: "tool",
+            status: "verified",
+            confidence: 1000,
+            source_event_id: eventID || undefined,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertRelation({
+            operation_slug: slug,
+            src_kind: "operation",
+            src_key: slug,
+            relation: "shares",
+            dst_kind: "share_bundle",
+            dst_key: shareKey,
+            writer_kind: "tool",
+            status: "verified",
+            confidence: 1000,
+            source_event_id: eventID || undefined,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
           return {
             title: `share · ${path.basename(result.path)}`,
             output: formatOutput(result),

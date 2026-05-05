@@ -14,6 +14,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Cyber } from "../../src/core/cyber"
 import { provision, teardown, type Fixture } from "./provision-juiceshop"
 import { scoreFor, type Score } from "./rubric"
 
@@ -77,12 +78,51 @@ async function createSession(baseUrl: string, directory: string): Promise<Create
 
 function scenarioCommand(scenario: Scenario, target: string): { command: string; arguments: string } {
   if (scenario === "pwn") return { command: "pwn", arguments: target }
-  if (scenario === "web-surface") return { command: "play", arguments: `web-surface ${target}` }
-  if (scenario === "appsec-triage") return { command: "play", arguments: `appsec-triage ${target}` }
+  if (scenario === "web-surface") return { command: "runbook", arguments: `web-surface ${target}` }
+  if (scenario === "appsec-triage") return { command: "runbook", arguments: `appsec-triage ${target}` }
   throw new Error(`unknown scenario: ${scenario}`)
 }
 
 type CommandResult = { ok: boolean; raw: unknown; error?: string }
+type BenchArtifacts = {
+  corpus: string
+  slug?: string
+  observations: number
+  observations_projected: number
+  context_artifacts: number
+  workflows: number
+  completed_steps: number
+  route_facts: number
+  relations_projected: number
+  workflow_step_statuses: number
+  candidate_findings: number
+  findings: number
+  knowledge_queries: number
+  identities: number
+  active_identities: number
+  deliverables: number
+  tool_adapters_present: number
+  tool_adapters_missing: number
+  capsules: number
+  executed_capsules: number
+  recommended_capsules: number
+  ready_capsules: number
+  degraded_capsules: number
+  unavailable_capsules: number
+  ready_verticals: number
+  degraded_verticals: number
+  unavailable_verticals: number
+  reportable_findings: number
+  suspected_findings: number
+  rejected_findings: number
+  verified_findings: number
+  evidence_backed_findings: number
+  replay_backed_findings: number
+  replay_exempt_findings: number
+  operation_state_facts: number
+  scope_policy_facts: number
+  autonomy_policy_facts: number
+}
 
 async function runCommand(
   baseUrl: string,
@@ -108,22 +148,96 @@ async function runCommand(
   }
 }
 
-function collectArtifacts(workspace: string): {
-  corpus: string
-  slug?: string
-  observations: number
-} {
+async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
   const opsDir = join(workspace, ".numasec", "operation")
-  if (!existsSync(opsDir)) return { corpus: "", observations: 0 }
+  if (!existsSync(opsDir)) {
+    return {
+      corpus: "",
+      observations: 0,
+      observations_projected: 0,
+      context_artifacts: 0,
+      workflows: 0,
+      completed_steps: 0,
+      route_facts: 0,
+      relations_projected: 0,
+      workflow_step_statuses: 0,
+      candidate_findings: 0,
+      findings: 0,
+      knowledge_queries: 0,
+      identities: 0,
+      active_identities: 0,
+      deliverables: 0,
+      tool_adapters_present: 0,
+      tool_adapters_missing: 0,
+      capsules: 0,
+      executed_capsules: 0,
+      recommended_capsules: 0,
+      ready_capsules: 0,
+      degraded_capsules: 0,
+      unavailable_capsules: 0,
+      ready_verticals: 0,
+      degraded_verticals: 0,
+      unavailable_verticals: 0,
+      reportable_findings: 0,
+      suspected_findings: 0,
+      rejected_findings: 0,
+      verified_findings: 0,
+      evidence_backed_findings: 0,
+      replay_backed_findings: 0,
+      replay_exempt_findings: 0,
+      operation_state_facts: 0,
+      scope_policy_facts: 0,
+      autonomy_policy_facts: 0,
+    }
+  }
   const slugs = readdirSync(opsDir, { withFileTypes: true }).filter((d) => d.isDirectory())
   let corpus = ""
   let observations = 0
+  let observations_projected = 0
+  let context_artifacts = 0
+  let workflows = 0
+  let completed_steps = 0
+  let route_facts = 0
+  let relations_projected = 0
+  let workflow_step_statuses = 0
+  let candidate_findings = 0
+  let findings = 0
+  let knowledge_queries = 0
+  let identities = 0
+  let active_identities = 0
+  let deliverables = 0
+  let tool_adapters_present = 0
+  let tool_adapters_missing = 0
+  let capsules = 0
+  let executed_capsules = 0
+  let recommended_capsules = 0
+  let ready_capsules = 0
+  let degraded_capsules = 0
+  let unavailable_capsules = 0
+  let ready_verticals = 0
+  let degraded_verticals = 0
+  let unavailable_verticals = 0
+  let reportable_findings = 0
+  let suspected_findings = 0
+  let rejected_findings = 0
+  let verified_findings = 0
+  let evidence_backed_findings = 0
+  let replay_backed_findings = 0
+  let replay_exempt_findings = 0
+  let operation_state_facts = 0
+  let scope_policy_facts = 0
+  let autonomy_policy_facts = 0
   let slug: string | undefined
   for (const s of slugs) {
     slug ??= s.name
     const sdir = join(opsDir, s.name)
+    const activeContext = join(sdir, "context", "active-context.md")
     const md = join(sdir, "numasec.md")
-    if (existsSync(md)) corpus += "\n\n" + readFileSync(md, "utf8")
+    if (existsSync(activeContext)) {
+      context_artifacts += 1
+      corpus += "\n\n" + readFileSync(activeContext, "utf8")
+    }
+    else if (existsSync(md)) corpus += "\n\n" + readFileSync(md, "utf8")
     const evidence = join(sdir, "evidence")
     if (existsSync(evidence)) {
       const files = readdirSync(evidence, { withFileTypes: true }).filter((f) => f.isFile())
@@ -132,8 +246,112 @@ function collectArtifacts(workspace: string): {
         try { corpus += "\n\n" + readFileSync(join(evidence, f.name), "utf8") } catch {}
       }
     }
+    const workflow = join(sdir, "workflow")
+    if (existsSync(workflow)) {
+      const files = readdirSync(workflow, { withFileTypes: true }).filter((f) => f.isFile() && f.name.endsWith(".json"))
+      workflows += files.length
+      for (const f of files.slice(0, 20)) {
+        try {
+          const raw = readFileSync(join(workflow, f.name), "utf8")
+          corpus += "\n\n" + raw
+          const parsed = JSON.parse(raw) as { completed_steps?: number }
+          completed_steps += Number(parsed.completed_steps ?? 0)
+        } catch {}
+      }
+    }
+    const cyberDir = join(sdir, "cyber")
+    if (existsSync(cyberDir)) {
+      const projected = await Cyber.readProjectedState(workspace, s.name)
+      route_facts += projected.summary.route_facts
+      relations_projected += projected.relations.length
+      observations_projected += projected.summary.observations_projected
+      workflow_step_statuses += projected.summary.workflow_step_statuses
+      candidate_findings += projected.summary.candidate_findings
+      findings += projected.summary.findings
+      knowledge_queries += projected.summary.knowledge_queries
+      identities += projected.summary.identities
+      active_identities += projected.summary.active_identities
+      deliverables += projected.summary.deliverables
+      tool_adapters_present += projected.summary.tool_adapters_present
+      tool_adapters_missing += projected.summary.tool_adapters_missing
+      capsules += projected.summary.ready_capsules + projected.summary.degraded_capsules + projected.summary.unavailable_capsules
+      executed_capsules += projected.summary.executed_capsules
+      recommended_capsules += projected.summary.recommended_capsules
+      ready_capsules += projected.summary.ready_capsules
+      degraded_capsules += projected.summary.degraded_capsules
+      unavailable_capsules += projected.summary.unavailable_capsules
+      ready_verticals += projected.summary.ready_verticals
+      degraded_verticals += projected.summary.degraded_verticals
+      unavailable_verticals += projected.summary.unavailable_verticals
+      reportable_findings += projected.summary.reportable_findings
+      suspected_findings += projected.summary.suspected_findings
+      rejected_findings += projected.summary.rejected_findings
+      verified_findings += projected.summary.verified_findings
+      evidence_backed_findings += projected.summary.evidence_backed_findings
+      replay_backed_findings += projected.summary.replay_backed_findings
+      replay_exempt_findings += projected.summary.replay_exempt_findings
+      operation_state_facts += projected.operation_state ? 1 : 0
+      scope_policy_facts += projected.scope_policy ? 1 : 0
+      autonomy_policy_facts += projected.autonomy_policy ? 1 : 0
+      corpus += "\n\n" + JSON.stringify({
+        findings: projected.findings,
+        knowledge: projected.knowledge,
+        identities: projected.identities,
+        deliverables: projected.deliverables,
+        tool_adapters: projected.tool_adapters,
+        capsules: projected.capsules,
+        verticals: projected.verticals,
+        observations: projected.observations,
+        workflows: projected.workflows,
+        workflow_steps: projected.workflow_steps,
+        relations: projected.relations,
+        timeline: projected.timeline,
+        summary: projected.summary,
+        operation_state: projected.operation_state,
+        scope_policy: projected.scope_policy,
+        autonomy_policy: projected.autonomy_policy,
+      })
+    }
   }
-  return { corpus, slug, observations }
+  return {
+    corpus,
+    slug,
+    observations,
+    observations_projected,
+    context_artifacts,
+    workflows,
+    completed_steps,
+    route_facts,
+    relations_projected,
+    workflow_step_statuses,
+    candidate_findings,
+    findings,
+    knowledge_queries,
+    identities,
+    active_identities,
+    deliverables,
+    tool_adapters_present,
+    tool_adapters_missing,
+    capsules,
+    executed_capsules,
+    recommended_capsules,
+    ready_capsules,
+    degraded_capsules,
+    unavailable_capsules,
+    ready_verticals,
+    degraded_verticals,
+    unavailable_verticals,
+    reportable_findings,
+    suspected_findings,
+    rejected_findings,
+    verified_findings,
+    evidence_backed_findings,
+    replay_backed_findings,
+    replay_exempt_findings,
+    operation_state_facts,
+    scope_policy_facts,
+    autonomy_policy_facts,
+  }
 }
 
 function extractAssistantText(raw: unknown): string {
@@ -159,7 +377,44 @@ async function main() {
   const startedAt = new Date().toISOString()
   let finalScore: Score | { scenario: string; score: number; max: number; checks: []; error: string }
   let commandResult: CommandResult = { ok: false, raw: null }
-  let artifacts: { corpus: string; slug?: string; observations: number } = { corpus: "", observations: 0 }
+  let artifacts: BenchArtifacts = {
+    corpus: "",
+    observations: 0,
+    observations_projected: 0,
+    context_artifacts: 0,
+    workflows: 0,
+    completed_steps: 0,
+    route_facts: 0,
+    relations_projected: 0,
+    workflow_step_statuses: 0,
+    candidate_findings: 0,
+    findings: 0,
+    knowledge_queries: 0,
+    identities: 0,
+    active_identities: 0,
+    deliverables: 0,
+    tool_adapters_present: 0,
+    tool_adapters_missing: 0,
+    capsules: 0,
+    executed_capsules: 0,
+    recommended_capsules: 0,
+    ready_capsules: 0,
+    degraded_capsules: 0,
+    unavailable_capsules: 0,
+    ready_verticals: 0,
+    degraded_verticals: 0,
+    unavailable_verticals: 0,
+    reportable_findings: 0,
+    suspected_findings: 0,
+    rejected_findings: 0,
+    verified_findings: 0,
+    evidence_backed_findings: 0,
+    replay_backed_findings: 0,
+    replay_exempt_findings: 0,
+    operation_state_facts: 0,
+    scope_policy_facts: 0,
+    autonomy_policy_facts: 0,
+  }
 
   try {
     fx = await provision()
@@ -174,11 +429,52 @@ async function main() {
 
     commandResult = await runCommand(server.baseUrl, session.id, workspace, command, cmdArgs)
     if (!commandResult.ok) console.log(`[bench] command error: ${commandResult.error}`)
+    else {
+      const reportResult = await runCommand(server.baseUrl, session.id, workspace, "report", "build")
+      if (!reportResult.ok) console.log(`[bench] report build error: ${reportResult.error}`)
+    }
 
-    artifacts = collectArtifacts(workspace)
+    artifacts = await collectArtifacts(workspace)
     const assistantText = extractAssistantText(commandResult.raw)
     const corpus = artifacts.corpus + "\n\n" + assistantText
-    finalScore = scoreFor(scenario, corpus, { slug: artifacts.slug, observations: artifacts.observations })
+    finalScore = scoreFor(scenario, corpus, {
+      slug: artifacts.slug,
+      observations: artifacts.observations,
+      observations_projected: artifacts.observations_projected,
+      context_artifacts: artifacts.context_artifacts,
+      workflows: artifacts.workflows,
+      completed_steps: artifacts.completed_steps,
+      route_facts: artifacts.route_facts,
+      relations_projected: artifacts.relations_projected,
+      workflow_step_statuses: artifacts.workflow_step_statuses,
+      candidate_findings: artifacts.candidate_findings,
+      findings: artifacts.findings,
+      knowledge_queries: artifacts.knowledge_queries,
+      identities: artifacts.identities,
+      active_identities: artifacts.active_identities,
+      deliverables: artifacts.deliverables,
+      tool_adapters_present: artifacts.tool_adapters_present,
+      tool_adapters_missing: artifacts.tool_adapters_missing,
+      capsules: artifacts.capsules,
+      executed_capsules: artifacts.executed_capsules,
+      recommended_capsules: artifacts.recommended_capsules,
+      ready_capsules: artifacts.ready_capsules,
+      degraded_capsules: artifacts.degraded_capsules,
+      unavailable_capsules: artifacts.unavailable_capsules,
+      ready_verticals: artifacts.ready_verticals,
+      degraded_verticals: artifacts.degraded_verticals,
+      unavailable_verticals: artifacts.unavailable_verticals,
+      reportable_findings: artifacts.reportable_findings,
+      suspected_findings: artifacts.suspected_findings,
+      rejected_findings: artifacts.rejected_findings,
+      verified_findings: artifacts.verified_findings,
+      evidence_backed_findings: artifacts.evidence_backed_findings,
+      replay_backed_findings: artifacts.replay_backed_findings,
+      replay_exempt_findings: artifacts.replay_exempt_findings,
+      operation_state_facts: artifacts.operation_state_facts,
+      scope_policy_facts: artifacts.scope_policy_facts,
+      autonomy_policy_facts: artifacts.autonomy_policy_facts,
+    })
   } catch (err) {
     finalScore = {
       scenario,
@@ -200,6 +496,39 @@ async function main() {
     result: finalScore,
     operation_slug: artifacts.slug ?? null,
     observations: artifacts.observations,
+    observations_projected: artifacts.observations_projected,
+    context_artifacts: artifacts.context_artifacts,
+    workflows: artifacts.workflows,
+    completed_steps: artifacts.completed_steps,
+    route_facts: artifacts.route_facts,
+    workflow_step_statuses: artifacts.workflow_step_statuses,
+    candidate_findings: artifacts.candidate_findings,
+    findings: artifacts.findings,
+    knowledge_queries: artifacts.knowledge_queries,
+    identities: artifacts.identities,
+    active_identities: artifacts.active_identities,
+    deliverables: artifacts.deliverables,
+    tool_adapters_present: artifacts.tool_adapters_present,
+    tool_adapters_missing: artifacts.tool_adapters_missing,
+    capsules: artifacts.capsules,
+    executed_capsules: artifacts.executed_capsules,
+    recommended_capsules: artifacts.recommended_capsules,
+    ready_capsules: artifacts.ready_capsules,
+    degraded_capsules: artifacts.degraded_capsules,
+    unavailable_capsules: artifacts.unavailable_capsules,
+    ready_verticals: artifacts.ready_verticals,
+    degraded_verticals: artifacts.degraded_verticals,
+    unavailable_verticals: artifacts.unavailable_verticals,
+    reportable_findings: artifacts.reportable_findings,
+    suspected_findings: artifacts.suspected_findings,
+    rejected_findings: artifacts.rejected_findings,
+    verified_findings: artifacts.verified_findings,
+    evidence_backed_findings: artifacts.evidence_backed_findings,
+    replay_backed_findings: artifacts.replay_backed_findings,
+    replay_exempt_findings: artifacts.replay_exempt_findings,
+    operation_state_facts: artifacts.operation_state_facts,
+    scope_policy_facts: artifacts.scope_policy_facts,
+    autonomy_policy_facts: artifacts.autonomy_policy_facts,
     command_ok: commandResult.ok,
     command_error: commandResult.error ?? null,
   }

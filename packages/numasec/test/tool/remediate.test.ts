@@ -3,6 +3,7 @@ import { Effect, ManagedRuntime, Layer } from "effect"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { RemediateTool } from "../../src/tool/remediate"
+import { Cyber } from "../../src/core/cyber"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -12,6 +13,7 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { Instance } from "../../src/project/instance"
 import { Observation } from "../../src/core/observation"
 import { Operation } from "../../src/core/operation"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { tmpdir } from "../fixture/fixture"
 
 const runtime = ManagedRuntime.make(
@@ -87,6 +89,19 @@ describe("tool/remediate", () => {
         expect(["low", "medium", "high"]).toContain(data.risk)
         expect(r.metadata.found_file).toBe(true)
         expect(r.metadata.refused_fixture).toBe(false)
+
+        const slug = await Operation.activeSlug(fixture.path)
+        const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: slug, limit: 100 }))
+        const ledger = await AppRuntime.runPromise(Cyber.listLedger({ operation_slug: slug, limit: 100 }))
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "observation" &&
+              item.entity_key === observation_id &&
+              item.fact_name === "remediation_patch_scaffold",
+          ),
+        ).toBe(true)
+        expect(ledger.some((item) => item.source === "remediate" && item.summary?.includes(observation_id))).toBe(true)
       },
     })
   })
@@ -120,6 +135,49 @@ describe("tool/remediate", () => {
         expect(Array.isArray(data.references)).toBe(true)
         expect(r.metadata.mode).toBe("advice")
         expect(r.metadata.found_file).toBe(false)
+      },
+    })
+  })
+
+  test("reads observations from projected cyber facts when the legacy store is absent", async () => {
+    await using fixture = await tmpdir()
+    await Instance.provide({
+      directory: fixture.path,
+      fn: async () => {
+        const op = await Operation.create({ workspace: fixture.path, label: "Projected Remediate", kind: "appsec" })
+        const srcDir = path.join(fixture.path, "src")
+        await mkdir(srcDir, { recursive: true })
+        await writeFile(path.join(srcDir, "app.js"), 'const password = "hunter2";\n', "utf8")
+        await AppRuntime.runPromise(
+          Cyber.upsertFact({
+            operation_slug: op.slug,
+            entity_kind: "observation",
+            entity_key: "obs_projected",
+            fact_name: "record",
+            value_json: {
+              id: "obs_projected",
+              subtype: "vuln",
+              title: "Projected hardcoded credential",
+              severity: "high",
+              status: "confirmed",
+              note: "see src/app.js:1",
+              tags: ["secret"],
+              evidence: ["src/app.js:1"],
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            },
+            writer_kind: "tool",
+            status: "verified",
+            confidence: 1000,
+          }),
+        )
+
+        const r: any = await exec({ observation_id: "obs_projected" })
+        const data = JSON.parse(r.output)
+        expect(data.observation_id).toBe("obs_projected")
+        expect(data.file).toBe("src/app.js")
+        expect(data.line).toBe(1)
+        expect(r.metadata.found_file).toBe(true)
       },
     })
   })

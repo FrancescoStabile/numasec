@@ -5,6 +5,9 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { Format } from "../../src/format"
 import { Instance } from "../../src/project/instance"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -201,6 +204,71 @@ describe("tool/binary-triage", () => {
           await expect(exec({ path: "./chal.bin" })).rejects.toThrow(
             "checksec exited with code 2: boom",
           )
+        },
+      })
+    } finally {
+      _deps.which = whichSaved
+      _deps.run = runSaved
+    }
+  })
+
+  test("writes binary facts into the cyber kernel when an operation is active", async () => {
+    await using fixture = await tmpdir({ git: true })
+    await writeFile(`${fixture.path}/chal.bin`, "binary")
+    const whichSaved = _deps.which
+    const runSaved = _deps.run
+    _deps.which = () => "/usr/bin/checksec"
+    _deps.run = () =>
+      Effect.succeed({
+        argv: ["checksec"],
+        stdout: JSON.stringify([
+          {
+            name: "chal.bin",
+            file: path.join(fixture.path, "chal.bin"),
+            checks: {
+              pie: "PIE Enabled",
+              nx: "NX enabled",
+              canary: "No canary found",
+            },
+          },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      } as any)
+    try {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const op = await Operation.create({ workspace: fixture.path, label: "Binary", kind: "hacking" })
+          await exec({ path: "./chal.bin" })
+          const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+          const relations = await AppRuntime.runPromise(Cyber.listRelations({ operation_slug: op.slug, limit: 100 }))
+
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "binary_artifact" &&
+                item.entity_key === "./chal.bin" &&
+                item.fact_name === "checksec_summary",
+            ),
+          ).toBe(true)
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "finding_candidate" &&
+                item.entity_key === "./chal.bin:canary" &&
+                item.fact_name === "binary_hardening_gap",
+            ),
+          ).toBe(true)
+          expect(
+            relations.some(
+              (item) =>
+                item.src_kind === "binary_artifact" &&
+                item.src_key === "./chal.bin" &&
+                item.relation === "has_candidate" &&
+                item.dst_key === "./chal.bin:canary",
+            ),
+          ).toBe(true)
         },
       })
     } finally {

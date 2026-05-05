@@ -4,6 +4,8 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./opsec.txt"
 import { Operation } from "@/core/operation"
 import { OPSEC_BLOCKLIST } from "@/core/boundary/guard"
+import { Cyber } from "@/core/cyber"
+import { Instance } from "@/project/instance"
 
 const parameters = z.object({
   action: z.enum(["status", "set"]).default("status").describe("status returns current level; set writes it"),
@@ -38,9 +40,9 @@ export const OpsecTool = Tool.define<typeof parameters, Metadata, never>(
     return {
       description: DESCRIPTION,
       parameters,
-      execute: (params: Params, _ctx: Tool.Context<Metadata>) =>
+      execute: (params: Params, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
-          const workspace = process.cwd()
+          const workspace = Instance.directory
           const active = yield* Effect.promise(() => Operation.active(workspace).catch(() => undefined))
 
           if (params.action === "set") {
@@ -60,10 +62,31 @@ export const OpsecTool = Tool.define<typeof parameters, Metadata, never>(
             }
             yield* Effect.promise(() => Operation.setOpsec(workspace, active.slug, params.level!))
             const updated = yield* Effect.promise(() => Operation.read(workspace, active.slug))
-            const level = updated?.opsec ?? params.level
+            const level = params.level
+            const boundary =
+              (yield* Effect.promise(() => Operation.readBoundary(workspace, active.slug).catch(() => undefined))) ?? {
+                default: "allow" as const,
+                in_scope: [],
+                out_of_scope: [],
+              }
+            yield* Cyber.upsertOperationState({
+              slug: active.slug,
+              label: updated?.label ?? active.label,
+              kind: updated?.kind ?? active.kind,
+              target: updated?.target ?? active.target,
+              opsec: level,
+              in_scope: boundary.in_scope,
+              out_of_scope: boundary.out_of_scope,
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+              source: "opsec",
+              summary: `opsec set to ${level}`,
+            }).pipe(Effect.catch(() => Effect.succeed("")))
             return {
               title: `opsec · ${level}`,
-              output: formatStatus(updated ? { slug: updated.slug, label: updated.label, opsec: updated.opsec } : undefined),
+              output: formatStatus(
+                updated ? { slug: updated.slug, label: updated.label, opsec: level } : undefined,
+              ),
               metadata: { opsec: level, action: "set" as const, active_op: active.slug },
             }
           }

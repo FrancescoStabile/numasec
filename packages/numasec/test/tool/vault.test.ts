@@ -7,6 +7,9 @@ import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
 import { Truncate } from "../../src/tool"
+import { Cyber } from "../../src/core/cyber"
+import { Operation } from "../../src/core/operation"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instance } from "../../src/project/instance"
@@ -90,17 +93,60 @@ describe("tool/vault", () => {
 
   test("use_as sets active identity and delete clears it", async () => {
     await withSandbox(async (xdg) => {
+      const op = await Operation.create({ workspace: path.dirname(xdg), label: "Vault Identity", kind: "pentest" })
       await runVault({ action: "set", key: "admin_token", value: "tkn-123" })
       const useR: any = await runVault({ action: "use_as", key: "admin_token" })
       expect(useR.output).toContain("admin_token")
+      expect(useR.output).toContain("bearer")
 
       const raw = JSON.parse(await fs.readFile(path.join(xdg, "numasec", "vault.json"), "utf-8"))
       expect(raw.active_identity).toBe("admin_token")
       expect(raw.active_identity_set_at).toBeString()
 
+      const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+      expect(
+        facts.some(
+          (item) =>
+            item.entity_kind === "identity" &&
+            item.entity_key === "admin_token" &&
+            item.fact_name === "descriptor" &&
+            JSON.stringify(item.value_json).includes("\"mode\":\"bearer\""),
+        ),
+      ).toBe(true)
+      expect(
+        facts.some(
+          (item) =>
+            item.entity_kind === "identity" &&
+            item.entity_key === "admin_token" &&
+            item.fact_name === "active" &&
+            item.value_json === true,
+        ),
+      ).toBe(true)
+      const relations = await AppRuntime.runPromise(Cyber.listRelations({ operation_slug: op.slug, limit: 100 }))
+      expect(
+        relations.some(
+          (item) =>
+            item.src_kind === "operation" &&
+            item.src_key === op.slug &&
+            item.relation === "uses_identity" &&
+            item.dst_kind === "identity" &&
+            item.dst_key === "admin_token",
+        ),
+      ).toBe(true)
+
       await runVault({ action: "delete", key: "admin_token" })
       const raw2 = JSON.parse(await fs.readFile(path.join(xdg, "numasec", "vault.json"), "utf-8"))
       expect(raw2.active_identity).toBeNull()
+      const factsAfterDelete = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+      expect(
+        factsAfterDelete.some(
+          (item) =>
+            item.entity_kind === "identity" &&
+            item.entity_key === "admin_token" &&
+            item.fact_name === "descriptor" &&
+            item.status === "stale",
+        ),
+      ).toBe(true)
     })
   })
 

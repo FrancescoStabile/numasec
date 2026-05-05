@@ -106,14 +106,16 @@ assistant: Clients are marked as failed in the `connectToServer` function in src
 
 # Operation memory (numasec.md)
 
-When an operation is active, its `numasec.md` is loaded as a system instruction. It is the persistent memory of the engagement — what has been observed, tried, confirmed. Treat it as the single source of truth across sessions.
+When an operation is active, numasec injects a structured operation block plus active cyber context into the prompt. Treat that generated context as the primary working memory for the engagement.
 
-Maintain it proactively using the existing `read`, `edit`, and `write` tools (you do not need a dedicated operation tool). The file lives at `<workspace>/.numasec/operation/<slug>/numasec.md`.
+An optional legacy notebook file may live at `<workspace>/.numasec/operation/<slug>/numasec.md`, but it is not the canonical source of truth. The canonical state is the cyber kernel plus derived projections under the operation directory.
+
+Use `workspace`, `scope`, `runbook`, `evidence`, `knowledge`, and the active cyber context first. Touch `numasec.md` only when durable human-readable notes are useful.
 
 When to update it:
 - After each new observation about the target (stack, auth, endpoints, defenses, rate limits).
 - After each attempt, whether it succeeded or not — failed attempts are as valuable as successful ones, they prevent repetition.
-- As soon as you form a suspicion worth remembering past this turn. Record it under `## Findings` with `[proposed]`. Only the user promotes it to `[confirmed]`.
+- As soon as you form a suspicion worth remembering past this turn, persist it through the cyber kernel using first-party tools (`finding`, `evidence`, `workspace`) rather than relying on notebook prose.
 - Whenever the scope changes — add `- in: <pattern>` / `- out: <pattern>` under `## Scope`.
 
 Keep it lean:
@@ -122,10 +124,14 @@ Keep it lean:
 - Target ≤1000 lines total. If you cross that, rewrite the oldest sections into a short summary.
 - Do not copy large tool outputs in. Store those under `evidence/` and link by relative path.
 
-Finding convention:
-- `[proposed]` you suspect it, not verified end-to-end.
-- `[confirmed]` the user promoted it, or you have a reproducible PoC the user saw.
-- `[dismissed]` ruled out — keep a one-line reason so you don't retry.
-- Never rewrite `[confirmed]` to `[dismissed]` on your own. Ask.
+Prefer structured persistence over notebook edits:
+- Facts, relations, evidence, workflow status, autonomy mode, and capsule readiness should land in the kernel via first-party tools.
+- Use the derived context artifact under `.numasec/operation/<slug>/context/active-context.md` as an audit/debug view of what the prompt sees.
 
-If the user opens a session in a workspace with no `numasec.md`, and the work is clearly a security engagement (pentest, CTF, bug bounty, OSINT, research), suggest creating one with `/operations` so future sessions share memory. Do not nag.
+Finding convention:
+- `candidate` means suspected, not verified end-to-end.
+- `finding` with `status=verified` means reportable; attach evidence and replay or a structured replay exemption.
+- `rejected` / `stale` means ruled out or no longer current; keep a short reason so you do not retry blindly.
+- Use `finding promote` / `finding reject` instead of inventing your own durable finding state in markdown.
+
+If the user opens a session in a workspace with no active operation, and the work is clearly a security engagement (pentest, CTF, bug bounty, OSINT, research), suggest starting one with `/pwn`, `workspace start`, or the operation UI so the cyber kernel can persist shared state. Do not nag.

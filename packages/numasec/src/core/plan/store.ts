@@ -1,5 +1,8 @@
 import { appendFile, mkdir, readFile, writeFile } from "fs/promises"
 import path from "path"
+import { CyberFactTable } from "@/core/cyber/cyber.sql"
+import { Instance } from "@/project/instance"
+import { and, Database, desc, eq } from "@/storage"
 import { Event, type NodeStatus } from "./events"
 import { project, progress, type Node } from "./info"
 
@@ -28,8 +31,104 @@ async function append(workspace: string, slug: string, event: Event): Promise<vo
   await writeFile(path.join(dir, SNAP), JSON.stringify({ nodes, progress: progress(nodes) }, null, 2), "utf8")
 }
 
+function parseProjectedNode(value: unknown, idHint?: string): Node | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const input = value as Record<string, unknown>
+  const id = idHint
+  const title = input.title
+  const status = input.status
+  if (!id || typeof title !== "string" || !title) return undefined
+  if (
+    status !== "planned" &&
+    status !== "running" &&
+    status !== "done" &&
+    status !== "blocked" &&
+    status !== "skipped"
+  ) return undefined
+  return {
+    id,
+    title,
+    parent_id: typeof input.parent_id === "string" ? input.parent_id : undefined,
+    status,
+    note: typeof input.note === "string" ? input.note : undefined,
+    created_at: 0,
+    updated_at: 0,
+  }
+}
+
 export async function list(workspace: string, slug: string): Promise<Node[]> {
   return project(await readEvents(workspace, slug))
+}
+
+export async function listProjected(workspace: string, slug: string): Promise<Node[]> {
+  return await Instance.provide({
+    directory: workspace,
+    fn: async () => {
+      const projectID = Instance.project.id
+      const rows = Database.use((db) =>
+        db
+          .select()
+          .from(CyberFactTable)
+          .where(
+            and(
+              eq(CyberFactTable.project_id, projectID),
+              eq(CyberFactTable.operation_slug, slug),
+              eq(CyberFactTable.entity_kind, "plan_node"),
+              eq(CyberFactTable.fact_name, "todo_state"),
+            ),
+          )
+          .orderBy(desc(CyberFactTable.time_updated))
+          .all(),
+      )
+      const seen = new Set<string>()
+      const out: Node[] = []
+      for (const row of rows) {
+        if (seen.has(row.entity_key)) continue
+        seen.add(row.entity_key)
+        const parsed = parseProjectedNode(row.value_json, row.entity_key)
+        if (parsed) out.push(parsed)
+      }
+      return out.sort((a, b) => a.id.localeCompare(b.id))
+    },
+  })
+}
+
+export async function projectedSummary(
+  workspace: string,
+  slug: string,
+): Promise<{ total: number; done: number; running: number; blocked: number; planned: number } | undefined> {
+  return await Instance.provide({
+    directory: workspace,
+    fn: async () => {
+      const projectID = Instance.project.id
+      const rows = Database.use((db) =>
+        db
+          .select()
+          .from(CyberFactTable)
+          .where(
+            and(
+              eq(CyberFactTable.project_id, projectID),
+              eq(CyberFactTable.operation_slug, slug),
+              eq(CyberFactTable.entity_kind, "operation"),
+              eq(CyberFactTable.entity_key, slug),
+              eq(CyberFactTable.fact_name, "plan_summary"),
+            ),
+          )
+          .orderBy(desc(CyberFactTable.time_updated))
+          .all(),
+      )
+      const row = rows[0]
+      if (!row || !row.value_json || typeof row.value_json !== "object" || Array.isArray(row.value_json)) return undefined
+      const value = row.value_json as Record<string, unknown>
+      return {
+        total: Number(value.total ?? 0),
+        done: Number(value.done ?? 0),
+        running: Number(value.running ?? 0),
+        blocked: Number(value.blocked ?? 0),
+        planned: Number(value.planned ?? 0),
+      }
+    },
+  })
 }
 
 export async function add(

@@ -4,6 +4,10 @@ import { HttpClient } from "effect/unstable/http"
 import * as Tool from "./tool"
 import * as McpExa from "./mcp-exa"
 import DESCRIPTION from "./websearch.txt"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
+import { Operation } from "@/core/operation"
+import { Instance } from "@/project/instance"
 
 const Parameters = z.object({
   query: z.string().describe("Websearch query"),
@@ -63,8 +67,59 @@ export const WebSearchTool = Tool.define(
             "25 seconds",
           )
 
+          const workspace = Instance.directory
+          const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+          const output = result ?? "No search results found. Please try a different query."
+          const evidence =
+            !slug
+              ? undefined
+              : yield* Effect.promise(() =>
+                  Evidence.put(workspace, slug, output, {
+                    mime: "text/plain",
+                    ext: "txt",
+                    label: `websearch ${params.query}`,
+                    source: "websearch",
+                  }),
+                ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const evidenceRefs = evidence ? [evidence.sha256] : undefined
+          const eventID = yield* Cyber.appendLedger({
+            operation_slug: slug,
+            kind: "fact.observed",
+            source: "websearch",
+            summary: `websearch ${params.query}`,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            evidence_refs: evidenceRefs,
+            data: {
+              query: params.query,
+              num_results: params.numResults ?? 8,
+              livecrawl: params.livecrawl || "fallback",
+              type: params.type || "auto",
+              context_max_characters: params.contextMaxCharacters ?? null,
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertFact({
+            operation_slug: slug,
+            entity_kind: "knowledge_query",
+            entity_key: `web:${params.query}`,
+            fact_name: "web_result",
+            value_json: {
+              query: params.query,
+              output,
+              num_results: params.numResults ?? 8,
+              livecrawl: params.livecrawl || "fallback",
+              type: params.type || "auto",
+              context_max_characters: params.contextMaxCharacters ?? null,
+            },
+            writer_kind: "tool",
+            status: result ? "observed" : "stale",
+            confidence: result ? 700 : 300,
+            source_event_id: eventID || undefined,
+            evidence_refs: evidenceRefs,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+
           return {
-            output: result ?? "No search results found. Please try a different query.",
+            output,
             title: `Web search: ${params.query}`,
             metadata: {},
           }

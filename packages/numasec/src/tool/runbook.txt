@@ -1,0 +1,7 @@
+Run structured security runbooks.
+
+This is the semantic workflow surface for built-in plays and future domain capsules.
+
+Use it to:
+- list available runbooks;
+- run a specific runbook with arguments.

@@ -16,9 +16,13 @@ Do exactly the following, in order:
 
 2. Call the `pwn_bootstrap` tool with `{ target: "$1" }`. It will create and activate the operation and return `{ slug, kind, agent, playId }`. Trust that return value — do not reinterpret the kind yourself.
 
-3. Call the `play` tool with `{ id: <playId>, args: { target: "$1" } }`. Execute each step in the returned trace by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill. If a referenced tool is not registered, say so and continue with the remaining steps.
+3. Call the `runbook` tool with `{ action: "run", id: <playId>, args: { target: "$1" } }`. Execute each step in the returned trace by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill. If a referenced tool is not registered, say so and continue with the remaining steps.
 
-4. Write findings into the active operation's `numasec.md` (Attempts / Findings sections) using `edit`/`write` as the play runs.
+4. Persist state through first-party cyber tools as the play runs:
+   - use `evidence` to preserve proof artifacts;
+   - use `finding` to promote evidence-backed findings or reject stale ones;
+   - use `workspace` / active cyber context to stay oriented.
+   Touch the legacy `numasec.md` notebook only when a short human-readable note adds value beyond the projected context.
 
 5. When all steps are done, produce a short synthesis:
    - What was found (3–6 bullets).

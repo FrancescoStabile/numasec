@@ -17,6 +17,39 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.live("includes semantic cyber surfaces in the built-in tool registry", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        expect(ids).toContain("workspace")
+        expect(ids).toContain("evidence")
+        expect(ids).toContain("runbook")
+        expect(ids).toContain("scope")
+        expect(ids).toContain("analyze")
+        expect(ids).toContain("knowledge")
+        expect(ids).toContain("autonomy")
+        expect(ids).toContain("finding")
+        expect(ids).toContain("identity")
+        expect(ids).toContain("observation")
+        expect(ids).toContain("report")
+      }),
+    ),
+  )
+
+  it.live("orders semantic cyber surfaces ahead of lower-level raw tools", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        expect(ids.indexOf("identity")).toBeLessThan(ids.indexOf("vault"))
+        expect(ids.indexOf("analyze")).toBeLessThan(ids.indexOf("cloud_posture"))
+        expect(ids.indexOf("knowledge")).toBeLessThan(ids.indexOf("cve"))
+        expect(ids.indexOf("runbook")).toBeLessThan(ids.indexOf("play"))
+      }),
+    ),
+  )
+
   it.live("loads tools from .numasec/tool (singular)", () =>
     provideTmpdirInstance((dir) =>
       Effect.gen(function* () {

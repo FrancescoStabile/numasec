@@ -1,0 +1,16 @@
+Manage operation observations. Use this to add, inspect, triage, update, link evidence, or remove observations from the active operation.
+
+Args:
+  - action: add | list | status | update | link_evidence | remove
+  - id: observation id for status/update/link_evidence/remove
+  - subtype: vuln | code-smell | intel-fact | flag | ioc | control-gap | risk
+  - title: short observation title
+  - severity: info | low | medium | high | critical
+  - confidence: 0..1
+  - note: optional note
+  - tags: optional string tags
+  - evidence: evidence ref to link when action = link_evidence
+
+Notes:
+  - The legacy observation store remains for compatibility, but writes are mirrored into the cyber kernel automatically.
+  - Use `remediate` with an `observation_id` after triage when you need a deterministic fix scaffold.

@@ -1,4 +1,4 @@
-// Scope parser for numasec.md — regex on the `## Scope` section.
+// Legacy scope parser for numasec.md.
 //
 // Rules:
 //   Under `## Scope`, lines like `- in: <pattern>` add to in_scope.
@@ -6,8 +6,9 @@
 //   Empty pattern (`- in:` alone) is ignored.
 //   Section ends at the next `## ` heading.
 //
-// The output is shaped as a Boundary (see core/boundary/schema) so it can be
-// fed directly into the existing matcher.
+// The output is shaped as a Boundary (see core/boundary/schema) so migration
+// paths can still feed the existing matcher when projected scope facts are not
+// available yet.
 
 import type { Boundary } from "../boundary/schema"
 

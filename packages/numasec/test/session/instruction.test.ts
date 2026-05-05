@@ -7,6 +7,9 @@ import type { MessageV2 } from "../../src/session/message-v2"
 import { Instance } from "../../src/project/instance"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Global } from "../../src/global"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { tmpdir } from "../fixture/fixture"
 
 const run = <A>(effect: Effect.Effect<A, any, Instruction.Service>) =>
@@ -269,6 +272,86 @@ describe("Instruction.system", () => {
         process.env["NUMASEC_CONFIG_DIR"] = originalConfigDir
       }
     }
+  })
+
+  test("does not auto-load active operation numasec.md as an instruction file, but emits structured operation context", async () => {
+    await using projectTmp = await tmpdir()
+
+    await Instance.provide({
+      directory: projectTmp.path,
+      fn: async () => {
+        const op = await Operation.create({
+          workspace: projectTmp.path,
+          label: "Target Review",
+          kind: "appsec",
+          target: "https://target.test",
+          opsec: "strict",
+        })
+        const opFile = path.join(projectTmp.path, ".numasec", "operation", op.slug, "numasec.md")
+
+        await run(
+          Instruction.Service.use((svc) =>
+            Effect.gen(function* () {
+              const paths = yield* svc.systemPaths()
+              expect(paths.has(opFile)).toBe(false)
+
+              const rules = yield* svc.system()
+              expect(rules.some((item) => item.includes("Active operation"))).toBe(true)
+              expect(rules.some((item) => item.includes(`slug: ${op.slug}`))).toBe(true)
+              expect(rules.some((item) => item.includes("opsec: strict"))).toBe(true)
+              expect(rules.some((item) => item.includes("- in: target.test"))).toBe(true)
+              const derived = yield* Effect.promise(() => Operation.readContextPack(projectTmp.path, op.slug))
+              expect(derived).toContain("# Active Operation Context")
+              expect(derived).toContain(`slug: ${op.slug}`)
+            }),
+          ),
+        )
+      },
+    })
+  })
+
+  test("prefers projected scope_policy from the cyber kernel over legacy markdown scope in operation context", async () => {
+    await using projectTmp = await tmpdir()
+
+    await Instance.provide({
+      directory: projectTmp.path,
+      fn: async () => {
+        const op = await Operation.create({
+          workspace: projectTmp.path,
+          label: "Projected Scope",
+          kind: "appsec",
+          target: "https://target.test",
+        })
+        await AppRuntime.runPromise(
+          Cyber.upsertFact({
+            operation_slug: op.slug,
+            entity_kind: "operation",
+            entity_key: op.slug,
+            fact_name: "scope_policy",
+            value_json: {
+              default: "ask",
+              in_scope: ["api.target.test"],
+              out_of_scope: ["target.test"],
+            },
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+          }),
+        )
+
+        await run(
+          Instruction.Service.use((svc) =>
+            Effect.gen(function* () {
+              const rules = yield* svc.system()
+              const activeRule = rules.find((item) => item.includes("Active operation"))
+              expect(activeRule).toBeDefined()
+              expect(activeRule).toContain("- in: api.target.test")
+              expect(activeRule).toContain("- out: target.test")
+            }),
+          ),
+        )
+      },
+    })
   })
 })
 

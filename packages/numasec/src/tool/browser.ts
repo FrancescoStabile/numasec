@@ -1,8 +1,14 @@
 import z from "zod"
 import { Effect } from "effect"
+import path from "path"
 import * as Tool from "./tool"
 import DESCRIPTION from "./browser.txt"
 import { buildPassiveAppSecResult } from "../browser/passive-run"
+import { Cyber } from "@/core/cyber"
+import { Evidence } from "@/core/evidence"
+import { Operation } from "@/core/operation"
+import { activeIdentity } from "@/core/vault"
+import { Instance } from "@/project/instance"
 
 const parameters = z.object({
   action: z
@@ -74,6 +80,8 @@ interface Session {
 const sessions = new Map<string, Session>()
 let counter = 0
 
+const EVIDENCE_MAX_OUTPUT = 128_000
+
 function cookieSeed(url: string, raw: string) {
   const base = new URL(url)
   const out: Array<{
@@ -144,7 +152,7 @@ async function ensure(abort: AbortSignal): Promise<Session> {
   if (!pw?.chromium?.launch) {
     try {
       const { createRequire } = await import("module")
-      const require = createRequire(process.cwd() + "/package.json")
+      const require = createRequire(path.join(Instance.directory, "package.json"))
       pw = require("playwright") as typeof import("playwright")
     } catch {
       // local filesystem fallback also failed
@@ -269,21 +277,302 @@ async function ensure(abort: AbortSignal): Promise<Session> {
 }
 
 async function hydrate(context: any, page: any, params: Params) {
-  if (params.headers) {
-    await context.setExtraHTTPHeaders(params.headers)
+  const identity = await activeIdentity().catch(() => undefined)
+  const headers = { ...(identity?.headers ?? {}), ...(params.headers ?? {}) }
+  if (Object.keys(headers).length > 0) {
+    await context.setExtraHTTPHeaders(headers)
   }
   await seedStorage(page, params)
   const url = params.url || page.url()
-  if (params.cookies && url && url.startsWith("http")) {
-    const seed = cookieSeed(url, params.cookies)
+  const cookieHeader = params.cookies ?? identity?.cookies
+  if (cookieHeader && url && url.startsWith("http")) {
+    const seed = cookieSeed(url, cookieHeader)
     if (seed.length > 0) await context.addCookies(seed)
   }
+  return identity
+}
+
+function browserEvidenceMime(action: Params["action"]) {
+  if (action === "screenshot") return "image/png"
+  if (action === "dom_snapshot") return "text/html"
+  return "application/json"
+}
+
+function browserEvidenceExt(action: Params["action"]) {
+  if (action === "screenshot") return "png"
+  if (action === "dom_snapshot") return "html"
+  return "json"
+}
+
+function summarizePassiveFindings(output: string) {
+  try {
+    const parsed = JSON.parse(output) as {
+      findings?: Array<{ id: string; severity: string; title: string; evidence?: string[] }>
+      summary?: { total_findings?: number; request_count?: number }
+    }
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+function routeOf(url: string) {
+  const target = new URL(url)
+  return {
+    host: target.hostname,
+    origin: target.origin,
+    service: `${target.hostname}:${target.port || (target.protocol === "https:" ? "443" : "80")}`,
+    route: `${target.origin}${target.pathname || "/"}`,
+    scheme: target.protocol.replace(":", ""),
+  }
+}
+
+function browserEvidencePayload(params: Params, result: Tool.ExecuteResult) {
+  return JSON.stringify(
+    {
+      action: params.action,
+      input: {
+        url: params.url,
+        selector: params.selector,
+        timeout: params.timeout,
+        headers: params.headers,
+        cookies: params.cookies,
+      },
+      result: {
+        title: result.title,
+        metadata: result.metadata,
+        output: result.output.slice(0, EVIDENCE_MAX_OUTPUT),
+        output_truncated: result.output.length > EVIDENCE_MAX_OUTPUT,
+      },
+    },
+    null,
+    2,
+  )
+}
+
+function persistBrowserObservation(params: Params, result: Tool.ExecuteResult, ctx: Tool.Context) {
+  return Effect.gen(function* () {
+    const currentUrl =
+      typeof result.metadata?.url === "string"
+        ? result.metadata.url
+        : typeof result.metadata?.currentUrl === "string"
+          ? result.metadata.currentUrl
+          : params.url
+    const workspace = Instance.directory
+    const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+    const evidence =
+      !slug
+        ? undefined
+        : yield* Effect.promise(() =>
+            Evidence.put(workspace, slug, browserEvidencePayload(params, result), {
+              mime: browserEvidenceMime(params.action),
+              ext: browserEvidenceExt(params.action),
+              label: `browser ${params.action}${currentUrl ? ` ${currentUrl}` : ""}`,
+              source: "browser",
+            }),
+          )
+    const evidenceRefs = evidence ? [evidence.sha256] : undefined
+    const eventID = yield* Cyber.appendLedger({
+      kind: "fact.observed",
+      source: "browser",
+      summary: result.title,
+      session_id: ctx.sessionID,
+      message_id: ctx.messageID,
+      evidence_refs: evidenceRefs,
+      data: {
+        action: params.action,
+        url: currentUrl,
+        metadata: result.metadata,
+      },
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+
+    if (!currentUrl || (!currentUrl.startsWith("http://") && !currentUrl.startsWith("https://"))) return
+
+    const route = routeOf(currentUrl)
+    yield* Cyber.upsertFact({
+      entity_kind: "host",
+      entity_key: route.host,
+      fact_name: "browser_seen_url",
+      value_json: currentUrl,
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    yield* Cyber.upsertFact({
+      entity_kind: "service",
+      entity_key: route.service,
+      fact_name: "transport",
+      value_json: route.scheme,
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    yield* Cyber.upsertFact({
+      entity_kind: "http_route",
+      entity_key: route.route,
+      fact_name: `browser_action:${params.action}`,
+      value_json: {
+        title: result.title,
+        metadata: result.metadata,
+      },
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    yield* Cyber.upsertRelation({
+      src_kind: "host",
+      src_key: route.host,
+      relation: "exposes",
+      dst_kind: "service",
+      dst_key: route.service,
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    yield* Cyber.upsertRelation({
+      src_kind: "service",
+      src_key: route.service,
+      relation: "serves",
+      dst_kind: "http_route",
+      dst_key: route.route,
+      writer_kind: "tool",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: eventID || undefined,
+      evidence_refs: evidenceRefs,
+    }).pipe(Effect.catch(() => Effect.succeed("")))
+    if (typeof result.metadata?.activeIdentity === "string") {
+      yield* Cyber.upsertRelation({
+        src_kind: "identity",
+        src_key: result.metadata.activeIdentity,
+        relation: "used_on",
+        dst_kind: "http_route",
+        dst_key: route.route,
+        writer_kind: "tool",
+        status: "observed",
+        confidence: 1000,
+        source_event_id: eventID || undefined,
+        evidence_refs: evidenceRefs,
+      }).pipe(Effect.catch(() => Effect.succeed("")))
+    }
+
+    if (params.action === "dom_snapshot") {
+      const summary = result.metadata?.summary as
+        | { forms?: unknown[]; links?: string[]; scripts?: string[] }
+        | undefined
+      for (const link of summary?.links ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "http_route",
+          entity_key: link,
+          fact_name: "dom_link",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+      for (const script of summary?.scripts ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "artifact",
+          entity_key: script,
+          fact_name: "javascript_resource",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+      for (const form of summary?.forms ?? []) {
+        const item = form as { action?: string; method?: string; inputs?: unknown[] }
+        if (!item.action || !item.method) continue
+        yield* Cyber.upsertFact({
+          entity_kind: "http_form",
+          entity_key: `${item.method}:${item.action}`,
+          fact_name: "shape",
+          value_json: item,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 850,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+    }
+
+    if (params.action === "passive_appsec") {
+      const parsed = summarizePassiveFindings(result.output)
+      for (const item of (result.metadata?.request_urls as string[] | undefined) ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "http_route",
+          entity_key: item,
+          fact_name: "browser_request",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 850,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+      for (const item of (result.metadata?.form_actions as string[] | undefined) ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "http_form",
+          entity_key: item,
+          fact_name: "passive_form_action",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+      for (const item of (result.metadata?.script_urls as string[] | undefined) ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "artifact",
+          entity_key: item,
+          fact_name: "javascript_resource",
+          value_json: true,
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 800,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+      for (const finding of parsed?.findings ?? []) {
+        yield* Cyber.upsertFact({
+          entity_kind: "finding_candidate",
+          entity_key: `${route.host}:${finding.id}`,
+          fact_name: "passive_appsec",
+          value_json: finding,
+          writer_kind: "parser",
+          status: "candidate",
+          confidence: finding.severity === "high" ? 800 : finding.severity === "medium" ? 700 : 600,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
+    }
+  })
 }
 
 async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResult> {
   const timeout = params.timeout ?? 30_000
   const session = await ensure(abort)
-  await hydrate(session.context, session.page, params)
+  const identity = await hydrate(session.context, session.page, params)
   const page = session.page
   const context = session.context
 
@@ -309,6 +598,8 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
         status: response ? response.status() : undefined,
         pageTitle: title,
         cookieCount: cookies.length,
+        url: page.url(),
+        activeIdentity: identity?.key,
       },
       output: [
         `Status: ${response ? response.status() : "unknown"}`,
@@ -352,7 +643,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     await page.waitForLoadState("networkidle").catch(() => undefined)
     return {
       title: `Click ${params.selector}`,
-      metadata: {},
+      metadata: { currentUrl: page.url(), activeIdentity: identity?.key },
       output: `Clicked "${params.selector}". Current URL: ${page.url()}`,
     }
   }
@@ -363,7 +654,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     await page.fill(params.selector, params.value, { timeout })
     return {
       title: `Fill ${params.selector}`,
-      metadata: {},
+      metadata: { currentUrl: page.url(), activeIdentity: identity?.key },
       output: `Filled "${params.selector}" with value.`,
     }
   }
@@ -373,7 +664,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     const base64 = buf.toString("base64")
     return {
       title: "Screenshot captured",
-      metadata: { size: buf.length, url: page.url() },
+      metadata: { size: buf.length, url: page.url(), activeIdentity: identity?.key },
       output: "Screenshot captured successfully.",
       attachments: [
         { type: "file" as const, mime: "image/png", url: `data:image/png;base64,${base64}` },
@@ -387,7 +678,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     const formatted = typeof result === "string" ? result : JSON.stringify(result, null, 2)
     return {
       title: "JS Evaluate",
-      metadata: {},
+      metadata: { currentUrl: page.url(), activeIdentity: identity?.key },
       output: formatted,
     }
   }
@@ -400,7 +691,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     )
     return {
       title: `${cookies.length} cookies`,
-      metadata: { count: cookies.length },
+      metadata: { count: cookies.length, url: page.url(), activeIdentity: identity?.key },
       output: lines.join("\n") || "No cookies.",
     }
   }
@@ -432,7 +723,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     const body = html.length > max ? html.slice(0, max) + `\n... (truncated, ${html.length} chars)` : html
     return {
       title: `DOM snapshot ${page.url()}`,
-      metadata: { url: page.url(), size: html.length, title, summary } as any,
+      metadata: { url: page.url(), size: html.length, title, summary, activeIdentity: identity?.key } as any,
       output: [
         `URL: ${page.url()}`,
         `Title: ${title}`,
@@ -470,6 +761,8 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
         localKeys: Object.keys(storage.local).length,
         sessionKeys: Object.keys(storage.session).length,
         cookieCount: cookies.length,
+        url: page.url(),
+        activeIdentity: identity?.key,
       },
       output: JSON.stringify({ ...storage, cookies }, null, 2),
     }
@@ -483,7 +776,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     const body = lines.length > max ? lines.slice(0, max) + `\n... (truncated, ${lines.length} chars)` : lines
     return {
       title: `Console log (${entries.length})`,
-      metadata: { count: entries.length },
+      metadata: { count: entries.length, url: page.url(), activeIdentity: identity?.key },
       output: body || "(no console entries)",
     }
   }
@@ -501,7 +794,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     const body = lines.length > max ? lines.slice(0, max) + `\n... (truncated, ${lines.length} chars)` : lines
     return {
       title: `Network (${entries.length} requests)`,
-      metadata: { count: entries.length },
+      metadata: { count: entries.length, url: page.url(), activeIdentity: identity?.key },
       output: body || "(no requests)",
     }
   }
@@ -529,7 +822,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     ].join("\n")
     return {
       title: `DOM diff (+${added.length}/-${removed.length})`,
-      metadata: { added: added.length, removed: removed.length } as any,
+      metadata: { added: added.length, removed: removed.length, url: page.url(), activeIdentity: identity?.key } as any,
       output: out.length > max ? out.slice(0, max) + "\n... (truncated)" : out,
     }
   }
@@ -551,7 +844,9 @@ export const BrowserTool = Tool.define(
             always: [],
             metadata: { action: params.action, url: params.url },
           })
-          return yield* Effect.promise(() => run(params, ctx.abort))
+          const result = yield* Effect.promise(() => run(params, ctx.abort))
+          yield* persistBrowserObservation(params, result, ctx).pipe(Effect.catch(() => Effect.void))
+          return result
         }).pipe(Effect.orDie),
     }
   }),

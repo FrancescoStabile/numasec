@@ -1,0 +1,12 @@
+Manage candidate and verified findings for the active operation.
+
+Use this tool to:
+- list current candidate and promoted findings;
+- inspect a specific finding or candidate by key;
+- promote a candidate into a finding with required evidence and optional replay;
+- reject a candidate or finding when it is invalidated.
+
+Promotion rules:
+- a promoted finding must have evidence;
+- replay is strongly preferred for active/reportable findings;
+- if replay is absent, the finding remains evidence-backed but not replay-backed.

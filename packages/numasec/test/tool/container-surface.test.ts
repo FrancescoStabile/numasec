@@ -3,6 +3,9 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
+import { Operation } from "../../src/core/operation"
+import { Cyber } from "../../src/core/cyber"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { Format } from "../../src/format"
 import { Instance } from "../../src/project/instance"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -139,6 +142,59 @@ describe("tool/container-surface", () => {
             "vuln,secret",
             "nginx:latest",
           ])
+        },
+      })
+    } finally {
+      _deps.which = whichSaved
+      _deps.run = runSaved
+    }
+  })
+
+  test("writes container facts into the cyber kernel when an operation is active", async () => {
+    await using fixture = await tmpdir({ git: true })
+    const whichSaved = _deps.which
+    const runSaved = _deps.run
+    _deps.which = () => "/usr/bin/trivy"
+    _deps.run = () =>
+      Effect.succeed({
+        argv: ["trivy"],
+        stdout: JSON.stringify({
+          Results: [
+            {
+              Type: "alpine",
+              Target: "alpine:3.20",
+              Vulnerabilities: [
+                {
+                  VulnerabilityID: "CVE-2026-0001",
+                  PkgName: "openssl",
+                  Severity: "CRITICAL",
+                },
+              ],
+            },
+          ],
+        }),
+        stderr: "",
+        exitCode: 0,
+      } as any)
+    try {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const op = await Operation.create({ workspace: fixture.path, label: "Container", kind: "appsec" })
+          await exec({ image: "nginx:latest", mode: "full" })
+          const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
+          const ledger = await AppRuntime.runPromise(Cyber.listLedger({ operation_slug: op.slug, limit: 100 }))
+
+          expect(facts.some((item) => item.entity_kind === "container_image" && item.entity_key === "nginx:latest")).toBe(true)
+          expect(
+            facts.some(
+              (item) =>
+                item.entity_kind === "finding_candidate" &&
+                item.entity_key === "nginx:latest:CVE-2026-0001" &&
+                item.fact_name === "container_vulnerability",
+            ),
+          ).toBe(true)
+          expect(ledger.some((item) => item.source === "container_surface" && item.summary?.includes("nginx:latest"))).toBe(true)
         },
       })
     } finally {

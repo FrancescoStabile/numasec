@@ -1,0 +1,8 @@
+Manage evidence for the active operation.
+
+Use this tool to:
+- list evidence already attached to the active operation;
+- add text evidence;
+- import a local file into the evidence locker.
+
+Evidence should back findings, claims and replay bundles.

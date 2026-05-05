@@ -1,6 +1,7 @@
 import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { UI } from "../ui"
+import { Cyber } from "@/core/cyber"
 import { Operation, KINDS, type OperationKind } from "@/core/operation"
 
 function workspace(): string {
@@ -65,26 +66,110 @@ export const OperationNewCommand = cmd({
         `created ${info.slug} [${info.kind}] ${info.label}` +
         UI.Style.TEXT_NORMAL,
     )
-    UI.println(`file: .numasec/operation/${info.slug}/numasec.md`)
+    UI.println(`operation: .numasec/operation/${info.slug}`)
   },
 })
 
 export const OperationShowCommand = cmd({
   command: "show [slug]",
-  describe: "print the operation's numasec.md (defaults to active)",
-  builder: (yargs: Argv) => yargs.positional("slug", { type: "string" }),
+  describe: "show operation state (defaults to active)",
+  builder: (yargs: Argv) =>
+    yargs
+      .positional("slug", { type: "string" })
+      .option("format", {
+        describe: "output format",
+        type: "string",
+        choices: ["summary", "json", "context", "markdown"],
+        default: "summary",
+      }),
   handler: async (args) => {
     const slug = args.slug ?? (await Operation.activeSlug(workspace()))
     if (!slug) {
       UI.error("no active operation")
       process.exit(1)
     }
-    const content = await Operation.readMarkdown(workspace(), slug)
-    if (!content) {
+    const info = await Operation.read(workspace(), slug)
+    if (!info) {
       UI.error(`operation not found: ${slug}`)
       process.exit(1)
     }
-    UI.println(content)
+
+    if (args.format === "markdown") {
+      const content = await Operation.readMarkdown(workspace(), slug)
+      if (!content) {
+        UI.error(`operation notebook not found: ${slug}`)
+        process.exit(1)
+      }
+      UI.println(content)
+      return
+    }
+
+    const [scope, autonomy, context, projected] = await Promise.all([
+      Operation.readProjectedScopePolicy(workspace(), slug).catch(() => undefined),
+      Operation.readProjectedAutonomyPolicy(workspace(), slug).catch(() => undefined),
+      Operation.readContextPack(workspace(), slug).catch(() => undefined),
+      Cyber.readProjectedState(workspace(), slug).catch(() => undefined),
+    ])
+
+    if (args.format === "context") {
+      if (!context) {
+        UI.error(`context pack not found: ${slug}`)
+        process.exit(1)
+      }
+      UI.println(context)
+      return
+    }
+
+    if (args.format === "json") {
+      UI.println(
+        JSON.stringify(
+          {
+            operation: info,
+            scope_policy: scope,
+            autonomy_policy: autonomy,
+            projected: projected
+              ? {
+                  summary: projected.summary,
+                  findings: projected.findings,
+                  knowledge: projected.knowledge,
+                  capsules: projected.capsules,
+                  workflows: projected.workflows,
+                  workflow_steps: projected.workflow_steps,
+                  relations: projected.relations,
+                  timeline: projected.timeline,
+                }
+              : undefined,
+            context_pack: context,
+          },
+          null,
+          2,
+        ),
+      )
+      return
+    }
+
+    const summary = projected?.summary
+    const lines = [
+      `${info.slug} [${info.kind}] ${info.label}`,
+      `target: ${info.target ?? "-"}`,
+      `opsec: ${info.opsec}`,
+      `active: ${info.active ? "yes" : "no"}`,
+      `autonomy: ${autonomy?.mode ?? "-"}`,
+      `scope_default: ${scope?.default ?? "-"}`,
+      `in_scope: ${scope?.in_scope?.join(", ") || "-"}`,
+      `out_of_scope: ${scope?.out_of_scope?.join(", ") || "-"}`,
+      summary
+        ? `kernel: routes=${summary.route_facts} findings=${summary.findings} candidates=${summary.candidate_findings} observations=${summary.observations_projected} workflows=${projected?.workflows.length ?? 0} relations=${projected?.relations.length ?? 0}`
+        : "kernel: -",
+      summary
+        ? `reportability: reportable=${summary.reportable_findings} suspected=${summary.suspected_findings} rejected=${summary.rejected_findings} replay_backed=${summary.replay_backed_findings} replay_exempt=${summary.replay_exempt_findings}`
+        : "reportability: -",
+    ]
+    if (context) {
+      lines.push("")
+      lines.push(context)
+    }
+    UI.println(lines.join("\n"))
   },
 })
 

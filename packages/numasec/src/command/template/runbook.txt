@@ -1,0 +1,36 @@
+---
+description: Run a semantic security runbook — the primary capsule surface for built-in plays and future domain workflows.
+---
+
+# /runbook $ARGUMENTS
+
+The operator invoked **/runbook $ARGUMENTS**.
+
+Parse the argument string into:
+
+- an optional action (`list`, `status`, `run`);
+- an optional id (runbook id);
+- a positional/keyword arg list (everything after the id).
+
+Common invocations:
+
+- `/runbook list`
+- `/runbook status web-surface`
+- `/runbook web-surface https://example.com`
+- `/runbook run web-surface https://example.com`
+- `/runbook run appsec-triage ./src`
+- `/runbook run web-surface target=https://x.y domain=x.y`
+
+Rules:
+
+1. If the first token is `list`, call the `runbook` tool with `{ action: "list" }`.
+2. If the first token is `status`, call the `runbook` tool with `{ action: "status", id }`.
+3. Otherwise default to `action: "run"`:
+   - treat the first token as the runbook id unless the first token is literally `run`;
+   - bind a single positional arg to the runbook's first required arg (`target`, `path`, etc.);
+   - pass `key=value` pairs through as-is.
+4. Call the `runbook` tool **once** with the derived `{ action, id, args }`.
+5. If the runbook action is `run`, execute the returned trace in order by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill.
+6. If a referenced tool is not registered, say so plainly and continue with the remaining steps.
+7. After all steps complete, produce a short synthesis: what was found, what to do next.
+8. Do not invent additional steps or skip declared ones without telling the operator.
