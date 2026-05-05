@@ -1,10 +1,13 @@
 import z from "zod"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import { Cyber } from "@/core/cyber"
+import { Operation } from "@/core/operation"
+import { Instance } from "@/project/instance"
 
 interface Metadata {
   [key: string]: any
@@ -65,12 +68,55 @@ export type InferDef<T> =
       ? Def<P, M>
       : never
 
+function formatBoundary(parsed?: { default?: string; in_scope?: string[]; out_of_scope?: string[] }) {
+  if (!parsed) return undefined
+  const inScope = parsed.in_scope ?? []
+  const outOfScope = parsed.out_of_scope ?? []
+  const lines = ["## Scope"]
+  if (inScope.length === 0 && outOfScope.length === 0) {
+    lines.push(`- default: ${parsed.default ?? "allow"}`)
+    return lines.join("\n")
+  }
+  lines.push(`- default: ${parsed.default ?? "ask"}`)
+  if (inScope.length > 0) lines.push(...inScope.map((item) => `- in: ${item}`))
+  if (outOfScope.length > 0) lines.push(...outOfScope.map((item) => `- out: ${item}`))
+  return lines.join("\n")
+}
+
+function refreshDerivedContext(workspace: string) {
+  return Effect.gen(function* () {
+    const active = yield* Effect.promise(() => Operation.active(workspace).catch(() => undefined))
+    if (!active) return
+    const boundary = yield* Effect.promise(() => Operation.readBoundary(workspace, active.slug).catch(() => undefined))
+    const operationBlock = [
+      "Active operation",
+      `slug: ${active.slug}`,
+      `label: ${active.label}`,
+      `kind: ${active.kind}`,
+      ...(active.target ? [`target: ${active.target}`] : []),
+      `opsec: ${active.opsec}`,
+      "",
+      formatBoundary(boundary),
+    ]
+      .filter(Boolean)
+      .join("\n")
+    const contextPack = yield* Cyber.contextPack({ operation_slug: active.slug }).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+    const derived = ["# Active Operation Context", "", operationBlock, contextPack].filter(Boolean).join("\n\n")
+    yield* Effect.promise(() => Operation.writeContextPack(workspace, active.slug, derived)).pipe(
+      Effect.catch(() => Effect.void),
+    )
+  })
+}
+
 function wrap<Parameters extends z.ZodType, Result extends Metadata>(
   id: string,
   init: Init<Parameters, Result>,
   truncate: Truncate.Interface,
   agents: Agent.Interface,
 ) {
+  const workflowAware = id !== "play"
   return () =>
     Effect.gen(function* () {
       const toolInfo = typeof init === "function" ? { ...(yield* init()) } : { ...init }
@@ -95,7 +141,166 @@ function wrap<Parameters extends z.ZodType, Result extends Metadata>(
               )
             },
           })
-          const result = yield* execute(args, ctx)
+          const callEvent = yield* Cyber.appendLedger({
+              kind: "tool.called",
+              source: id,
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+              summary: `${id} called`,
+              data: {
+                tool: id,
+                call_id: ctx.callID,
+                input: args,
+              },
+            })
+            .pipe(Effect.catch(() => Effect.succeed("")))
+          const exit = yield* Effect.exit(execute(args, ctx))
+          if (Exit.isFailure(exit)) {
+            yield* Cyber.appendLedger({
+                kind: "tool.error",
+                source: id,
+                session_id: ctx.sessionID,
+                message_id: ctx.messageID,
+                status: "error",
+                summary: `${id} failed`,
+                data: {
+                  tool: id,
+                  call_id: ctx.callID,
+                  source_event_id: callEvent,
+                },
+              })
+              .pipe(Effect.catch(() => Effect.void))
+	            if (workflowAware) {
+	              const workspace = Instance.directory
+	              const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+              if (slug) {
+                const match = yield* Effect.promise(() =>
+                  Operation.recordWorkflowStep(workspace, slug, {
+                    tool: id,
+                    success: false,
+                    error: "tool execution failed",
+                    args,
+                  }).catch(() => undefined),
+                ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                if (match) {
+                  const workflow = yield* Effect.promise(() =>
+                    Operation.readWorkflow(workspace, slug, {
+                      kind: match.kind,
+                      id: match.id,
+                    }).catch(() => undefined),
+                  ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                  if (workflow && Array.isArray(workflow["trace"]) && Array.isArray(workflow["skipped"])) {
+                    yield* Cyber.syncWorkflowProgress({
+                      operation_slug: slug,
+                      workflow_kind: match.kind,
+                      workflow_id: match.id,
+                      trace: workflow["trace"] as Array<Record<string, unknown>>,
+                      skipped: workflow["skipped"] as Array<Record<string, unknown>>,
+                      completed_steps: Number(workflow["completed_steps"] ?? 0),
+                      failed_steps: Number(workflow["failed_steps"] ?? 0),
+                      pending_steps: Number(workflow["pending_steps"] ?? 0),
+                      session_id: ctx.sessionID,
+                      message_id: ctx.messageID,
+                      source: "workflow",
+                      summary: `${match.kind} ${match.id} progress after ${id} failure`,
+                    }).pipe(Effect.catch(() => Effect.succeed("")))
+                  }
+                  yield* Cyber.appendLedger({
+                    operation_slug: slug,
+                    kind: "fact.observed",
+                    source: "workflow",
+                    session_id: ctx.sessionID,
+                    message_id: ctx.messageID,
+                    summary: `${match.kind} ${match.id} step ${match.step_index} failed via ${id}`,
+                    data: {
+                      workflow_kind: match.kind,
+                      workflow_id: match.id,
+                      step_index: match.step_index,
+                      status: match.status,
+                      tool: id,
+                    },
+	                  }).pipe(Effect.catch(() => Effect.succeed("")))
+	                }
+	                if (id !== "report") {
+	                  yield* refreshDerivedContext(workspace).pipe(Effect.catch(() => Effect.void))
+	                }
+	              }
+	            }
+	            return yield* Effect.failCause(exit.cause)
+          }
+          const result = exit.value
+          yield* Cyber.appendLedger({
+              kind: "tool.completed",
+              source: id,
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+              status: "completed",
+              summary: `${id} completed`,
+              data: {
+                tool: id,
+                call_id: ctx.callID,
+                source_event_id: callEvent,
+                title: result.title,
+                metadata: result.metadata,
+              },
+            })
+            .pipe(Effect.catch(() => Effect.succeed("")))
+	          if (workflowAware) {
+	            const workspace = Instance.directory
+	            const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+            if (slug) {
+              const match = yield* Effect.promise(() =>
+                Operation.recordWorkflowStep(workspace, slug, {
+                  tool: id,
+                  success: true,
+                  title: result.title,
+                  args,
+                }).catch(() => undefined),
+              ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+              if (match) {
+                const workflow = yield* Effect.promise(() =>
+                  Operation.readWorkflow(workspace, slug, {
+                    kind: match.kind,
+                    id: match.id,
+                  }).catch(() => undefined),
+                ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                if (workflow && Array.isArray(workflow["trace"]) && Array.isArray(workflow["skipped"])) {
+                  yield* Cyber.syncWorkflowProgress({
+                    operation_slug: slug,
+                    workflow_kind: match.kind,
+                    workflow_id: match.id,
+                    trace: workflow["trace"] as Array<Record<string, unknown>>,
+                    skipped: workflow["skipped"] as Array<Record<string, unknown>>,
+                    completed_steps: Number(workflow["completed_steps"] ?? 0),
+                    failed_steps: Number(workflow["failed_steps"] ?? 0),
+                    pending_steps: Number(workflow["pending_steps"] ?? 0),
+                    session_id: ctx.sessionID,
+                    message_id: ctx.messageID,
+                    source: "workflow",
+                    summary: `${match.kind} ${match.id} progress after ${id} completion`,
+                  }).pipe(Effect.catch(() => Effect.succeed("")))
+                }
+                yield* Cyber.appendLedger({
+                  operation_slug: slug,
+                  kind: "fact.observed",
+                  source: "workflow",
+                  session_id: ctx.sessionID,
+                  message_id: ctx.messageID,
+                  summary: `${match.kind} ${match.id} step ${match.step_index} completed via ${id}`,
+                  data: {
+                    workflow_kind: match.kind,
+                    workflow_id: match.id,
+                    step_index: match.step_index,
+                    status: match.status,
+                    tool: id,
+                  },
+	                }).pipe(Effect.catch(() => Effect.succeed("")))
+	              }
+	              if (id !== "report") {
+	                yield* refreshDerivedContext(workspace).pipe(Effect.catch(() => Effect.void))
+	              }
+	            }
+	          }
           if (result.metadata.truncated !== undefined) {
             return result
           }

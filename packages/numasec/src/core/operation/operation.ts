@@ -1,18 +1,27 @@
-// Operation v3 — single markdown file per engagement.
+// Operation state and projections.
 //
 // Layout:
-//   <workspace>/.numasec/operation/<slug>/numasec.md      (the fascicule — auto-loaded as system instruction)
-//   <workspace>/.numasec/operation/<slug>/evidence/       (agent-dropped attachments; referenced from numasec.md)
-//   <workspace>/.numasec/operation/<slug>/report-<ts>.md  (outputs of /report)
-//   <workspace>/.numasec/operation/active                 (marker file: contents = slug of active op)
+//   <workspace>/.numasec/operation/<slug>/numasec.md         (optional legacy notebook / projection)
+//   <workspace>/.numasec/operation/<slug>/cyber/             (kernel projections: ledger/facts/relations)
+//   <workspace>/.numasec/operation/<slug>/workflow/          (workflow projections)
+//   <workspace>/.numasec/operation/<slug>/context/           (derived prompt-facing context)
+//   <workspace>/.numasec/operation/<slug>/evidence/          (evidence artifacts)
+//   <workspace>/.numasec/operation/<slug>/deliverable/       (report bundles)
+//   <workspace>/.numasec/operation/active                    (marker file: contents = slug of active op)
 //
-// No event sourcing, no SQLite, no projection. The markdown file IS the state.
-// The agent maintains it using its existing edit/write/read tools.
+// Markdown is not the canonical source of truth.
+// Canonical state lives in the cyber kernel plus derived projections.
+// The notebook is now optional and treated as a compatibility/export surface.
 
 import { existsSync } from "fs"
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "fs/promises"
+import { appendFile, mkdir, readFile, readdir, rm, stat, writeFile } from "fs/promises"
 import path from "path"
 import { migrate } from "./migration"
+import { parseScope } from "./scope"
+import type { Boundary } from "../boundary/schema"
+import { Instance } from "@/project/instance"
+import { Database } from "@/storage"
+import { CyberFactTable, CyberLedgerTable, CyberRelationTable } from "../cyber/cyber.sql"
 
 const migrated = new Set<string>()
 
@@ -24,6 +33,8 @@ async function ensureMigrated(workspace: string): Promise<void> {
 
 export const ROOT_DIRNAME = ".numasec"
 export const OP_FILENAME = "numasec.md"
+const ACTIVITY_FILENAME = ".activity.json"
+const DERIVED_NOTEBOOK_MARKER = "Derived markdown projection from the cyber kernel."
 
 export type Kind = "pentest" | "appsec" | "osint" | "hacking" | "bughunt" | "ctf" | "research"
 
@@ -73,6 +84,32 @@ export interface Info {
   lines: number
 }
 
+export type ProjectedOperationState = {
+  label?: string
+  kind?: Kind
+  target?: string
+  opsec?: Opsec
+  in_scope?: string[]
+  out_of_scope?: string[]
+}
+
+export type ProjectedScopePolicy = Boundary
+
+export type ProjectedAutonomyPolicy = {
+  mode?: string
+  rules?: unknown
+  session_id?: string
+}
+
+function inferredScopeFromTarget(target?: string): string[] {
+  if (!target) return []
+  try {
+    return [new URL(target).hostname].filter(Boolean)
+  } catch {
+    return [target].filter(Boolean)
+  }
+}
+
 function rootDir(workspace: string) {
   return path.join(workspace, ROOT_DIRNAME, "operation")
 }
@@ -81,12 +118,56 @@ export function opDir(workspace: string, slug: string) {
   return path.join(rootDir(workspace), slug)
 }
 
+function sessionDir(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), "sessions")
+}
+
+function workflowDir(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), "workflow")
+}
+
+function contextDir(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), "context")
+}
+
+function workflowFile(workspace: string, slug: string, kind: "play" | "runbook", id: string) {
+  return path.join(workflowDir(workspace, slug), `${kind}-${safeSlug(id)}.json`)
+}
+
+function contextFile(workspace: string, slug: string) {
+  return path.join(contextDir(workspace, slug), "active-context.md")
+}
+
+function cyberFactsFile(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), "cyber", "facts.jsonl")
+}
+
+function activeWorkflowFile(workspace: string, slug: string) {
+  return path.join(workflowDir(workspace, slug), "active.json")
+}
+
 export function opFile(workspace: string, slug: string) {
   return path.join(opDir(workspace, slug), OP_FILENAME)
 }
 
 function activeMarker(workspace: string) {
   return path.join(rootDir(workspace), "active")
+}
+
+function activityFile(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), ACTIVITY_FILENAME)
+}
+
+function cyberDir(workspace: string, slug: string) {
+  return path.join(opDir(workspace, slug), "cyber")
+}
+
+function cyberLedgerFile(workspace: string, slug: string) {
+  return path.join(cyberDir(workspace, slug), "ledger.jsonl")
+}
+
+function cyberRelationsFile(workspace: string, slug: string) {
+  return path.join(cyberDir(workspace, slug), "relations.jsonl")
 }
 
 export function safeSlug(input: string): string {
@@ -105,48 +186,169 @@ async function uniqueSlug(workspace: string, base: string): Promise<string> {
   return `${tried}-${stamp}`
 }
 
-function skeleton(input: { label: string; kind: Kind; target?: string; opsec?: Opsec; createdAt: Date }): string {
-  const date = input.createdAt.toISOString().slice(0, 10)
-  const targetHost = (() => {
-    if (!input.target) return ""
-    try {
-      return new URL(input.target).hostname
-    } catch {
-      return input.target
-    }
-  })()
-  const scopeIn = targetHost ? `- in: ${targetHost}` : "- in:"
-  const targetLine = input.target ? ` · target: ${input.target}` : ""
-  const opsecLine = input.opsec && input.opsec !== "normal" ? ` · opsec: ${input.opsec}` : ""
-  return `# Operation: ${input.label}
-kind: ${input.kind}${targetLine}${opsecLine} · started: ${date}
+async function newestMTime(target: string): Promise<number> {
+  const st = await stat(target)
+  if (!st.isDirectory()) return st.mtimeMs
+  let latest = st.mtimeMs
+  const entries = await readdir(target, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    const child = path.join(target, entry.name)
+    const childMTime = await newestMTime(child).catch(() => 0)
+    if (childMTime > latest) latest = childMTime
+  }
+  return latest
+}
 
-<!--
-This is your living engagement notebook. The AI agent updates it automatically
-as it probes the target. You can edit it at any time in $EDITOR — changes persist.
-Promote proposed findings by changing [proposed] to [confirmed]; use [dismissed] to drop.
-Keep this file under ~1000 lines; summarize old Attempts into a Historical summary when it grows.
--->
+function cyberID(prefix: string) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
 
-## Scope
-${scopeIn}
-- out:
+async function writeInitialCyberKernelState(input: {
+  workspace: string
+  slug: string
+  label: string
+  kind: Kind
+  target?: string
+  opsec: Opsec
+  createdAt: number
+}) {
+  const inferredScope = inferredScopeFromTarget(input.target)
+  await Instance.provide({
+    directory: input.workspace,
+    fn: async () => {
+      const projectID = Instance.project.id
+      const eventID = cyberID("cled")
+      const operationStateID = cyberID("cfact")
+      const scopePolicyID = cyberID("cfact")
+      const relationID = input.target ? cyberID("crel") : undefined
+      const ledger = {
+        id: eventID,
+        project_id: projectID,
+        operation_slug: input.slug,
+        kind: "operation.note",
+        source: "operation",
+        status: "completed",
+        summary: `operation created ${input.slug}`,
+        data: {
+          label: input.label,
+          kind: input.kind,
+          target: input.target ?? null,
+          opsec: input.opsec,
+        },
+        time_created: input.createdAt,
+      }
+      const facts = [
+    {
+      id: operationStateID,
+      project_id: projectID,
+      operation_slug: input.slug,
+      entity_kind: "operation",
+      entity_key: input.slug,
+      fact_name: "operation_state",
+      status: "observed",
+      writer_kind: "tool",
+      confidence: 1000,
+      source_event_id: eventID,
+      time_created: input.createdAt,
+      time_updated: input.createdAt,
+      value_json: {
+        label: input.label,
+        kind: input.kind,
+        target: input.target,
+        opsec: input.opsec,
+        in_scope: inferredScope,
+        out_of_scope: [],
+      },
+    },
+    {
+      id: scopePolicyID,
+      project_id: projectID,
+      operation_slug: input.slug,
+      entity_kind: "operation",
+      entity_key: input.slug,
+      fact_name: "scope_policy",
+      status: "observed",
+      writer_kind: "tool",
+      confidence: 1000,
+      source_event_id: eventID,
+      time_created: input.createdAt,
+      time_updated: input.createdAt,
+      value_json: {
+        default: inferredScope.length > 0 ? "ask" : "allow",
+        in_scope: inferredScope,
+        out_of_scope: [],
+        opsec: input.opsec,
+      },
+    },
+  ]
+      const relations = input.target
+        ? [
+            {
+              id: relationID!,
+              project_id: projectID,
+              operation_slug: input.slug,
+              src_kind: "operation",
+              src_key: input.slug,
+              relation: "targets",
+              dst_kind: "target",
+              dst_key: input.target,
+              writer_kind: "tool",
+              status: "observed",
+              confidence: 1000,
+              source_event_id: eventID,
+              time_created: input.createdAt,
+              time_updated: input.createdAt,
+            },
+          ]
+        : []
+      Database.use((db) => {
+        db.insert(CyberLedgerTable).values(ledger).run()
+        db.insert(CyberFactTable).values(facts).run()
+        if (relations.length > 0) db.insert(CyberRelationTable).values(relations).run()
+      })
+      await mkdir(cyberDir(input.workspace, input.slug), { recursive: true })
+      await writeFile(cyberFactsFile(input.workspace, input.slug), facts.map((item) => JSON.stringify(item)).join("\n") + "\n", "utf8")
+      await writeFile(cyberLedgerFile(input.workspace, input.slug), `${JSON.stringify(ledger)}\n`, "utf8")
+      await writeFile(
+        cyberRelationsFile(input.workspace, input.slug),
+        relations.length > 0 ? relations.map((item) => JSON.stringify(item)).join("\n") + "\n" : "",
+        "utf8",
+      )
+    },
+  })
+}
 
-## Stack & Endpoints
-_nothing learned yet — will populate as the agent probes_
-
-## Defenses observed
-_nothing observed yet_
-
-## Findings
-_none yet_
-
-## Attempts
-_none yet_
-
-## Todos
-_none yet_
-`
+function initialContextPack(input: {
+  slug: string
+  label: string
+  kind: Kind
+  target?: string
+  opsec: Opsec
+  in_scope: string[]
+  out_of_scope: string[]
+}): string {
+  return [
+    "# Active Operation Context",
+    "",
+    `slug: ${input.slug}`,
+    `label: ${input.label}`,
+    `kind: ${input.kind}`,
+    `target: ${input.target ?? "-"}`,
+    `opsec: ${input.opsec}`,
+    "",
+    "## Scope",
+    ...input.in_scope.map((item) => `- in: ${item}`),
+    ...(input.in_scope.length === 0 ? ["- in:"] : []),
+    ...input.out_of_scope.map((item) => `- out: ${item}`),
+    ...(input.out_of_scope.length === 0 ? ["- out:"] : []),
+    "",
+    "## Kernel Summary",
+    "- routes: 0",
+    "- observations: 0",
+    "- findings: 0",
+    "- workflows: 0",
+    "",
+  ].join("\n")
 }
 
 export async function create(input: {
@@ -160,14 +362,35 @@ export async function create(input: {
   const dir = opDir(input.workspace, slug)
   await mkdir(path.join(dir, "evidence"), { recursive: true })
   const now = new Date()
-  const content = skeleton({
+  const inferredScope = inferredScopeFromTarget(input.target)
+  await writeInitialCyberKernelState({
+    workspace: input.workspace,
+    slug,
     label: input.label,
     kind: input.kind,
     target: input.target,
-    opsec: input.opsec,
-    createdAt: now,
+    opsec: input.opsec ?? "normal",
+    createdAt: now.getTime(),
   })
-  await writeFile(opFile(input.workspace, slug), content, "utf8")
+  await mkdir(contextDir(input.workspace, slug), { recursive: true })
+  await writeFile(
+    contextFile(input.workspace, slug),
+    initialContextPack({
+      slug,
+      label: input.label,
+      kind: input.kind,
+      target: input.target,
+      opsec: input.opsec ?? "normal",
+      in_scope: inferredScope,
+      out_of_scope: [],
+    }),
+    "utf8",
+  )
+  await writeFile(
+    activityFile(input.workspace, slug),
+    JSON.stringify({ touched_at: now.getTime(), source: "create" }, null, 2),
+    "utf8",
+  )
   await activate(input.workspace, slug)
   return {
     slug,
@@ -178,7 +401,7 @@ export async function create(input: {
     created_at: now.getTime(),
     updated_at: now.getTime(),
     active: true,
-    lines: content.split("\n").length,
+    lines: 0,
   }
 }
 
@@ -199,7 +422,7 @@ export async function activeSlug(workspace: string): Promise<string | undefined>
   if (!existsSync(marker)) return undefined
   const slug = (await readFile(marker, "utf8")).trim()
   if (!slug) return undefined
-  if (!existsSync(opFile(workspace, slug))) return undefined
+  if (!existsSync(opDir(workspace, slug))) return undefined
   return slug
 }
 
@@ -227,25 +450,122 @@ async function parseHeader(content: string, fallback: { slug: string; createdAt:
   return { label, kind, target: targetMatch?.[1], opsec }
 }
 
+async function readProjectedOperationState(workspace: string, slug: string): Promise<
+  ProjectedOperationState | undefined
+> {
+  return readProjectedOperationFact(workspace, slug, "operation_state", (projected) => {
+    const kind =
+      typeof projected.kind === "string" && KINDS.includes(projected.kind as Kind) ? (projected.kind as Kind) : undefined
+    const opsec =
+      typeof projected.opsec === "string" && OPSECS.includes(projected.opsec as Opsec)
+        ? (projected.opsec as Opsec)
+        : undefined
+    return {
+      label: typeof projected.label === "string" ? projected.label : undefined,
+      kind,
+      target: typeof projected.target === "string" ? projected.target : undefined,
+      opsec,
+      in_scope: Array.isArray(projected.in_scope)
+        ? projected.in_scope.filter((item): item is string => typeof item === "string")
+        : undefined,
+      out_of_scope: Array.isArray(projected.out_of_scope)
+        ? projected.out_of_scope.filter((item): item is string => typeof item === "string")
+        : undefined,
+    }
+  })
+}
+
+async function readProjectedOperationFact<T>(
+  workspace: string,
+  slug: string,
+  factName: "operation_state" | "scope_policy" | "autonomy_policy",
+  parse: (projected: Record<string, unknown>) => T | undefined,
+): Promise<T | undefined> {
+  const file = cyberFactsFile(workspace, slug)
+  if (!existsSync(file)) return undefined
+  const raw = await readFile(file, "utf8").catch(() => "")
+  if (!raw) return undefined
+  let latest: Record<string, unknown> | undefined
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>
+      if (
+        parsed["entity_kind"] === "operation" &&
+        parsed["entity_key"] === slug &&
+        parsed["fact_name"] === factName
+      ) {
+        latest = parsed
+      }
+    } catch {}
+  }
+  const value = latest?.["value_json"]
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  return parse(value as Record<string, unknown>)
+}
+
+export async function readProjectedState(workspace: string, slug: string): Promise<ProjectedOperationState | undefined> {
+  return readProjectedOperationState(workspace, slug)
+}
+
+export async function readProjectedScopePolicy(
+  workspace: string,
+  slug: string,
+): Promise<ProjectedScopePolicy | undefined> {
+  return readProjectedOperationFact(workspace, slug, "scope_policy", (projected) => ({
+    default: projected.default === "allow" ? "allow" : "ask",
+    in_scope: Array.isArray(projected.in_scope)
+      ? projected.in_scope.filter((item): item is string => typeof item === "string")
+      : [],
+    out_of_scope: Array.isArray(projected.out_of_scope)
+      ? projected.out_of_scope.filter((item): item is string => typeof item === "string")
+      : [],
+  }))
+}
+
+export async function readProjectedAutonomyPolicy(
+  workspace: string,
+  slug: string,
+): Promise<ProjectedAutonomyPolicy | undefined> {
+  return readProjectedOperationFact(workspace, slug, "autonomy_policy", (projected) => ({
+    mode: typeof projected.mode === "string" ? projected.mode : undefined,
+    rules: projected.rules,
+    session_id: typeof projected.session_id === "string" ? projected.session_id : undefined,
+  }))
+}
+
 // Backward-compatible alias for callers (e.g. core/deliverable/build.ts) that still use `get`.
 export const get = (workspace: string, slug: string) => read(workspace, slug)
 
 export async function read(workspace: string, slug: string): Promise<Info | undefined> {
   const file = opFile(workspace, slug)
-  if (!existsSync(file)) return undefined
-  const [content, st] = await Promise.all([readFile(file, "utf8"), stat(file)])
+  const dir = opDir(workspace, slug)
+  if (!existsSync(dir)) return undefined
+  const [content, dirStat, projected, updatedAt] = await Promise.all([
+    existsSync(file) ? readFile(file, "utf8").catch(() => "") : Promise.resolve(""),
+    stat(dir),
+    readProjectedOperationState(workspace, slug).catch(() => undefined),
+    newestMTime(dir).catch(() => stat(dir).then((entry) => entry.mtimeMs).catch(() => Date.now())),
+  ])
   const active = (await activeSlug(workspace)) === slug
-  const header = await parseHeader(content, { slug, createdAt: st.birthtimeMs })
+  const header = content
+    ? await parseHeader(content, { slug, createdAt: dirStat.birthtimeMs })
+    : {
+        label: slug,
+        kind: "pentest" as Kind,
+        target: undefined,
+        opsec: "normal" as Opsec,
+      }
   return {
     slug,
-    label: header.label,
-    kind: header.kind,
-    target: header.target,
-    opsec: header.opsec,
-    created_at: st.birthtimeMs,
-    updated_at: st.mtimeMs,
+    label: projected?.label ?? header.label,
+    kind: projected?.kind ?? header.kind,
+    target: projected?.target ?? header.target,
+    opsec: projected?.opsec ?? header.opsec,
+    created_at: dirStat.birthtimeMs,
+    updated_at: updatedAt,
     active,
-    lines: content.split("\n").length,
+    lines: content ? content.split("\n").length : 0,
   }
 }
 
@@ -266,41 +586,393 @@ export async function active(workspace: string): Promise<Info | undefined> {
 }
 
 export async function touch(workspace: string, slug: string): Promise<void> {
-  const file = opFile(workspace, slug)
-  if (!existsSync(file)) return
-  const now = new Date()
-  // mtime update without rewriting content: append-read-trim is heavy; use utimes equivalent
-  const content = await readFile(file, "utf8")
-  await writeFile(file, content, "utf8")
-  void now
+  const dir = opDir(workspace, slug)
+  if (!existsSync(dir)) return
+  await writeFile(
+    activityFile(workspace, slug),
+    JSON.stringify({ touched_at: Date.now(), source: "touch" }, null, 2),
+    "utf8",
+  )
+}
+
+export async function attachSession(workspace: string, slug: string, sessionID: string): Promise<void> {
+  const dir = opDir(workspace, slug)
+  if (!existsSync(dir)) return
+  const sessions = sessionDir(workspace, slug)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(
+    path.join(sessions, `${sessionID}.json`),
+    JSON.stringify({ session_id: sessionID, attached_at: Date.now() }, null, 2),
+    "utf8",
+  )
+  await touch(workspace, slug)
+}
+
+export async function writeWorkflow(
+  workspace: string,
+  slug: string,
+  input: { kind: "play" | "runbook"; id: string; payload: Record<string, unknown> },
+): Promise<void> {
+  const dir = opDir(workspace, slug)
+  if (!existsSync(dir)) return
+  const workflows = workflowDir(workspace, slug)
+  await mkdir(workflows, { recursive: true })
+  await writeFile(
+    workflowFile(workspace, slug, input.kind, input.id),
+    JSON.stringify(
+      {
+        kind: input.kind,
+        id: input.id,
+        updated_at: Date.now(),
+        ...input.payload,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  )
+  await touch(workspace, slug)
+}
+
+export async function writeContextPack(workspace: string, slug: string, content: string): Promise<void> {
+  const dir = opDir(workspace, slug)
+  if (!existsSync(dir)) return
+  const targetDir = contextDir(workspace, slug)
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(contextFile(workspace, slug), content, "utf8")
+  await touch(workspace, slug)
+}
+
+export async function readContextPack(workspace: string, slug: string): Promise<string | undefined> {
+  const file = contextFile(workspace, slug)
+  if (!existsSync(file)) return undefined
+  return readFile(file, "utf8").catch(() => undefined)
+}
+
+export async function readBoundary(workspace: string, slug: string): Promise<Boundary | undefined> {
+  const projected = await readProjectedScopePolicy(workspace, slug).catch(() => undefined)
+  if (projected) return projected
+  const markdown = await readMarkdown(workspace, slug).catch(() => undefined)
+  if (!markdown) return undefined
+  return parseScope(markdown)
+}
+
+export async function readWorkflow(
+  workspace: string,
+  slug: string,
+  input: { kind: "play" | "runbook"; id: string },
+): Promise<Record<string, unknown> | undefined> {
+  const file = workflowFile(workspace, slug, input.kind, input.id)
+  if (!existsSync(file)) return undefined
+  const raw = await readFile(file, "utf8").catch(() => "")
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+export async function setActiveWorkflow(
+  workspace: string,
+  slug: string,
+  input: { kind: "play" | "runbook"; id: string },
+): Promise<void> {
+  const workflows = workflowDir(workspace, slug)
+  await mkdir(workflows, { recursive: true })
+  await writeFile(
+    activeWorkflowFile(workspace, slug),
+    JSON.stringify({ kind: input.kind, id: input.id, at: Date.now() }, null, 2),
+    "utf8",
+  )
+  await touch(workspace, slug)
+}
+
+export async function activeWorkflow(
+  workspace: string,
+  slug: string,
+): Promise<{ kind: "play" | "runbook"; id: string } | undefined> {
+  const file = activeWorkflowFile(workspace, slug)
+  if (!existsSync(file)) return undefined
+  const raw = await readFile(file, "utf8").catch(() => "")
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw) as { kind?: string; id?: string }
+    if ((parsed.kind === "play" || parsed.kind === "runbook") && typeof parsed.id === "string" && parsed.id) {
+      return { kind: parsed.kind, id: parsed.id }
+    }
+  } catch {}
+  return undefined
+}
+
+function matchesPlannedArgs(expected: unknown, actual: unknown): boolean {
+  if (expected === undefined) return true
+  if (expected === null || actual === null) return expected === actual
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return false
+    if (expected.length > actual.length) return false
+    return expected.every((item, index) => matchesPlannedArgs(item, actual[index]))
+  }
+  if (typeof expected === "object") {
+    if (!actual || typeof actual !== "object" || Array.isArray(actual)) return false
+    return Object.entries(expected).every(([key, value]) =>
+      matchesPlannedArgs(value, (actual as Record<string, unknown>)[key]),
+    )
+  }
+  return expected === actual
+}
+
+export async function recordWorkflowStep(
+  workspace: string,
+  slug: string,
+  input: { tool: string; success: boolean; title?: string; error?: string; args?: unknown },
+): Promise<{ kind: "play" | "runbook"; id: string; step_index: number; status: "completed" | "failed" } | undefined> {
+  const active = await activeWorkflow(workspace, slug)
+  if (!active) return undefined
+  const workflow = await readWorkflow(workspace, slug, active)
+  if (!workflow) return undefined
+  const trace = Array.isArray(workflow["trace"]) ? structuredClone(workflow["trace"]) as Array<Record<string, unknown>> : []
+  const skipped = Array.isArray(workflow["skipped"]) ? workflow["skipped"] as Array<Record<string, unknown>> : []
+  const unresolved = trace
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => {
+      if (step["kind"] !== "tool") return false
+      if (step["tool"] !== input.tool) return false
+      return step["outcome"] === undefined
+    })
+  const matchedByArgs = unresolved.find(({ step }) =>
+    matchesPlannedArgs(step["args"], input.args),
+  )
+  const index = matchedByArgs?.index ?? unresolved[0]?.index ?? -1
+  if (index < 0) return undefined
+  if (!trace[index]) return undefined
+  const original = trace[index]
+  if (
+    original["kind"] !== "tool" ||
+    original["tool"] !== input.tool ||
+    original["outcome"] !== undefined
+  ) {
+    return undefined
+  }
+  trace[index] = {
+    ...original,
+    outcome: input.success ? "completed" : "failed",
+    outcome_at: Date.now(),
+    ...(input.title ? { outcome_title: input.title } : {}),
+    ...(input.error ? { outcome_error: input.error } : {}),
+    ...(input.args !== undefined ? { last_args: input.args } : {}),
+  }
+  for (let stepIndex = 0; stepIndex < trace.length; stepIndex += 1) {
+    const step = trace[stepIndex]
+    if (!step || step["kind"] === "tool" || step["outcome"] !== undefined) continue
+    const laterResolvedToolExists = trace.slice(stepIndex + 1).some((candidate) => {
+      if (!candidate || candidate["kind"] !== "tool") return false
+      return candidate["outcome"] === "completed" || candidate["outcome"] === "failed"
+    })
+    if (!laterResolvedToolExists) continue
+    trace[stepIndex] = {
+      ...step,
+      outcome: "skipped",
+      outcome_at: Date.now(),
+      outcome_error: "skipped by agent",
+    }
+    skipped.push({
+      index: stepIndex + 1,
+      kind: step["kind"],
+      label: step["label"],
+      reason: "skipped by agent",
+    })
+  }
+  const completed = trace.filter((step) => step["outcome"] === "completed").length
+  const failed = trace.filter((step) => step["outcome"] === "failed").length
+  const skippedCount = trace.filter((step) => step["outcome"] === "skipped").length
+  await writeWorkflow(workspace, slug, {
+    kind: active.kind,
+    id: active.id,
+    payload: {
+      ...workflow,
+      trace,
+      skipped,
+      completed_steps: completed,
+      failed_steps: failed,
+      pending_steps: Math.max(0, trace.length - completed - failed - skippedCount),
+    },
+  })
+  return {
+    kind: active.kind,
+    id: active.id,
+    step_index: index + 1,
+    status: input.success ? "completed" : "failed",
+  }
 }
 
 export async function readMarkdown(workspace: string, slug: string): Promise<string | undefined> {
   const file = opFile(workspace, slug)
-  if (!existsSync(file)) return undefined
-  return readFile(file, "utf8")
+  if (existsSync(file)) {
+    const content = await readFile(file, "utf8").catch(() => undefined)
+    if (content && !content.includes(DERIVED_NOTEBOOK_MARKER)) return content
+  }
+  return renderProjectedMarkdown(workspace, slug)
+}
+
+async function renderProjectedMarkdown(workspace: string, slug: string): Promise<string | undefined> {
+  const info = await read(workspace, slug)
+  if (!info) return undefined
+  const [scope, autonomy, context, projected] = await Promise.all([
+    readProjectedScopePolicy(workspace, slug).catch(() => undefined),
+    readProjectedAutonomyPolicy(workspace, slug).catch(() => undefined),
+    readContextPack(workspace, slug).catch(() => undefined),
+    import("../cyber").then(({ Cyber }) => Cyber.readProjectedState(workspace, slug)).catch(() => undefined),
+  ])
+  const started = new Date(info.created_at).toISOString().slice(0, 10)
+  const scopeIn = scope?.in_scope?.length ? scope.in_scope.join(", ") : "-"
+  const scopeOut = scope?.out_of_scope?.length ? scope.out_of_scope.join(", ") : "-"
+  const kernel = projected?.summary
+  const capsuleLine = kernel
+    ? `ready=${kernel.ready_capsules} degraded=${kernel.degraded_capsules} unavailable=${kernel.unavailable_capsules} recommended=${kernel.recommended_capsules} executed=${kernel.executed_capsules}`
+    : "-"
+  const activeIdentityKeys =
+    projected?.identities
+      .filter((item) => item.fact_name === "active" && item.active)
+      .map((item) => item.key)
+      .sort() ?? []
+  const latestDeliverable = projected?.deliverables[0]
+  const latestShareBundle = projected?.share_bundles[0]
+  const identityLine = kernel
+    ? `descriptors=${kernel.identities} active=${kernel.active_identities}${activeIdentityKeys.length > 0 ? ` (${activeIdentityKeys.join(", ")})` : ""}`
+    : "-"
+  const toolAdapterLine = kernel
+    ? `present=${kernel.tool_adapters_present} missing=${kernel.tool_adapters_missing}`
+    : "-"
+  const verticalLine = kernel
+    ? `ready=${kernel.ready_verticals} degraded=${kernel.degraded_verticals} unavailable=${kernel.unavailable_verticals}`
+    : "-"
+  const knowledgeLine = kernel ? `queries=${kernel.knowledge_queries}` : "-"
+  const deliverableLine = kernel
+    ? `deliverables=${kernel.deliverables} share_bundles=${kernel.share_bundles}${latestDeliverable?.report_path ? ` latest_report=${latestDeliverable.report_path}` : ""}${latestShareBundle?.path ? ` latest_share=${latestShareBundle.path}` : ""}`
+    : "-"
+  const completedSteps =
+    projected?.workflow_steps.filter((item) => item.outcome === "completed").length ??
+    projected?.workflows.reduce((sum, item) => sum + (item.completed_steps ?? 0), 0) ??
+    0
+  return [
+    `# Operation: ${info.label}`,
+    `kind: ${info.kind}${info.target ? ` · target: ${info.target}` : ""} · opsec: ${info.opsec} · started: ${started}`,
+    "",
+    "<!--",
+    DERIVED_NOTEBOOK_MARKER,
+    "This file was generated because the legacy notebook is absent.",
+    "-->",
+    "",
+    "## Scope",
+    `- in: ${scopeIn}`,
+    `- out: ${scopeOut}`,
+    "",
+    "## Operation State",
+    `- active: ${info.active ? "yes" : "no"}`,
+    `- autonomy: ${autonomy?.mode ?? "-"}`,
+    "",
+    "## Kernel Summary",
+    kernel
+      ? `- routes: ${kernel.route_facts}\n- observations: ${kernel.observations_projected}\n- workflows: ${projected?.workflows.length ?? 0}\n- completed_steps: ${completedSteps}\n- findings: ${kernel.findings}\n- candidate_findings: ${kernel.candidate_findings}`
+      : "- unavailable",
+    "",
+    "## Reportability",
+    kernel
+      ? `- reportable: ${kernel.reportable_findings}\n- suspected: ${kernel.suspected_findings}\n- rejected: ${kernel.rejected_findings}\n- verified: ${kernel.verified_findings}\n- evidence_backed: ${kernel.evidence_backed_findings}\n- replay_backed: ${kernel.replay_backed_findings}\n- replay_exempt: ${kernel.replay_exempt_findings}`
+      : "- unavailable",
+    "",
+    "## Capsules",
+    `- ${capsuleLine}`,
+    "",
+    "## Identities",
+    `- ${identityLine}`,
+    "",
+    "## Knowledge",
+    `- ${knowledgeLine}`,
+    "",
+    "## Tool Runtime",
+    `- adapters: ${toolAdapterLine}`,
+    `- verticals: ${verticalLine}`,
+    "",
+    "## Exports",
+    `- ${deliverableLine}`,
+    "",
+    "## Context Pack",
+    context?.trim() || "_not generated yet_",
+    "",
+  ].join("\n")
 }
 
 // Rewrites the meta line (2nd line) of numasec.md to set or unset `opsec: <level>`.
 // Level "normal" is the default and is stored by removing any explicit opsec marker.
 export async function setOpsec(workspace: string, slug: string, level: Opsec): Promise<void> {
   const file = opFile(workspace, slug)
-  if (!existsSync(file)) return
-  const content = await readFile(file, "utf8")
-  const lines = content.split("\n")
-  const meta = lines[1] ?? ""
-  const stripped = meta
-    .replace(/\s*·\s*opsec:\s*\S+/g, "")
-    .replace(/^opsec:\s*\S+\s*·?\s*/, "")
-  if (level === "normal") {
-    lines[1] = stripped
-  } else {
-    const startedIdx = stripped.search(/·\s*started:/)
-    if (startedIdx >= 0) {
-      lines[1] = stripped.slice(0, startedIdx) + `· opsec: ${level} ` + stripped.slice(startedIdx)
-    } else {
-      lines[1] = `${stripped} · opsec: ${level}`
+  if (existsSync(file)) {
+    const content = await readFile(file, "utf8")
+    if (!content.includes(DERIVED_NOTEBOOK_MARKER)) {
+      const lines = content.split("\n")
+      const meta = lines[1] ?? ""
+      const stripped = meta
+        .replace(/\s*·\s*opsec:\s*\S+/g, "")
+        .replace(/^opsec:\s*\S+\s*·?\s*/, "")
+      if (level === "normal") {
+        lines[1] = stripped
+      } else {
+        const startedIdx = stripped.search(/·\s*started:/)
+        if (startedIdx >= 0) {
+          lines[1] = stripped.slice(0, startedIdx) + `· opsec: ${level} ` + stripped.slice(startedIdx)
+        } else {
+          lines[1] = `${stripped} · opsec: ${level}`
+        }
+      }
+      await writeFile(file, lines.join("\n"), "utf8")
     }
   }
-  await writeFile(file, lines.join("\n"), "utf8")
+
+  const [info, projectedState, scope] = await Promise.all([
+    read(workspace, slug).catch(() => undefined),
+    readProjectedState(workspace, slug).catch(() => undefined),
+    readProjectedScopePolicy(workspace, slug).catch(() => undefined),
+  ])
+  const now = Date.now()
+  const operationState = {
+    entity_kind: "operation",
+    entity_key: slug,
+    fact_name: "operation_state",
+    status: "observed",
+    writer_kind: "tool",
+    time_created: now,
+    time_updated: now,
+    value_json: {
+      label: projectedState?.label ?? info?.label ?? slug,
+      kind: projectedState?.kind ?? info?.kind ?? "pentest",
+      target: projectedState?.target ?? info?.target,
+      opsec: level,
+      in_scope: projectedState?.in_scope ?? scope?.in_scope ?? [],
+      out_of_scope: projectedState?.out_of_scope ?? scope?.out_of_scope ?? [],
+    },
+  }
+  const scopePolicy = {
+    entity_kind: "operation",
+    entity_key: slug,
+    fact_name: "scope_policy",
+    status: "observed",
+    writer_kind: "tool",
+    time_created: now,
+    time_updated: now,
+    value_json: {
+      default: scope?.default ?? (((projectedState?.in_scope?.length ?? 0) > 0 || (projectedState?.out_of_scope?.length ?? 0) > 0) ? "ask" : "allow"),
+      in_scope: scope?.in_scope ?? projectedState?.in_scope ?? [],
+      out_of_scope: scope?.out_of_scope ?? projectedState?.out_of_scope ?? [],
+      opsec: level,
+    },
+  }
+  await mkdir(cyberDir(workspace, slug), { recursive: true })
+  await appendFile(
+    cyberFactsFile(workspace, slug),
+    `${JSON.stringify(operationState)}\n${JSON.stringify(scopePolicy)}\n`,
+    "utf8",
+  )
+  await touch(workspace, slug)
 }
