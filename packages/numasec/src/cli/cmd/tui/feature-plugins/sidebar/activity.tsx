@@ -1,6 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/tui"
 import type { ToolPart } from "@numasec/sdk/v2"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { loadOperationConsoleSnapshot } from "./operation-console"
 
 const id = "internal:sidebar-activity"
 
@@ -114,7 +115,6 @@ export function deriveLabel(tool: string, input: Record<string, unknown>): strin
 
 type Row = {
   id: string
-  tool: string
   status: "pending" | "running" | "completed" | "error"
   label: string
   statusSuffix: string
@@ -184,7 +184,6 @@ function rowFromPart(part: ToolPart): Row | null {
 
   return {
     id: part.id,
-    tool: part.tool,
     status: state.status,
     label,
     statusSuffix: suffix,
@@ -207,8 +206,20 @@ function glyphFor(status: Row["status"]): string {
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
+  const [tick, setTick] = createSignal(true)
+  const refresh = () => setTick((value) => !value)
+  let inflight = false
 
   const messages = createMemo(() => props.api.state.session.messages(props.session_id))
+  const [snapshot] = createResource(tick, async () => {
+    if (inflight) return undefined
+    inflight = true
+    try {
+      return await loadOperationConsoleSnapshot(props.api.state.path.directory)
+    } finally {
+      inflight = false
+    }
+  })
 
   const rows = createMemo<Row[]>(() => {
     const acc: Row[] = []
@@ -224,7 +235,34 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return acc.slice(-MAX_ROWS).reverse()
   })
 
-  const empty = createMemo(() => rows().length === 0)
+  const timelineRows = createMemo<Row[]>(() => {
+    const items = snapshot()?.timeline ?? []
+    return items.slice(0, MAX_ROWS).map((item) => ({
+      id: item.id,
+      status: item.status === "failed" ? "error" : "completed",
+      label: truncateMid(item.summary || item.kind, LABEL_MAX),
+      statusSuffix: new Date(item.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      statusColorKey:
+        item.status === "failed"
+          ? "error"
+          : item.kind.includes("report")
+            ? "success"
+            : item.kind.includes("tool")
+              ? "info"
+              : "muted",
+      ts: item.time_created,
+    }))
+  })
+
+  const effectiveRows = createMemo(() => (timelineRows().length > 0 ? timelineRows() : rows()))
+  const empty = createMemo(() => effectiveRows().length === 0)
+
+  const offIdle = props.api.event.on("session.idle", () => refresh())
+  const offPart = props.api.event.on("message.part.updated", () => refresh())
+  onCleanup(() => {
+    offIdle()
+    offPart()
+  })
 
   const colorFor = (key: Row["statusColorKey"]) => {
     const t = theme()
@@ -255,7 +293,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </text>
         }
       >
-        <For each={rows()}>
+        <For each={effectiveRows()}>
           {(row) => (
             <box flexDirection="row" gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1} flexShrink={1}>

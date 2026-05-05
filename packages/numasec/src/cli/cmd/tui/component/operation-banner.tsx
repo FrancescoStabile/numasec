@@ -1,7 +1,15 @@
-import { createResource, createSignal, Show } from "solid-js"
+import { createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
 import { useProject } from "@tui/context/project"
 import { useTheme } from "@tui/context/theme"
-import { Operation, type OperationInfo, type OperationKind } from "@/core/operation"
+import { useEvent } from "@tui/context/event"
+import { type OperationKind } from "@/core/operation"
+import {
+  loadOperationConsoleSnapshot,
+  replayCoveredCount,
+  reportStatus,
+  scopeDecision,
+  type OperationConsoleSnapshot,
+} from "@tui/feature-plugins/sidebar/operation-console"
 
 // Single-line banner for the active operation. Event-driven: fetched once on mount,
 // plus explicit refresh() invocations when the app mutates the operation (create /
@@ -28,41 +36,63 @@ function relativeAge(ms: number): string {
 
 export function OperationBanner() {
   const project = useProject()
+  const event = useEvent()
   const { theme } = useTheme()
   // Boolean-flip tick: only two distinct source values, so createResource can never
   // stack dozens of in-flight fetches with fresh source identities.
-  const [tick] = createSignal(true)
+  const [tick, setTick] = createSignal(true)
   let inflight = false
 
-  const [info] = createResource(tick, async (): Promise<OperationInfo | undefined> => {
+  const refresh = () => setTick((value) => !value)
+  const [info] = createResource<OperationConsoleSnapshot | undefined, boolean>(tick, async () => {
     if (inflight) return
     inflight = true
     try {
       const dir = project.instance.directory()
       if (!dir) return undefined
-      return await Operation.active(dir).catch(() => undefined)
+      return await loadOperationConsoleSnapshot(dir)
     } finally {
       inflight = false
     }
   })
+  const snapshot = createMemo(() => info())
+  const active = createMemo(() => snapshot()?.active)
+
+  const offIdle = event.on("session.idle", () => refresh())
+  const offPart = event.on("message.part.updated", () => refresh())
+  const offStatus = event.on("session.status", () => refresh())
+  onCleanup(() => {
+    offIdle()
+    offPart()
+    offStatus()
+  })
 
   return (
-    <Show when={info()}>
-      {(i) => (
+    <box>
+      <Show when={active()}>
         <box flexDirection="row" paddingLeft={2} paddingRight={2} flexShrink={0}>
           <text fg={theme.primary}>
-            {KIND_GLYPHS[i().kind] ?? "◆"}{" "}
+            {KIND_GLYPHS[active()!.kind] ?? "◆"}{" "}
             <span style={{ fg: theme.text }}>
-              <b>{i().label}</b>
+              <b>{active()!.label}</b>
             </span>
             <span style={{ fg: theme.textMuted }}>
               {" "}
-              · {i().kind}
-              {i().target ? ` · ${i().target}` : ""} · {i().lines}L · updated {relativeAge(i().updated_at)}
+              · {active()!.kind}
+              {active()!.target ? ` · ${active()!.target}` : ""}
+              {snapshot() ? (() => {
+                const decision = scopeDecision(snapshot()!)
+                return decision ? ` · scope ${decision.mode}` : ""
+              })() : ""}
+              {snapshot() && (snapshot()!.projected?.summary.verified_findings ?? 0) > 0
+                ? ` · replay ${replayCoveredCount(snapshot()!)}/${snapshot()!.projected?.summary.verified_findings ?? 0}`
+                : ""}
+              {snapshot() ? ` · report ${reportStatus(snapshot()!)}` : ""}
+              · updated {relativeAge(active()!.updated_at)}
             </span>
           </text>
         </box>
-      )}
-    </Show>
+      </Show>
+    </box>
   )
 }
