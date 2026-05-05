@@ -149,8 +149,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   return (
     <box>
       <box flexDirection="row" gap={1}>
-        <text fg={theme().primary} flexShrink={0}>⬢</text>
-        <text fg={theme().text} wrapMode="none">
+        <text fg={theme().textMuted} wrapMode="none">
           <b>PULSE</b>
         </text>
       </box>

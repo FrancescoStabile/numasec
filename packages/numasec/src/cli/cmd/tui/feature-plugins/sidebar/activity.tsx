@@ -192,16 +192,17 @@ function rowFromPart(part: ToolPart): Row | null {
   }
 }
 
-function glyphFor(status: Row["status"]): string {
-  switch (status) {
-    case "running":
-    case "pending":
-      return "⧗"
-    case "completed":
-      return "✓"
-    case "error":
-      return "✗"
-  }
+function timeLabel(ts: number): string {
+  if (!ts) return "--:--"
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+function outcomeLabel(row: Row): string {
+  if (row.statusSuffix) return row.statusSuffix
+  if (row.status === "completed") return "done"
+  if (row.status === "running") return "run"
+  if (row.status === "pending") return "wait"
+  return "fail"
 }
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
@@ -241,7 +242,16 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       id: item.id,
       status: item.status === "failed" ? "error" : "completed",
       label: truncateMid(item.summary || item.kind, LABEL_MAX),
-      statusSuffix: new Date(item.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      statusSuffix:
+        item.status === "failed"
+          ? "fail"
+          : item.kind.includes("report")
+            ? "ready"
+            : item.kind.includes("evidence")
+              ? "evidence"
+              : item.kind.includes("replay")
+                ? "replay"
+                : "done",
       statusColorKey:
         item.status === "failed"
           ? "error"
@@ -296,19 +306,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={effectiveRows()}>
           {(row) => (
             <box flexDirection="row" gap={1} justifyContent="space-between">
-              <box flexDirection="row" gap={1} flexShrink={1}>
-                <text flexShrink={0} fg={colorFor(row.statusColorKey)}>
-                  {glyphFor(row.status)}
-                </text>
-                <text wrapMode="none" fg={theme().textMuted}>
-                  {row.label}
-                </text>
-              </box>
-              <Show when={row.statusSuffix}>
-                <text flexShrink={0} fg={colorFor(row.statusColorKey)} wrapMode="none">
-                  {row.statusSuffix}
-                </text>
-              </Show>
+              <text flexShrink={0} fg={theme().textMuted} wrapMode="none">
+                {timeLabel(row.ts)}
+              </text>
+              <text wrapMode="none" fg={theme().textMuted}>
+                {row.label}
+              </text>
+              <text flexShrink={0} fg={colorFor(row.statusColorKey)} wrapMode="none">
+                {outcomeLabel(row)}
+              </text>
             </box>
           )}
         </For>

@@ -100,14 +100,9 @@ function View(props: { api: TuiPluginApi }) {
   // a concrete opentui node (not Switch/Show) must be the top-level return.
   return (
     <box>
-      <box flexDirection="row" gap={1}>
-        <text fg={theme().primary} flexShrink={0}>
-          ❖
-        </text>
-        <text fg={theme().text} wrapMode="none">
-          <b>CAPABILITY</b>
-        </text>
-      </box>
+      <text fg={theme().text} wrapMode="none">
+        <b>CAPABILITY</b>
+      </text>
       <Show
         when={ready()}
         fallback={
@@ -125,7 +120,7 @@ function View(props: { api: TuiPluginApi }) {
           </text>
         </box>
         <box flexDirection="row" gap={1}>
-          <text fg={theme().success} wrapMode="none">
+          <text fg={capability().ready.length > 0 ? theme().success : theme().textMuted} wrapMode="none">
             ready {capability().ready.length}
           </text>
           <text fg={capability().degraded.length > 0 ? theme().warning : theme().textMuted} wrapMode="none">

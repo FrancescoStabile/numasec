@@ -49,8 +49,8 @@ function View(props: { api: TuiPluginApi }) {
         >
           <text fg={theme().textMuted} wrapMode="none">
             proof {summary()?.reportable_findings ?? 0}r/{summary()?.verified_findings ?? 0}v · replay{" "}
-            {snapshot() ? replayCoveredCount(snapshot()!) : 0}/{summary()?.verified_findings ?? 0} · evidence{" "}
-            {snapshot()?.evidenceCount ?? 0} · report {snapshot() ? reportStatus(snapshot()!) : "cold"}
+            {snapshot() ? replayCoveredCount(snapshot()!) : 0}/{summary()?.verified_findings ?? 0} · report{" "}
+            {snapshot() ? reportStatus(snapshot()!) : "cold"}
           </text>
         </Show>
       </Show>

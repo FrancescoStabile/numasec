@@ -1,10 +1,12 @@
 import { useSync } from "@tui/context/sync"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../context/tui-config"
 import { InstallationVersion } from "@/installation/version"
 import { TuiPluginRuntime } from "../../plugin"
 import { BRAND } from "../../component/glyph"
+import { Operation } from "@/core/operation"
+import { useEvent } from "@tui/context/event"
 
 import { getScrollAcceleration } from "../../util/scroll"
 
@@ -12,8 +14,22 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
+  const event = useEvent()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
+  const [tick, setTick] = createSignal(true)
+  const refresh = () => setTick((value) => !value)
+  const [activeOperation] = createResource(tick, async () => {
+    const directory = sync.path.directory
+    if (!directory) return undefined
+    return Operation.active(directory).catch(() => undefined)
+  })
+  const offIdle = event.on("session.idle", () => refresh())
+  const offStatus = event.on("session.status", () => refresh())
+  onCleanup(() => {
+    offIdle()
+    offStatus()
+  })
 
   return (
     <Show when={session()}>
@@ -47,9 +63,11 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               share_url={session()!.share?.url}
             >
               <box paddingRight={1}>
-                <text fg={theme.text}>
-                  <b>{session()!.title}</b>
-                </text>
+                <Show when={!activeOperation()}>
+                  <text fg={theme.textMuted}>
+                    <b>{session()!.title}</b>
+                  </text>
+                </Show>
                 <Show when={session()!.share?.url}>
                   <text fg={theme.textMuted}>{session()!.share!.url}</text>
                 </Show>

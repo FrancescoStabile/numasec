@@ -73,11 +73,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </text>
         }
       >
-        <text fg={theme().primary} wrapMode="word">
+        <text fg={theme().text} wrapMode="word">
           {active()?.label}
         </text>
         <text fg={theme().textMuted} wrapMode="none">
-          kind {active()?.kind} · target {active()?.target ?? "-"}
+          kind {active()?.kind} · target <span style={{ fg: theme().primary }}>{active()?.target ?? "-"}</span>
         </text>
         <box flexDirection="row" gap={1}>
           <text fg={scopeColor()} wrapMode="none">
