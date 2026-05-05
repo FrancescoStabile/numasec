@@ -1340,7 +1340,7 @@ export function Session() {
         <box flexDirection="column" flexGrow={1}>
           <OperationBanner />
           <box flexDirection="row" flexGrow={1}>
-            <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+            <box flexDirection="column" flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
               <Show when={session()}>
                 <Show when={hasOperationLenses()}>
                   <OperationLensBar

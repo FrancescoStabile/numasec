@@ -68,31 +68,29 @@ export function OperationBanner() {
   })
 
   return (
-    <box>
-      <Show when={active()}>
-        <box flexDirection="row" paddingLeft={2} paddingRight={2} flexShrink={0}>
-          <text fg={theme.primary}>
-            {KIND_GLYPHS[active()!.kind] ?? "◆"}{" "}
-            <span style={{ fg: theme.text }}>
-              <b>{active()!.label}</b>
-            </span>
-            <span style={{ fg: theme.textMuted }}>
-              {" "}
-              · {active()!.kind}
-              {active()!.target ? ` · ${active()!.target}` : ""}
-              {snapshot() ? (() => {
-                const decision = scopeDecision(snapshot()!)
-                return decision ? ` · scope ${decision.mode}` : ""
-              })() : ""}
-              {snapshot() && (snapshot()!.projected?.summary.verified_findings ?? 0) > 0
-                ? ` · replay ${replayCoveredCount(snapshot()!)}/${snapshot()!.projected?.summary.verified_findings ?? 0}`
-                : ""}
-              {snapshot() ? ` · report ${reportStatus(snapshot()!)}` : ""}
-              · updated {relativeAge(active()!.updated_at)}
-            </span>
-          </text>
-        </box>
-      </Show>
-    </box>
+    <Show when={active()}>
+      <box flexDirection="row" height={1} paddingLeft={2} paddingRight={2} flexShrink={0}>
+        <text fg={theme.primary} wrapMode="none">
+          {KIND_GLYPHS[active()!.kind] ?? "◆"}{" "}
+          <span style={{ fg: theme.text }}>
+            <b>{active()!.label}</b>
+          </span>
+          <span style={{ fg: theme.textMuted }}>
+            {" "}
+            · {active()!.kind}
+            {active()!.target ? ` · ${active()!.target}` : ""}
+            {snapshot() ? (() => {
+              const decision = scopeDecision(snapshot()!)
+              return decision ? ` · scope ${decision.mode}` : ""
+            })() : ""}
+            {snapshot() && (snapshot()!.projected?.summary.verified_findings ?? 0) > 0
+              ? ` · replay ${replayCoveredCount(snapshot()!)}/${snapshot()!.projected?.summary.verified_findings ?? 0}`
+              : ""}
+            {snapshot() ? ` · report ${reportStatus(snapshot()!)}` : ""}
+            · updated {relativeAge(active()!.updated_at)}
+          </span>
+        </text>
+      </box>
+    </Show>
   )
 }

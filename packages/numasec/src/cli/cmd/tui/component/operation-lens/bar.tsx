@@ -50,7 +50,7 @@ export function OperationLensBar(props: {
   const barItems = createMemo(() => items(props.snapshot))
 
   return (
-    <box flexDirection="row" gap={1} flexWrap="no-wrap" paddingBottom={1} flexShrink={0}>
+    <box flexDirection="row" gap={1} flexWrap="no-wrap" height={1} flexShrink={0}>
       <For each={barItems()}>
         {(item, index) => (
           <text
