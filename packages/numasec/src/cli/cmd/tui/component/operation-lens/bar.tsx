@@ -1,4 +1,4 @@
-import { type JSX, For } from "solid-js"
+import { createMemo, type JSX, For } from "solid-js"
 import type { TuiThemeCurrent } from "@numasec/plugin/tui"
 import type { SessionView } from "@tui/context/session-view"
 import {
@@ -47,23 +47,31 @@ export function OperationLensBar(props: {
   view: SessionView
   onSelect: (view: SessionView) => void
 }) {
+  const barItems = createMemo(() => items(props.snapshot))
+
   return (
-    <box flexDirection="row" gap={1} flexWrap="wrap" paddingBottom={1}>
-      <For each={items(props.snapshot)}>
+    <box flexDirection="row" gap={1} flexWrap="no-wrap" paddingBottom={1} flexShrink={0}>
+      <For each={barItems()}>
         {(item, index) => (
-          <text
-            fg={item.id === props.view ? props.theme.primary : toneColor(props.theme, item.tone)}
-            attributes={item.id === props.view ? 1 : undefined}
-            wrapMode="none"
-            onMouseDown={() => props.onSelect(item.id)}
-          >
-            {item.id === props.view ? "[" : ""}
-            {item.name}
-            {item.value ? " " : ""}
-            {item.value ? <span style={{ fg: item.id === props.view ? props.theme.text : toneColor(props.theme, item.tone) }}>{item.value}</span> : null}
-            {item.id === props.view ? "]" : ""}
-            {index() < items(props.snapshot).length - 1 ? <span style={{ fg: props.theme.textMuted }}>  </span> : null}
-          </text>
+          <>
+            <text
+              fg={item.id === props.view ? props.theme.primary : toneColor(props.theme, item.tone)}
+              attributes={item.id === props.view ? 1 : undefined}
+              wrapMode="none"
+              onMouseDown={() => props.onSelect(item.id)}
+            >
+              {item.id === props.view ? "[" : ""}
+              {item.name}
+              {item.value ? " " : ""}
+              {item.value ? <span style={{ fg: item.id === props.view ? props.theme.text : toneColor(props.theme, item.tone) }}>{item.value}</span> : null}
+              {item.id === props.view ? "]" : ""}
+            </text>
+            {index() < barItems().length - 1 ? (
+              <text fg={props.theme.textMuted} wrapMode="none">
+                ·
+              </text>
+            ) : null}
+          </>
         )}
       </For>
     </box>

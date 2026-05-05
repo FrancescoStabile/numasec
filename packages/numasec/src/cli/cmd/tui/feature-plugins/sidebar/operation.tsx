@@ -34,6 +34,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const summary = createMemo(() => snapshot()?.projected?.summary)
   const decision = createMemo(() => (snapshot() ? scopeDecision(snapshot()!) : undefined))
   const counts = createMemo(() => (snapshot() ? scopeCounts(snapshot()!) : { inScope: 0, outOfScope: 0 }))
+  const scopeLabel = createMemo(() => {
+    const mode = decision()?.mode ?? "unset"
+    const count = counts()
+    if (mode === "unset") return "scope unset"
+    if (count.inScope === 0 && count.outOfScope === 0) return `scope default ${mode}`
+    return `scope ${mode} · ${count.inScope} in / ${count.outOfScope} out`
+  })
   const progress = createMemo(() => (snapshot() ? workflowProgress(snapshot()!) : { completed: 0, total: 0, failed: 0, pending: 0, degraded: false }))
   const replayCovered = createMemo(() => (snapshot() ? replayCoveredCount(snapshot()!) : 0))
   const report = createMemo(() => (snapshot() ? reportStatus(snapshot()!) : "cold"))
@@ -79,14 +86,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme().textMuted} wrapMode="none">
           kind {active()?.kind} · target <span style={{ fg: theme().primary }}>{active()?.target ?? "-"}</span>
         </text>
-        <box flexDirection="row" gap={1}>
-          <text fg={scopeColor()} wrapMode="none">
-            scope {decision()?.mode ?? "unset"}
-          </text>
-          <text fg={theme().textMuted} wrapMode="none">
-            {counts().inScope}/{counts().outOfScope}
-          </text>
-        </box>
+        <text fg={scopeColor()} wrapMode="none">
+          {scopeLabel()}
+        </text>
         <text fg={theme().textMuted} wrapMode="none">
           opsec {active()?.opsec ?? "normal"} · auto {snapshot()?.projected?.autonomy_policy?.mode ?? "unset"}
         </text>

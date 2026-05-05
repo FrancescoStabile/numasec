@@ -50,7 +50,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           verticalScrollbarOptions={{
             trackOptions: {
               backgroundColor: theme.background,
-              foregroundColor: theme.borderActive,
+              foregroundColor: theme.borderSubtle,
             },
           }}
         >

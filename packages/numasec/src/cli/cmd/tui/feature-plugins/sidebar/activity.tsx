@@ -6,7 +6,9 @@ import { loadOperationConsoleSnapshot } from "./operation-console"
 const id = "internal:sidebar-activity"
 
 const MAX_ROWS = 8
-const LABEL_MAX = 28
+const LABEL_MAX = 18
+const TIME_WIDTH = 8
+const OUTCOME_WIDTH = 8
 
 export const TOOL_WHITELIST = new Set([
   "bash",
@@ -205,6 +207,11 @@ function outcomeLabel(row: Row): string {
   return "fail"
 }
 
+function padCell(value: string, width: number, align: "left" | "right" = "left"): string {
+  const clipped = value.length > width ? value.slice(0, width) : value
+  return align === "right" ? clipped.padStart(width, " ") : clipped.padEnd(width, " ")
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const [tick, setTick] = createSignal(true)
@@ -305,15 +312,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       >
         <For each={effectiveRows()}>
           {(row) => (
-            <box flexDirection="row" gap={1} justifyContent="space-between">
+            <box flexDirection="row" gap={1}>
               <text flexShrink={0} fg={theme().textMuted} wrapMode="none">
-                {timeLabel(row.ts)}
+                {padCell(timeLabel(row.ts), TIME_WIDTH)}
               </text>
-              <text wrapMode="none" fg={theme().textMuted}>
+              <text flexGrow={1} flexShrink={1} wrapMode="none" fg={theme().textMuted}>
                 {row.label}
               </text>
               <text flexShrink={0} fg={colorFor(row.statusColorKey)} wrapMode="none">
-                {outcomeLabel(row)}
+                {padCell(outcomeLabel(row), OUTCOME_WIDTH, "right")}
               </text>
             </box>
           )}
