@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Match,
@@ -77,6 +78,7 @@ import { usePromptRef } from "../../context/prompt"
 import { useExit } from "../../context/exit"
 import { Filesystem } from "@/util"
 import { Global } from "@/global"
+import { SessionViewProvider, SESSION_VIEWS, type SessionView } from "@tui/context/session-view"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
@@ -88,6 +90,13 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { TuiPluginRuntime } from "../../plugin"
 import { DialogGoUpsell } from "../../component/dialog-go-upsell"
 import { SessionRetry } from "@/session/retry"
+import { OperationLensBar } from "@tui/component/operation-lens/bar"
+import { OperationLensPanel } from "@tui/component/operation-lens/panel"
+import {
+  findingsRows,
+  loadOperationConsoleSnapshot,
+  type OperationConsoleSnapshot,
+} from "@tui/component/operation-lens/snapshot"
 
 addDefaultParsers(parsers.parsers)
 
@@ -164,6 +173,10 @@ export function Session() {
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
+  const [sessionView, setSessionView] = createSignal<SessionView>("chat")
+  const [selectedFindingIndex, setSelectedFindingIndex] = createSignal(0)
+  const [findingDetailOpen, setFindingDetailOpen] = createSignal(true)
+  const [snapshotTick, setSnapshotTick] = createSignal(true)
 
   const wide = createMemo(() => dimensions().width > 120)
   const sidebarVisible = createMemo(() => {
@@ -179,6 +192,43 @@ export function Session() {
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const toast = useToast()
   const sdk = useSDK()
+  let snapshotInflight = false
+  const [operationSnapshot] = createResource<OperationConsoleSnapshot | undefined, boolean>(snapshotTick, async () => {
+    if (snapshotInflight) return undefined
+    snapshotInflight = true
+    try {
+      return await loadOperationConsoleSnapshot(sync.path.directory)
+    } finally {
+      snapshotInflight = false
+    }
+  })
+  const snapshot = createMemo(() => operationSnapshot())
+  const findingLensRows = createMemo(() => findingsRows(snapshot()))
+  const hasOperationLenses = createMemo(() => Boolean(snapshot()?.active && snapshot()?.projected))
+
+  function refreshSnapshot() {
+    setSnapshotTick((value) => !value)
+  }
+
+  function applySessionView(next: SessionView) {
+    setSessionView(next)
+    if (next === "chat") {
+      prompt?.focus()
+      return
+    }
+    prompt?.blur()
+  }
+
+  function cycleLens(step: number) {
+    const current = sessionView()
+    if (current === "chat") return
+    const currentIndex = SESSION_VIEWS.indexOf(current)
+    const lenses = SESSION_VIEWS.filter((item) => item !== "chat")
+    const lensIndex = lenses.indexOf(current)
+    if (currentIndex < 0 || lensIndex < 0) return
+    const next = lenses[(lensIndex + step + lenses.length) % lenses.length]
+    applySessionView(next)
+  }
 
   createEffect(async () => {
     await sdk.client.session
@@ -198,6 +248,23 @@ export function Session() {
         })
         return navigate({ type: "home" })
       })
+  })
+
+  createEffect(() => {
+    const rows = findingLensRows()
+    if (rows.length === 0) {
+      setSelectedFindingIndex(0)
+      return
+    }
+    if (selectedFindingIndex() >= rows.length) {
+      setSelectedFindingIndex(rows.length - 1)
+    }
+  })
+
+  createEffect(() => {
+    if (!hasOperationLenses() && sessionView() !== "chat") {
+      applySessionView("chat")
+    }
   })
 
   // Handle initial prompt from fork
@@ -234,6 +301,7 @@ export function Session() {
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
+    refreshSnapshot()
     if (evt.properties.status.type !== "retry") return
     if (evt.properties.status.message !== SessionRetry.GO_UPSELL_MESSAGE) return
     if (dialog.stack.length > 0) return
@@ -275,6 +343,71 @@ export function Session() {
     if (!session()?.parentID) return
     if (keybind.match("app_exit", evt)) {
       void exit()
+    }
+  })
+
+  useKeyboard((evt) => {
+    if (!hasOperationLenses()) return
+    if (dialog.stack.length > 0) return
+
+    const promptFocused = prompt?.focused === true
+    if (evt.ctrl && evt.name === "o") {
+      if (sessionView() === "chat") {
+        applySessionView("findings")
+      } else {
+        applySessionView("chat")
+      }
+      return
+    }
+
+    if (promptFocused) return
+
+    if (evt.name === "escape" && sessionView() !== "chat") {
+      applySessionView("chat")
+      return
+    }
+
+    if (sessionView() === "chat") return
+
+    if (evt.name === "[" || evt.name === "left") {
+      cycleLens(-1)
+      return
+    }
+    if (evt.name === "]" || evt.name === "right") {
+      cycleLens(1)
+      return
+    }
+    if (evt.name === "f") {
+      applySessionView("findings")
+      return
+    }
+    if (evt.name === "v") {
+      applySessionView("evidence")
+      return
+    }
+    if (evt.name === "r") {
+      applySessionView("replay")
+      return
+    }
+    if (evt.name === "w") {
+      applySessionView("workflow")
+      return
+    }
+    if (evt.name === "p") {
+      applySessionView("report")
+      return
+    }
+    if (sessionView() !== "findings") return
+    if (evt.name === "j" || evt.name === "down") {
+      setSelectedFindingIndex((value) => Math.min(value + 1, Math.max(0, findingLensRows().length - 1)))
+      return
+    }
+    if (evt.name === "k" || evt.name === "up") {
+      setSelectedFindingIndex((value) => Math.max(0, value - 1))
+      return
+    }
+    if (evt.name === "return") {
+      setFindingDetailOpen((value) => !value)
     }
   })
 
@@ -1038,30 +1171,48 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
+  const offIdle = event.on("session.idle", () => refreshSnapshot())
+  const offPart = event.on("message.part.updated", () => refreshSnapshot())
+  onCleanup(() => {
+    offIdle()
+    offPart()
+  })
+
   return (
-    <context.Provider
-      value={{
-        get width() {
-          return contentWidth()
-        },
-        sessionID: route.sessionID,
-        conceal,
-        showThinking,
-        showTimestamps,
-        showDetails,
-        showGenericToolOutput,
-        diffWrapMode,
-        providers,
-        sync,
-        tui: tuiConfig,
-      }}
-    >
-      <box flexDirection="column" flexGrow={1}>
-        <OperationBanner />
-        <box flexDirection="row" flexGrow={1}>
-        <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
-          <Show when={session()}>
-            <scrollbox
+    <SessionViewProvider view={sessionView} setView={applySessionView}>
+      <context.Provider
+        value={{
+          get width() {
+            return contentWidth()
+          },
+          sessionID: route.sessionID,
+          conceal,
+          showThinking,
+          showTimestamps,
+          showDetails,
+          showGenericToolOutput,
+          diffWrapMode,
+          providers,
+          sync,
+          tui: tuiConfig,
+        }}
+      >
+        <box flexDirection="column" flexGrow={1}>
+          <OperationBanner />
+          <box flexDirection="row" flexGrow={1}>
+            <box flexGrow={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+              <Show when={session()}>
+                <Show when={hasOperationLenses()}>
+                  <OperationLensBar
+                    theme={theme}
+                    snapshot={snapshot()!}
+                    view={sessionView()}
+                    onSelect={applySessionView}
+                  />
+                </Show>
+                <Switch>
+                  <Match when={sessionView() === "chat"}>
+                    <scrollbox
               ref={(r) => (scroll = r)}
               viewportOptions={{
                 paddingRight: showScrollbar() ? 1 : 0,
@@ -1175,66 +1326,95 @@ export function Session() {
                   </Switch>
                 )}
               </For>
-            </scrollbox>
-            <box flexShrink={0}>
-              <Show when={permissions().length > 0}>
-                <PermissionPrompt request={permissions()[0]} />
+                    </scrollbox>
+                  </Match>
+                  <Match when={sessionView() !== "chat" && snapshot()}>
+                    <scrollbox
+                      viewportOptions={{
+                        paddingRight: showScrollbar() ? 1 : 0,
+                      }}
+                      verticalScrollbarOptions={{
+                        paddingLeft: 1,
+                        visible: showScrollbar(),
+                        trackOptions: {
+                          backgroundColor: theme.backgroundElement,
+                          foregroundColor: theme.border,
+                        },
+                      }}
+                      flexGrow={1}
+                      scrollAcceleration={scrollAcceleration()}
+                    >
+                      <box height={1} />
+                      <OperationLensPanel
+                        theme={theme}
+                        view={sessionView()}
+                        snapshot={snapshot()!}
+                        selectedFindingIndex={selectedFindingIndex()}
+                        findingDetailOpen={findingDetailOpen()}
+                      />
+                    </scrollbox>
+                  </Match>
+                </Switch>
+                <box flexShrink={0}>
+                  <Show when={permissions().length > 0}>
+                    <PermissionPrompt request={permissions()[0]} />
+                  </Show>
+                  <Show when={permissions().length === 0 && questions().length > 0}>
+                    <QuestionPrompt request={questions()[0]} />
+                  </Show>
+                  <Show when={session()?.parentID}>
+                    <SubagentFooter />
+                  </Show>
+                  <Show when={visible()}>
+                    <TuiPluginRuntime.Slot
+                      name="session_prompt"
+                      mode="replace"
+                      session_id={route.sessionID}
+                      visible={visible()}
+                      disabled={disabled()}
+                      on_submit={toBottom}
+                      ref={bind}
+                    >
+                      <Prompt
+                        visible={visible()}
+                        ref={bind}
+                        disabled={disabled()}
+                        onSubmit={() => {
+                          toBottom()
+                        }}
+                        sessionID={route.sessionID}
+                        right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
+                      />
+                    </TuiPluginRuntime.Slot>
+                  </Show>
+                </box>
               </Show>
-              <Show when={permissions().length === 0 && questions().length > 0}>
-                <QuestionPrompt request={questions()[0]} />
-              </Show>
-              <Show when={session()?.parentID}>
-                <SubagentFooter />
-              </Show>
-              <Show when={visible()}>
-                <TuiPluginRuntime.Slot
-                  name="session_prompt"
-                  mode="replace"
-                  session_id={route.sessionID}
-                  visible={visible()}
-                  disabled={disabled()}
-                  on_submit={toBottom}
-                  ref={bind}
-                >
-                  <Prompt
-                    visible={visible()}
-                    ref={bind}
-                    disabled={disabled()}
-                    onSubmit={() => {
-                      toBottom()
-                    }}
-                    sessionID={route.sessionID}
-                    right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
-                  />
-                </TuiPluginRuntime.Slot>
-              </Show>
+              <Toast />
             </box>
-          </Show>
-          <Toast />
+            <Show when={sidebarVisible()}>
+              <Switch>
+                <Match when={wide()}>
+                  <Sidebar sessionID={route.sessionID} />
+                </Match>
+                <Match when={!wide()}>
+                  <box
+                    position="absolute"
+                    top={0}
+                    left={0}
+                    right={0}
+                    bottom={0}
+                    alignItems="flex-end"
+                    backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
+                  >
+                    <Sidebar sessionID={route.sessionID} />
+                  </box>
+                </Match>
+              </Switch>
+            </Show>
+          </box>
         </box>
-        <Show when={sidebarVisible()}>
-          <Switch>
-            <Match when={wide()}>
-              <Sidebar sessionID={route.sessionID} />
-            </Match>
-            <Match when={!wide()}>
-              <box
-                position="absolute"
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                alignItems="flex-end"
-                backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
-              >
-                <Sidebar sessionID={route.sessionID} />
-              </box>
-            </Match>
-          </Switch>
-        </Show>
-      </box>
-      </box>
-    </context.Provider>
+      </context.Provider>
+    </SessionViewProvider>
   )
 }
 

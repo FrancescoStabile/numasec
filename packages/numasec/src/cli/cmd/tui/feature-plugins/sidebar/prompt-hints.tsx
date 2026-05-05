@@ -1,11 +1,13 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/tui"
 import { createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
-import { loadOperationConsoleSnapshot, replayCoveredCount, reportStatus } from "./operation-console"
+import { useSessionView } from "@tui/context/session-view"
+import { loadOperationConsoleSnapshot, replayCoveredCount, reportStatus } from "@tui/component/operation-lens/snapshot"
 
 const id = "internal:prompt-hints"
 
 function View(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
+  const sessionView = useSessionView()
   const [tick, setTick] = createSignal(true)
   const refresh = () => setTick((value) => !value)
   let inflight = false
@@ -33,11 +35,22 @@ function View(props: { api: TuiPluginApi }) {
   return (
     <box>
       <Show when={snapshot()?.active}>
-        <text fg={theme().textMuted} wrapMode="none">
-          proof {summary()?.reportable_findings ?? 0}r/{summary()?.verified_findings ?? 0}v · replay{" "}
-          {snapshot() ? replayCoveredCount(snapshot()!) : 0}/{summary()?.verified_findings ?? 0} · evidence{" "}
-          {snapshot()?.evidenceCount ?? 0} · report {snapshot() ? reportStatus(snapshot()!) : "cold"}
-        </text>
+        <Show
+          when={sessionView.current === "chat"}
+          fallback={
+            <text fg={theme().textMuted} wrapMode="none">
+              {sessionView.current === "findings"
+                ? "j/k select · enter detail · esc chat"
+                : "[ ] lens · esc chat"}
+            </text>
+          }
+        >
+          <text fg={theme().textMuted} wrapMode="none">
+            proof {summary()?.reportable_findings ?? 0}r/{summary()?.verified_findings ?? 0}v · replay{" "}
+            {snapshot() ? replayCoveredCount(snapshot()!) : 0}/{summary()?.verified_findings ?? 0} · evidence{" "}
+            {snapshot()?.evidenceCount ?? 0} · report {snapshot() ? reportStatus(snapshot()!) : "cold"}
+          </text>
+        </Show>
       </Show>
     </box>
   )
