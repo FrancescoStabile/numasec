@@ -110,6 +110,14 @@ function refreshDerivedContext(workspace: string) {
   })
 }
 
+function currentInstance() {
+  try {
+    return Instance.current
+  } catch {
+    return undefined
+  }
+}
+
 function wrap<Parameters extends z.ZodType, Result extends Metadata>(
   id: string,
   init: Init<Parameters, Result>,
@@ -170,8 +178,9 @@ function wrap<Parameters extends z.ZodType, Result extends Metadata>(
                 },
               })
               .pipe(Effect.catch(() => Effect.void))
-	            if (workflowAware) {
-	              const workspace = Instance.directory
+	            const instance = currentInstance()
+	            if (workflowAware && instance) {
+	              const workspace = instance.directory
 	              const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
               if (slug) {
                 const match = yield* Effect.promise(() =>
@@ -245,8 +254,9 @@ function wrap<Parameters extends z.ZodType, Result extends Metadata>(
               },
             })
             .pipe(Effect.catch(() => Effect.succeed("")))
-	          if (workflowAware) {
-	            const workspace = Instance.directory
+	          const instance = currentInstance()
+	          if (workflowAware && instance) {
+	            const workspace = instance.directory
 	            const slug = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
             if (slug) {
               const match = yield* Effect.promise(() =>

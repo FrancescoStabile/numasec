@@ -162,11 +162,29 @@ export namespace McpOAuthCallback {
 
     server = createServer(handleRequest)
     await new Promise<void>((resolve, reject) => {
-      server!.listen(currentPort, () => {
+      const onListening = () => {
+        server?.off("error", onError)
         log.info("oauth callback server started", { port: currentPort, path: currentPath })
         resolve()
-      })
-      server!.on("error", reject)
+      }
+      const onError = (error: NodeJS.ErrnoException) => {
+        server?.off("listening", onListening)
+        if (error.code === "EADDRINUSE") {
+          log.info("oauth callback server already running on another instance", { port: currentPort, path: currentPath })
+          try {
+            server?.close()
+          } catch {}
+          server = undefined
+          resolve()
+          return
+        }
+        server = undefined
+        reject(error)
+      }
+
+      server!.once("listening", onListening)
+      server!.once("error", onError)
+      server!.listen(currentPort)
     })
   }
 

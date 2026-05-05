@@ -116,6 +116,11 @@ function formatCounts(counts?: {
   ].join(" ")
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
 export const ReportTool = Tool.define<typeof parameters, Metadata, never>(
   "report",
   Effect.gen(function* () {
@@ -198,7 +203,7 @@ export const ReportTool = Tool.define<typeof parameters, Metadata, never>(
             title: "report · building",
             metadata: { action: "build", slug, phase: currentPhase },
           }).pipe(Effect.catch(() => Effect.void))
-          const built = yield* Effect.tryPromise({
+          const build = yield* Effect.tryPromise({
             try: () =>
               Deliverable.build(workspace, slug, {
                 format: params.format,
@@ -213,7 +218,39 @@ export const ReportTool = Tool.define<typeof parameters, Metadata, never>(
               orElse: () =>
                 Effect.fail(new Error(`report build timed out during ${currentPhase}`)),
             }),
+            Effect.map((built) => ({ _tag: "built" as const, built })),
+            Effect.catch((error) => Effect.succeed({ _tag: "failed" as const, error })),
           )
+          if (build._tag === "failed") {
+            const message = errorMessage(build.error)
+            yield* Cyber.appendLedger({
+              operation_slug: slug,
+              kind: "tool.error",
+              source: "report",
+              session_id: ctx.sessionID,
+              message_id: ctx.messageID,
+              status: "error",
+              summary: `report build failed during ${currentPhase}`,
+              data: {
+                action: "build",
+                format: params.format,
+                phase: currentPhase,
+                error: message,
+              },
+            }).pipe(Effect.catch(() => Effect.succeed("")))
+            return {
+              title: "report · failed",
+              output: `Report build failed during ${currentPhase}: ${message}`,
+              metadata: {
+                action: "build",
+                slug,
+                phase: currentPhase,
+                available: false,
+                error: message,
+              },
+            }
+          }
+          const built = build.built
           const eventID = yield* Cyber.appendLedger({
             operation_slug: slug,
             kind: "fact.verified",

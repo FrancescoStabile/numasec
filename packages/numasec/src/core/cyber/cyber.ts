@@ -87,11 +87,14 @@ export interface ProjectedFinding {
   status: string
   title?: string
   summary?: string
+  proof_summary?: string
   severity?: string
+  evidence_refs?: string[]
   replay_present?: boolean
   replay_reason?: string
   oracle_status?: string
   oracle_reason?: string
+  operator_promoted?: boolean
 }
 
 export interface ProjectedCapsuleState {
@@ -458,7 +461,7 @@ function parseProjectedRelationRecord(
   }
 }
 
-export function hydrateProjectedRelationRecords(
+function hydrateProjectedRelationRows(
   records: Record<string, unknown>[],
   fallback: { operation_slug: string; id_prefix?: string; project_id?: string; writer_kind?: string },
 ): Relation[] {
@@ -697,9 +700,18 @@ function ledgerLine(event: LedgerEvent) {
   return `- ${head} · ${preview}`
 }
 
-async function resolveOperationSlug(input?: string) {
+function currentInstance() {
+  try {
+    return Instance.current
+  } catch {
+    return undefined
+  }
+}
+
+async function resolveOperationSlug(input?: string, instance = currentInstance()) {
+  if (!instance) return undefined
   if (input) return input
-  return Operation.activeSlug(Instance.directory).catch(() => undefined)
+  return Operation.activeSlug(instance.directory).catch(() => undefined)
 }
 
 export namespace Cyber {
@@ -710,7 +722,7 @@ export namespace Cyber {
   export const hydrateProjectedRelationRecords = (
     records: Record<string, unknown>[],
     fallback: { operation_slug: string; id_prefix?: string; project_id?: string; writer_kind?: string },
-  ): Relation[] => hydrateProjectedRelationRecords(records, fallback)
+  ): Relation[] => hydrateProjectedRelationRows(records, fallback)
 
   export interface FactSummary {
     hosts: number
@@ -1167,10 +1179,13 @@ export namespace Cyber {
   export const appendLedger = Effect.fn("Cyber.appendLedger")(function* (
     input: Omit<LedgerEvent, "id" | "project_id" | "operation_slug" | "time_created"> & { operation_slug?: string },
   ) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug, instance))
+    if (!instance) return ""
     if (!operation_slug) return ""
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     const event_id = id("cled")
+    const now = Date.now()
     yield* Effect.sync(() =>
       Database.use((db) =>
         db
@@ -1188,13 +1203,13 @@ export namespace Cyber {
             summary: input.summary,
             evidence_refs: input.evidence_refs,
             data: input.data,
-            time_created: Date.now(),
+            time_created: now,
           })
           .run(),
       ),
     )
     yield* Effect.promise(() =>
-      appendProjectionLine(Instance.directory, operation_slug, "ledger.jsonl", {
+      appendProjectionLine(instance.directory, operation_slug, "ledger.jsonl", {
         id: event_id,
         project_id,
         operation_slug,
@@ -1207,7 +1222,7 @@ export namespace Cyber {
         summary: input.summary,
         evidence_refs: input.evidence_refs,
         data: input.data,
-        time_created: Date.now(),
+        time_created: now,
       }),
     ).pipe(Effect.catch(() => Effect.void))
     return event_id
@@ -1218,9 +1233,11 @@ export namespace Cyber {
       operation_slug?: string
     },
   ) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug, instance))
+    if (!instance) return ""
     if (!operation_slug) return ""
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     const now = Date.now()
     const existing = yield* Effect.sync(() =>
       Database.use((db) =>
@@ -1259,7 +1276,7 @@ export namespace Cyber {
       ),
     )
       yield* Effect.promise(() =>
-        appendProjectionLine(Instance.directory, operation_slug, "facts.jsonl", {
+        appendProjectionLine(instance.directory, operation_slug, "facts.jsonl", {
           id: existing.id,
           project_id,
           operation_slug,
@@ -1305,7 +1322,7 @@ export namespace Cyber {
       ),
     )
     yield* Effect.promise(() =>
-      appendProjectionLine(Instance.directory, operation_slug, "facts.jsonl", {
+      appendProjectionLine(instance.directory, operation_slug, "facts.jsonl", {
         id: fact_id,
         project_id,
         operation_slug,
@@ -1331,9 +1348,11 @@ export namespace Cyber {
       operation_slug?: string
     },
   ) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input.operation_slug, instance))
+    if (!instance) return ""
     if (!operation_slug) return ""
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     const now = Date.now()
     const existing = yield* Effect.sync(() =>
       Database.use((db) =>
@@ -1372,7 +1391,7 @@ export namespace Cyber {
       ),
     )
       yield* Effect.promise(() =>
-        appendProjectionLine(Instance.directory, operation_slug, "relations.jsonl", {
+        appendProjectionLine(instance.directory, operation_slug, "relations.jsonl", {
           id: existing.id,
           project_id,
           operation_slug,
@@ -1418,7 +1437,7 @@ export namespace Cyber {
       ),
     )
     yield* Effect.promise(() =>
-      appendProjectionLine(Instance.directory, operation_slug, "relations.jsonl", {
+      appendProjectionLine(instance.directory, operation_slug, "relations.jsonl", {
         id: relation_id,
         project_id,
         operation_slug,
@@ -1443,9 +1462,11 @@ export namespace Cyber {
     operation_slug?: string
     limit?: number
   }) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug, instance))
+    if (!instance) return []
     if (!operation_slug) return []
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     return yield* Effect.sync(() =>
       Database.use((db) =>
         db
@@ -1497,9 +1518,11 @@ export namespace Cyber {
     limit?: number
     status?: string
   }) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug, instance))
+    if (!instance) return []
     if (!operation_slug) return []
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     return yield* Effect.sync(() =>
       Database.use((db) =>
         db
@@ -1719,9 +1742,11 @@ export namespace Cyber {
     limit?: number
     status?: string
   }) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug, instance))
+    if (!instance) return []
     if (!operation_slug) return []
-    const project_id = Instance.project.id
+    const project_id = instance.project.id
     return yield* Effect.sync(() =>
       Database.use((db) =>
         db
@@ -1766,7 +1791,7 @@ export namespace Cyber {
         latest.set(key, parsed)
       } catch {}
     }
-    return hydrateProjectedRelationRecords([...latest.values()], {
+    return hydrateProjectedRelationRows([...latest.values()], {
       operation_slug,
       id_prefix: options?.id_prefix,
       project_id: options?.project_id,
@@ -2116,7 +2141,9 @@ export namespace Cyber {
     max_facts?: number
     max_relations?: number
   }) {
-    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug))
+    const instance = currentInstance()
+    const operation_slug = yield* Effect.promise(() => resolveOperationSlug(input?.operation_slug, instance))
+    if (!instance) return undefined
     if (!operation_slug) return undefined
     const [facts, relations, ledger] = yield* Effect.all([
       listFacts({
@@ -2160,7 +2187,7 @@ export namespace Cyber {
         (fact.entity_kind === "operation" && fact.fact_name === "plan_summary") ||
         (fact.entity_kind === "plan_node" && fact.fact_name === "todo_state"),
     )
-    const lines = ["# Active Cyber Context", `operation_slug: ${operation_slug}`, `project_id: ${Instance.project.id}`, "", "## Facts"]
+    const lines = ["# Active Cyber Context", `operation_slug: ${operation_slug}`, `project_id: ${instance.project.id}`, "", "## Facts"]
     if (facts.length === 0) lines.push("_none yet_")
     else facts.forEach((fact) => lines.push(factLine(fact)))
     lines.push("")

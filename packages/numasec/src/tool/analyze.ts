@@ -56,6 +56,20 @@ type Metadata = {
   [key: string]: unknown
 }
 
+function invalidInput(target: Params["target"], delegated_to: Metadata["delegated_to"], message: string) {
+  return {
+    title: "analyze · invalid input",
+    output: message,
+    metadata: {
+      surface: "analyze",
+      delegated_to,
+      target,
+      available: false,
+      error: message,
+    } satisfies Metadata,
+  }
+}
+
 export const AnalyzeTool = Tool.define<typeof parameters, Metadata, Agent.Service | Truncate.Service>(
   "analyze",
   Effect.gen(function* () {
@@ -75,6 +89,7 @@ export const AnalyzeTool = Tool.define<typeof parameters, Metadata, Agent.Servic
       execute: (params: Params, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           if (params.target === "iac") {
+            if (!params.path) return invalidInput("iac", "iac_triage", "path is required when target=iac")
             const result = yield* iacTool.execute(
               {
                 path: params.path,
@@ -94,6 +109,7 @@ export const AnalyzeTool = Tool.define<typeof parameters, Metadata, Agent.Servic
           }
 
           if (params.target === "container") {
+            if (!params.image) return invalidInput("container", "container_surface", "image is required when target=container")
             const result = yield* containerTool.execute(
               {
                 image: params.image,
@@ -113,6 +129,7 @@ export const AnalyzeTool = Tool.define<typeof parameters, Metadata, Agent.Servic
           }
 
           if (params.target === "cloud") {
+            if (!params.provider) return invalidInput("cloud", "cloud_posture", "provider is required when target=cloud")
             const result = yield* cloudTool.execute(
               {
                 provider: params.provider,
@@ -133,6 +150,7 @@ export const AnalyzeTool = Tool.define<typeof parameters, Metadata, Agent.Servic
             }
           }
 
+          if (!params.path) return invalidInput("binary", "binary_triage", "path is required when target=binary")
           const result = yield* binaryTool.execute(
             {
               path: params.path,

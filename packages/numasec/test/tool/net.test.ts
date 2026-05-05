@@ -1,7 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
+import { EventEmitter } from "node:events"
 import { Effect, ManagedRuntime, Layer } from "effect"
-import * as net from "node:net"
-import { NetTool } from "../../src/tool/net"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -10,6 +9,34 @@ import { AppFileSystem } from "@numasec/shared/filesystem"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
+
+void mock.module("node:net", () => ({
+  createConnection: ({
+    timeout: _timeout,
+  }: {
+    host: string
+    port: number
+    timeout?: number
+  }) => {
+    class MockSocket extends EventEmitter {
+      destroy() {}
+      write(data: Buffer | string) {
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
+        queueMicrotask(() => {
+          this.emit("data", buf)
+          this.emit("end")
+        })
+        return true
+      }
+    }
+
+    const socket = new MockSocket()
+    queueMicrotask(() => socket.emit("connect"))
+    return socket
+  },
+}))
+
+const { NetTool } = await import("../../src/tool/net")
 
 const runtime = ManagedRuntime.make(
   Layer.mergeAll(
@@ -46,31 +73,19 @@ async function exec(params: any) {
 describe("tool/net", () => {
   test("tcp_send echoes payload", async () => {
     await using fixture = await tmpdir()
-    const server = net.createServer((sock) => {
-      sock.on("data", (d) => {
-        sock.write(d)
-        sock.end()
-      })
+    await Instance.provide({
+      directory: fixture.path,
+      fn: async () => {
+        const r: any = await exec({
+          op: "tcp_send",
+          host: "127.0.0.1",
+          port: 31337,
+          payload: "ping",
+          timeout_ms: 2000,
+        })
+        expect(r.output).toBe("ping")
+        expect(r.metadata.bytes_read).toBe(4)
+      },
     })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    const port = (server.address() as net.AddressInfo).port
-    try {
-      await Instance.provide({
-        directory: fixture.path,
-        fn: async () => {
-          const r: any = await exec({
-            op: "tcp_send",
-            host: "127.0.0.1",
-            port,
-            payload: "ping",
-            timeout_ms: 2000,
-          })
-          expect(r.output).toBe("ping")
-          expect(r.metadata.bytes_read).toBe(4)
-        },
-      })
-    } finally {
-      server.close()
-    }
   })
 })

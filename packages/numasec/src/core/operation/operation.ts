@@ -20,7 +20,7 @@ import { migrate } from "./migration"
 import { parseScope } from "./scope"
 import type { Boundary } from "../boundary/schema"
 import { Instance } from "@/project/instance"
-import { Database } from "@/storage"
+import { and, Database, desc, eq } from "@/storage"
 import { CyberFactTable, CyberLedgerTable, CyberRelationTable } from "../cyber/cyber.sql"
 
 const migrated = new Set<string>()
@@ -221,7 +221,7 @@ async function writeInitialCyberKernelState(input: {
       const operationStateID = cyberID("cfact")
       const scopePolicyID = cyberID("cfact")
       const relationID = input.target ? cyberID("crel") : undefined
-      const ledger = {
+      const ledger: typeof CyberLedgerTable.$inferInsert = {
         id: eventID,
         project_id: projectID,
         operation_slug: input.slug,
@@ -237,51 +237,51 @@ async function writeInitialCyberKernelState(input: {
         },
         time_created: input.createdAt,
       }
-      const facts = [
-    {
-      id: operationStateID,
-      project_id: projectID,
-      operation_slug: input.slug,
-      entity_kind: "operation",
-      entity_key: input.slug,
-      fact_name: "operation_state",
-      status: "observed",
-      writer_kind: "tool",
-      confidence: 1000,
-      source_event_id: eventID,
-      time_created: input.createdAt,
-      time_updated: input.createdAt,
-      value_json: {
-        label: input.label,
-        kind: input.kind,
-        target: input.target,
-        opsec: input.opsec,
-        in_scope: inferredScope,
-        out_of_scope: [],
-      },
-    },
-    {
-      id: scopePolicyID,
-      project_id: projectID,
-      operation_slug: input.slug,
-      entity_kind: "operation",
-      entity_key: input.slug,
-      fact_name: "scope_policy",
-      status: "observed",
-      writer_kind: "tool",
-      confidence: 1000,
-      source_event_id: eventID,
-      time_created: input.createdAt,
-      time_updated: input.createdAt,
-      value_json: {
-        default: inferredScope.length > 0 ? "ask" : "allow",
-        in_scope: inferredScope,
-        out_of_scope: [],
-        opsec: input.opsec,
-      },
-    },
-  ]
-      const relations = input.target
+      const facts: Array<typeof CyberFactTable.$inferInsert> = [
+        {
+          id: operationStateID,
+          project_id: projectID,
+          operation_slug: input.slug,
+          entity_kind: "operation",
+          entity_key: input.slug,
+          fact_name: "operation_state",
+          status: "observed",
+          writer_kind: "tool",
+          confidence: 1000,
+          source_event_id: eventID,
+          time_created: input.createdAt,
+          time_updated: input.createdAt,
+          value_json: {
+            label: input.label,
+            kind: input.kind,
+            target: input.target,
+            opsec: input.opsec,
+            in_scope: inferredScope,
+            out_of_scope: [],
+          },
+        },
+        {
+          id: scopePolicyID,
+          project_id: projectID,
+          operation_slug: input.slug,
+          entity_kind: "operation",
+          entity_key: input.slug,
+          fact_name: "scope_policy",
+          status: "observed",
+          writer_kind: "tool",
+          confidence: 1000,
+          source_event_id: eventID,
+          time_created: input.createdAt,
+          time_updated: input.createdAt,
+          value_json: {
+            default: inferredScope.length > 0 ? "ask" : "allow",
+            in_scope: inferredScope,
+            out_of_scope: [],
+            opsec: input.opsec,
+          },
+        },
+      ]
+      const relations: Array<typeof CyberRelationTable.$inferInsert> = input.target
         ? [
             {
               id: relationID!,
@@ -302,9 +302,55 @@ async function writeInitialCyberKernelState(input: {
           ]
         : []
       Database.use((db) => {
-        db.insert(CyberLedgerTable).values(ledger).run()
-        db.insert(CyberFactTable).values(facts).run()
-        if (relations.length > 0) db.insert(CyberRelationTable).values(relations).run()
+        db.insert(CyberLedgerTable).values(ledger).onConflictDoNothing().run()
+        for (const fact of facts) {
+          db.insert(CyberFactTable)
+            .values(fact)
+            .onConflictDoUpdate({
+              target: [
+                CyberFactTable.project_id,
+                CyberFactTable.operation_slug,
+                CyberFactTable.entity_kind,
+                CyberFactTable.entity_key,
+                CyberFactTable.fact_name,
+              ],
+              set: {
+                value_json: fact.value_json,
+                writer_kind: fact.writer_kind,
+                status: fact.status,
+                confidence: fact.confidence,
+                source_event_id: fact.source_event_id,
+                evidence_refs: fact.evidence_refs,
+                expires_at: fact.expires_at,
+                time_updated: fact.time_updated,
+              },
+            })
+            .run()
+        }
+        for (const relation of relations) {
+          db.insert(CyberRelationTable)
+            .values(relation)
+            .onConflictDoUpdate({
+              target: [
+                CyberRelationTable.project_id,
+                CyberRelationTable.operation_slug,
+                CyberRelationTable.src_kind,
+                CyberRelationTable.src_key,
+                CyberRelationTable.relation,
+                CyberRelationTable.dst_kind,
+                CyberRelationTable.dst_key,
+              ],
+              set: {
+                writer_kind: relation.writer_kind,
+                status: relation.status,
+                confidence: relation.confidence,
+                source_event_id: relation.source_event_id,
+                evidence_refs: relation.evidence_refs,
+                time_updated: relation.time_updated,
+              },
+            })
+            .run()
+        }
       })
       await mkdir(cyberDir(input.workspace, input.slug), { recursive: true })
       await writeFile(cyberFactsFile(input.workspace, input.slug), facts.map((item) => JSON.stringify(item)).join("\n") + "\n", "utf8")
@@ -481,27 +527,62 @@ async function readProjectedOperationFact<T>(
   factName: "operation_state" | "scope_policy" | "autonomy_policy",
   parse: (projected: Record<string, unknown>) => T | undefined,
 ): Promise<T | undefined> {
-  const file = cyberFactsFile(workspace, slug)
-  if (!existsSync(file)) return undefined
-  const raw = await readFile(file, "utf8").catch(() => "")
-  if (!raw) return undefined
-  let latest: Record<string, unknown> | undefined
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.trim()) continue
-    try {
-      const parsed = JSON.parse(line) as Record<string, unknown>
-      if (
-        parsed["entity_kind"] === "operation" &&
-        parsed["entity_key"] === slug &&
-        parsed["fact_name"] === factName
-      ) {
-        latest = parsed
-      }
-    } catch {}
+  const parseValue = (value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+    return parse(value as Record<string, unknown>)
   }
-  const value = latest?.["value_json"]
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  return parse(value as Record<string, unknown>)
+  const file = cyberFactsFile(workspace, slug)
+  if (existsSync(file)) {
+    const raw = await readFile(file, "utf8").catch(() => "")
+    if (raw) {
+      let latest: Record<string, unknown> | undefined
+      for (const line of raw.split(/\r?\n/)) {
+        if (!line.trim()) continue
+        try {
+          const parsed = JSON.parse(line) as Record<string, unknown>
+          if (
+            parsed["entity_kind"] === "operation" &&
+            parsed["entity_key"] === slug &&
+            parsed["fact_name"] === factName
+          ) {
+            latest = parsed
+          }
+        } catch {}
+      }
+      const parsed = parseValue(latest?.["value_json"])
+      if (parsed) return parsed
+    }
+  }
+
+  const query = async () =>
+    Database.use((db) =>
+      db
+        .select()
+        .from(CyberFactTable)
+        .where(
+          and(
+            eq(CyberFactTable.operation_slug, slug),
+            eq(CyberFactTable.entity_kind, "operation"),
+            eq(CyberFactTable.entity_key, slug),
+            eq(CyberFactTable.fact_name, factName),
+          ),
+        )
+        .orderBy(desc(CyberFactTable.time_updated), desc(CyberFactTable.time_created))
+        .get(),
+    )
+
+  const record = await (async () => {
+    try {
+      return await query()
+    } catch {
+      return await Instance.provide({
+        directory: workspace,
+        fn: () => query(),
+      }).catch(() => undefined)
+    }
+  })()
+
+  return parseValue(record?.value_json)
 }
 
 export async function readProjectedState(workspace: string, slug: string): Promise<ProjectedOperationState | undefined> {

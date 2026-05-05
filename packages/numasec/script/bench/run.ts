@@ -21,6 +21,19 @@ import { scoreFor, type Score } from "./rubric"
 type Scenario = "web-surface" | "appsec-triage" | "pwn"
 
 const SCENARIOS: Scenario[] = ["web-surface", "appsec-triage", "pwn"]
+const BENCH_COMMAND_TIMEOUT_MS = 5 * 60_000
+const PROVIDER_PREREQ_ENV = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GROQ_API_KEY",
+  "XAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "AWS_PROFILE",
+  "AWS_WEB_IDENTITY_TOKEN_FILE",
+  "AWS_ACCESS_KEY_ID",
+  "AZURE_OPENAI_API_KEY",
+]
 
 function parseArgs(argv: string[]): { scenario: Scenario } {
   const i = argv.indexOf("--scenario")
@@ -29,6 +42,23 @@ function parseArgs(argv: string[]): { scenario: Scenario } {
     throw new Error(`--scenario required, one of: ${SCENARIOS.join(", ")}`)
   }
   return { scenario: v as Scenario }
+}
+
+function hasProviderCredential() {
+  return PROVIDER_PREREQ_ENV.some((name) => {
+    const value = process.env[name]
+    return typeof value === "string" && value.trim().length > 0
+  })
+}
+
+function ensurePrerequisites() {
+  if (!Bun.which("git")) throw new Error("benchmark prerequisite failed: git is not installed or not on PATH")
+  if (!Bun.which("npm")) throw new Error("benchmark prerequisite failed: npm is not installed or not on PATH")
+  if (!hasProviderCredential()) {
+    throw new Error(
+      `benchmark prerequisite failed: no provider credentials detected; set one of ${PROVIDER_PREREQ_ENV.join(", ")}`,
+    )
+  }
 }
 
 async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
@@ -132,12 +162,14 @@ async function runCommand(
   args: string,
 ): Promise<CommandResult> {
   try {
+    const signal = AbortSignal.timeout(BENCH_COMMAND_TIMEOUT_MS)
     const r = await fetch(
       `${baseUrl}/session/${sessionID}/command?directory=${encodeURIComponent(directory)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command, arguments: args }),
+        signal,
       },
     )
     const body = await r.text()
@@ -417,6 +449,7 @@ async function main() {
   }
 
   try {
+    ensurePrerequisites()
     fx = await provision()
     console.log(`[bench] juice-shop ready on :${fx.port} (reused=${fx.reused})`)
 

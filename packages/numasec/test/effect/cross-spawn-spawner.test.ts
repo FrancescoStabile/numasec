@@ -12,7 +12,7 @@ const live = CrossSpawnSpawner.defaultLayer
 const fx = testEffect(live)
 
 function js(code: string, opts?: ChildProcess.CommandOptions) {
-  return ChildProcess.make("node", ["-e", code], opts)
+  return ChildProcess.make(process.execPath, ["-e", code], opts)
 }
 
 function decodeByteStream(stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>) {

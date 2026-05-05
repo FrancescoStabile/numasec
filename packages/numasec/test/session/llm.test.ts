@@ -126,13 +126,18 @@ type Capture = {
 }
 
 const state = {
-  server: null as ReturnType<typeof Bun.serve> | null,
   queue: [] as Array<{
     path: string
     response: Response | ((req: Request, capture: Capture) => Response)
     resolve: (value: Capture) => void
   }>,
 }
+
+const server = {
+  url: new URL(`https://test-llm-${process.pid}.invalid`),
+}
+
+let originalFetch: typeof globalThis.fetch | undefined
 
 function deferred<T>() {
   const result = {} as { promise: Promise<T>; resolve: (value: T) => void }
@@ -164,11 +169,21 @@ function waitStreamingRequest(pathname: string) {
     path: pathname,
     resolve: request.resolve,
     response(req: Request) {
-      req.signal.addEventListener("abort", () => requestAborted.resolve(), { once: true })
+      let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined
+      req.signal.addEventListener(
+        "abort",
+        () => {
+          requestAborted.resolve()
+          responseCanceled.resolve()
+          controllerRef?.error(new Error("aborted"))
+        },
+        { once: true },
+      )
 
       return new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {
+            controllerRef = controller
             controller.enqueue(
               encoder.encode(
                 [
@@ -201,9 +216,13 @@ function waitStreamingRequest(pathname: string) {
 }
 
 beforeAll(() => {
-  state.server = Bun.serve({
-    port: 0,
-    async fetch(req) {
+  originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const req = new Request(input, init)
+    if (!req.url.startsWith(server.url.origin)) {
+      return originalFetch!(req)
+    }
+
       const next = state.queue.shift()
       if (!next) {
         return new Response("unexpected request", { status: 500 })
@@ -220,8 +239,7 @@ beforeAll(() => {
       return typeof next.response === "function"
         ? next.response(req, { url, headers: req.headers, body })
         : next.response
-    },
-  })
+  }) as typeof globalThis.fetch
 })
 
 beforeEach(() => {
@@ -229,7 +247,9 @@ beforeEach(() => {
 })
 
 afterAll(() => {
-  void state.server?.stop()
+  if (originalFetch) {
+    globalThis.fetch = originalFetch
+  }
 })
 
 function createChatStream(text: string) {
@@ -300,11 +320,6 @@ function createEventResponse(chunks: unknown[], includeDone = false) {
 
 describe("session.llm.stream", () => {
   test("sends temperature, tokens, and reasoning options for openai-compatible models", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const providerID = "vivgrid"
     const modelID = "gemini-3.1-pro-preview"
     const fixture = await loadFixture(providerID, modelID)
@@ -396,9 +411,6 @@ describe("session.llm.stream", () => {
   })
 
   test("service stream cancellation cancels provider response body promptly", async () => {
-    const server = state.server
-    if (!server) throw new Error("Server not initialized")
-
     const providerID = "alibaba"
     const modelID = "qwen-plus"
     const fixture = await loadFixture(providerID, modelID)
@@ -477,11 +489,6 @@ describe("session.llm.stream", () => {
   })
 
   test("keeps tools enabled by prompt permissions", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const providerID = "alibaba"
     const modelID = "qwen-plus"
     const fixture = await loadFixture(providerID, modelID)
@@ -562,11 +569,6 @@ describe("session.llm.stream", () => {
   })
 
   test("sends responses API payload for OpenAI models", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const source = await loadFixture("openai", "gpt-5.2")
     const model = source.model
 
@@ -676,11 +678,6 @@ describe("session.llm.stream", () => {
   })
 
   test("accepts user image attachments as data URLs for OpenAI models", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const source = await loadFixture("openai", "gpt-5.2")
     const model = source.model
     const chunks = [
@@ -796,11 +793,6 @@ describe("session.llm.stream", () => {
   })
 
   test("sends messages API payload for Anthropic Compatible models", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const providerID = "minimax"
     const modelID = "MiniMax-M2.5"
     const fixture = await loadFixture(providerID, modelID)
@@ -910,11 +902,6 @@ describe("session.llm.stream", () => {
   })
 
   test("sends anthropic tool_use blocks with tool_result immediately after them", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const source = await loadFixture("anthropic", "claude-opus-4-6")
     const model = source.model
     const chunks = [
@@ -1173,11 +1160,6 @@ describe("session.llm.stream", () => {
   })
 
   test("sends Google API payload for Gemini models", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
     const providerID = "google"
     const modelID = "gemini-2.5-flash"
     const fixture = await loadFixture(providerID, modelID)

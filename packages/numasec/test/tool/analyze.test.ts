@@ -49,13 +49,13 @@ async function exec(params: Record<string, unknown>) {
 
 describe("tool/analyze", () => {
   test("exports an object JSON schema for provider tool registration", async () => {
-    const schema = await runtime.runPromise(
+    const schema = (await runtime.runPromise(
       Effect.gen(function* () {
         const info = yield* AnalyzeTool
         const tool = yield* info.init()
         return z.toJSONSchema(tool.parameters)
       }) as any,
-    )
+    )) as { type?: string }
 
     expect(schema.type).toBe("object")
   })

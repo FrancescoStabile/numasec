@@ -92,11 +92,12 @@ export const Instance = {
    * Paths within the worktree but outside the working directory should not trigger external_directory permission.
    */
   containsPath(filepath: string, ctx?: InstanceContext) {
-    const instance = ctx ?? Instance
+    const instance = ctx ?? context.use()
     if (AppFileSystem.contains(instance.directory, filepath)) return true
+    if (instance.project.vcs !== "git") return false
     // Non-git projects set worktree to "/" which would match ANY absolute path.
     // Skip worktree check in this case to preserve external_directory permissions.
-    if (Instance.worktree === "/") return false
+    if (instance.worktree === "/") return false
     return AppFileSystem.contains(instance.worktree, filepath)
   },
   /**

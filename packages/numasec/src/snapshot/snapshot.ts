@@ -140,8 +140,34 @@ export const layer: Layer.Layer<
               stdin: feed(files),
             },
           )
-          if (check.code !== 0 && check.code !== 1) return new Set<string>()
-          return new Set(check.text.split("\0").filter(Boolean))
+          const out = new Set(check.code === 0 || check.code === 1 ? check.text.split("\0").filter(Boolean) : [])
+
+          const tracked = yield* git(
+            [
+              ...quote,
+              "--git-dir",
+              path.join(state.worktree, ".git"),
+              "--work-tree",
+              state.worktree,
+              "ls-files",
+              "-z",
+              "--cached",
+              "--others",
+              "--ignored",
+              "--exclude-standard",
+              "--",
+              ...files,
+            ],
+            {
+              cwd: state.directory,
+            },
+          )
+
+          if (tracked.code === 0 || tracked.code === 1) {
+            for (const file of tracked.text.split("\0").filter(Boolean)) out.add(file)
+          }
+
+          return out
         })
 
         const drop = Effect.fnUntraced(function* (files: string[]) {

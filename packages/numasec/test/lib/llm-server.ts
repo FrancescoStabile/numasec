@@ -1,8 +1,4 @@
-import { NodeHttpServer, NodeHttpServerRequest } from "@effect/platform-node"
-import * as Http from "node:http"
-import { Deferred, Effect, Layer, Context, Stream } from "effect"
-import * as HttpServer from "effect/unstable/http/HttpServer"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { Deferred, Effect, Layer, Context, Scope, Stream } from "effect"
 
 export type Usage = { input: number; output: number }
 
@@ -131,6 +127,18 @@ function toolArgsLine(value: string) {
 
 function bytes(input: Iterable<unknown>) {
   return Stream.fromIterable([...input].map(line)).pipe(Stream.encodeText)
+}
+
+async function readBytes(stream: Stream.Stream<Uint8Array, unknown>) {
+  const chunks = await Effect.runPromise(Stream.runCollect(stream))
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out
 }
 
 function responseCreated(model: string) {
@@ -399,13 +407,13 @@ function responses(item: Sse, model: string) {
     seq += 1
     lines.push(responseReasonDone(reason, seq))
   }
-  if (call && !item.hang && !item.error) {
+  if (call && !item.hang && !item.error && !item.reset) {
     seq += 1
     lines.push(responseToolArgsDone(call.item, call.args, seq))
     seq += 1
     lines.push(responseToolDone(call, seq))
   }
-  if (!item.hang && !item.error) lines.push(responseCompleted({ seq: seq + 1, usage }))
+  if (!item.hang && !item.error && !item.reset) lines.push(responseCompleted({ seq: seq + 1, usage }))
   return { ...item, head: lines, tail: [] } satisfies Sse
 }
 
@@ -415,37 +423,45 @@ function modelFrom(body: unknown) {
   return body.model
 }
 
-function send(item: Sse) {
-  const head = bytes(item.head)
-  const tail = bytes([...item.tail, ...(item.hang || item.error ? [] : [done])])
-  const empty = Stream.fromIterable<Uint8Array>([])
-  const wait = item.wait
-  const body: Stream.Stream<Uint8Array, unknown> = wait
-    ? Stream.concat(head, Stream.fromEffect(Effect.promise(() => wait)).pipe(Stream.flatMap(() => tail)))
-    : Stream.concat(head, tail)
-  let end: Stream.Stream<Uint8Array, unknown> = empty
-  if (item.error) end = Stream.concat(empty, Stream.fail(item.error))
-  else if (item.hang) end = Stream.concat(empty, Stream.never)
-
-  return HttpServerResponse.stream(Stream.concat(body, end), { contentType: "text/event-stream" })
+function streamResponse(item: Sse) {
+  const encoder = new TextEncoder()
+  const resetError = () => Object.assign(new Error("connection reset"), { code: "ECONNRESET" as const })
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          const head = await readBytes(bytes(item.head))
+          if (head.length > 0) controller.enqueue(head)
+          if (item.wait) await item.wait
+          const tailParts = [...item.tail, ...(item.hang || item.error || item.reset ? [] : [done])]
+          const tail = await readBytes(bytes(tailParts))
+          if (tail.length > 0) controller.enqueue(tail)
+          if (item.reset) {
+            controller.error(resetError())
+            return
+          }
+          if (item.error) {
+            controller.error(item.error instanceof Error ? item.error : new Error(String(item.error)))
+            return
+          }
+          if (item.hang) return
+          controller.close()
+        } catch (cause) {
+          controller.error(cause)
+        }
+      },
+      cancel() {
+        void encoder
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
 }
 
-const reset = Effect.fn("TestLLMServer.reset")(function* (item: Sse) {
-  const req = yield* HttpServerRequest.HttpServerRequest
-  const res = NodeHttpServerRequest.toServerResponse(req)
-  yield* Effect.sync(() => {
-    res.writeHead(200, { "content-type": "text/event-stream" })
-    for (const part of item.head) res.write(line(part))
-    for (const part of item.tail) res.write(line(part))
-    res.destroy(new Error("connection reset"))
-  })
-  return yield* Effect.never
-})
-
 function fail(item: HttpError) {
-  return HttpServerResponse.text(JSON.stringify(item.body), {
+  return new Response(JSON.stringify(item.body), {
     status: item.status,
-    contentType: "application/json",
+    headers: { "content-type": "application/json" },
   })
 }
 
@@ -630,13 +646,14 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
   static readonly layer = Layer.effect(
     TestLLMServer,
     Effect.gen(function* () {
-      const server = yield* HttpServer.HttpServer
-      const router = yield* HttpRouter.HttpRouter
-
       let hits: Hit[] = []
       let list: Queue[] = []
       let waits: Wait[] = []
       let misses: Hit[] = []
+      const id = Math.random().toString(36).slice(2)
+      const url = `https://test-llm-${id}.invalid/v1`
+      const previousFetch = globalThis.fetch
+      const scope = yield* Scope.Scope
 
       const queue = (...input: (Item | Reply)[]) => {
         list = [...list, ...input.map((value) => ({ item: item(value) }))]
@@ -661,46 +678,51 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         return first.item
       }
 
-      const handle = Effect.fn("TestLLMServer.handle")(function* (mode: "chat" | "responses") {
-        const req = yield* HttpServerRequest.HttpServerRequest
-        const body = yield* req.json.pipe(Effect.orElseSucceed(() => ({})))
-        const current = hit(req.originalUrl, body)
+      const handle = async (mode: "chat" | "responses", request: Request) => {
+        const body = await request.clone().json().catch(() => ({}))
+        const current = hit(request.url, body)
         if (isTitleRequest(body)) {
           hits = [...hits, current]
-          yield* notify()
+          await Effect.runPromise(notify())
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("E2E Title"), finishLine("stop")] }
-          if (mode === "responses") return send(responses(auto, modelFrom(body)))
-          return send(auto)
+          if (mode === "responses") return streamResponse(responses(auto, modelFrom(body)))
+          return streamResponse(auto)
         }
         const next = pull(current)
         if (!next) {
+          misses = [...misses, current]
           hits = [...hits, current]
-          yield* notify()
+          await Effect.runPromise(notify())
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("ok"), finishLine("stop")] }
-          if (mode === "responses") return send(responses(auto, modelFrom(body)))
-          return send(auto)
+          if (mode === "responses") return streamResponse(responses(auto, modelFrom(body)))
+          return streamResponse(auto)
         }
         hits = [...hits, current]
-        yield* notify()
+        await Effect.runPromise(notify())
         if (next.type !== "sse") return fail(next)
-        if (mode === "responses") return send(responses(next, modelFrom(body)))
-        if (next.reset) {
-          yield* reset(next)
-          return HttpServerResponse.empty()
+        if (mode === "responses") return streamResponse(responses(next, modelFrom(body)))
+        return streamResponse(next)
+      }
+
+      globalThis.fetch = (async (input, init) => {
+        const request = new Request(input, init)
+        const requestUrl = new URL(request.url)
+        const baseUrl = new URL(url)
+        if (requestUrl.host === baseUrl.host && requestUrl.pathname === "/v1/chat/completions") {
+          return handle("chat", request)
         }
-        return send(next)
-      })
+        if (requestUrl.host === baseUrl.host && requestUrl.pathname === "/v1/responses") {
+          return handle("responses", request)
+        }
+        return previousFetch(request)
+      }) as typeof globalThis.fetch
 
-      yield* router.add("POST", "/v1/chat/completions", handle("chat"))
-      yield* router.add("POST", "/v1/responses", handle("responses"))
-
-      yield* server.serve(router.asHttpEffect())
+      yield* Scope.addFinalizer(scope, Effect.sync(() => {
+        globalThis.fetch = previousFetch
+      }))
 
       return TestLLMServer.of({
-        url:
-          server.address._tag === "TcpAddress"
-            ? `http://127.0.0.1:${server.address.port}/v1`
-            : `unix://${server.address.path}/v1`,
+        url,
         push: Effect.fn("TestLLMServer.push")(function* (...input: (Item | Reply)[]) {
           queue(...input)
         }),
@@ -767,5 +789,5 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         misses: Effect.sync(() => [...misses]),
       })
     }),
-  ).pipe(Layer.provide(HttpRouter.layer), Layer.provide(NodeHttpServer.layer(() => Http.createServer(), { port: 0 })))
+  )
 }

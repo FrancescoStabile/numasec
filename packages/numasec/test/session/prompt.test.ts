@@ -27,6 +27,26 @@ function defer<T>() {
   return { promise, resolve }
 }
 
+async function withFetchMock<T>(
+  baseURL: string,
+  handler: (request: Request) => Response | Promise<Response>,
+  fn: () => Promise<T>,
+) {
+  const original = globalThis.fetch
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const request = new Request(input, init)
+    if (request.url.startsWith(baseURL)) {
+      return handler(request)
+    }
+    return original(request)
+  }) as typeof globalThis.fetch
+  try {
+    return await fn()
+  } finally {
+    globalThis.fetch = original
+  }
+}
+
 function chat(text: string) {
   const payload =
     [
@@ -250,9 +270,10 @@ describe("session.prompt special characters", () => {
 describe("session.prompt regression", () => {
   test("does not loop empty assistant turns for a simple reply", async () => {
     let calls = 0
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
+    const baseURL = "https://prompt-regression.test/v1"
+    await withFetchMock(
+      baseURL,
+      (req) => {
         const url = new URL(req.url)
         if (!url.pathname.endsWith("/chat/completions")) {
           return new Response("not found", { status: 404 })
@@ -263,9 +284,7 @@ describe("session.prompt regression", () => {
           headers: { "Content-Type": "text/event-stream" },
         })
       },
-    })
-
-    try {
+      async () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
@@ -278,7 +297,7 @@ describe("session.prompt regression", () => {
                 alibaba: {
                   options: {
                     apiKey: "test-key",
-                    baseURL: `${server.url.origin}/v1`,
+                    baseURL,
                   },
                 },
               },
@@ -315,31 +334,26 @@ describe("session.prompt regression", () => {
             }),
           ),
       })
-    } finally {
-      void server.stop(true)
-    }
+      },
+    )
   })
 
   test("records aborted errors when prompt is cancelled mid-stream", async () => {
     const ready = defer<void>()
-    const server = Bun.serve({
-      port: 0,
-      fetch(req) {
+    const baseURL = "https://prompt-cancel.test/v1"
+    await withFetchMock(
+      baseURL,
+      (req) => {
         const url = new URL(req.url)
         if (!url.pathname.endsWith("/chat/completions")) {
           return new Response("not found", { status: 404 })
         }
-        return new Response(
-          hanging(() => ready.resolve()),
-          {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          },
-        )
+        return new Response(hanging(() => ready.resolve()), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
       },
-    })
-
-    try {
+      async () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
@@ -352,7 +366,7 @@ describe("session.prompt regression", () => {
                 alibaba: {
                   options: {
                     apiKey: "test-key",
-                    baseURL: `${server.url.origin}/v1`,
+                    baseURL,
                   },
                 },
               },
@@ -408,9 +422,8 @@ describe("session.prompt regression", () => {
             }),
           ),
       })
-    } finally {
-      void server.stop(true)
-    }
+      },
+    )
   })
 })
 

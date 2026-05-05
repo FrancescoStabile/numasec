@@ -490,6 +490,30 @@ describe("core/cyber", () => {
         await AppRuntime.runPromise(
           Cyber.upsertFact({
             operation_slug: op.slug,
+            entity_kind: "identity",
+            entity_key: "user:alice",
+            fact_name: "descriptor",
+            value_json: { kind: "user", label: "alice" },
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+          }),
+        )
+        await AppRuntime.runPromise(
+          Cyber.upsertFact({
+            operation_slug: op.slug,
+            entity_kind: "identity",
+            entity_key: "user:alice",
+            fact_name: "active",
+            value_json: true,
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+          }),
+        )
+        await AppRuntime.runPromise(
+          Cyber.upsertFact({
+            operation_slug: op.slug,
             entity_kind: "vertical",
             entity_key: "pentest",
             fact_name: "readiness",

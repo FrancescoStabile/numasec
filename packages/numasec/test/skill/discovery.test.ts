@@ -5,50 +5,68 @@ import { Global } from "../../src/global"
 import { Filesystem } from "../../src/util"
 import { rm } from "fs/promises"
 import path from "path"
+import { Layer } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { AppFileSystem } from "@numasec/shared/filesystem"
+import { NodePath } from "@effect/platform-node"
 
 let CLOUDFLARE_SKILLS_URL: string
-let server: ReturnType<typeof Bun.serve>
 let downloadCount = 0
 
 const fixturePath = path.join(import.meta.dir, "../fixture/skills")
 const cacheDir = path.join(Global.Path.cache, "skills")
 
+function mockHttpClient(handler: (request: Request) => Response | Promise<Response>) {
+  const client = HttpClient.make((request) =>
+    Effect.flatMap(HttpClientRequest.toWeb(request), (webRequest) =>
+      Effect.promise(() => Promise.resolve(handler(webRequest))).pipe(
+        Effect.map((response) => HttpClientResponse.fromWeb(request, response)),
+      ),
+    ).pipe(Effect.orDie),
+  )
+  return Layer.succeed(HttpClient.HttpClient, client)
+}
+
 beforeAll(async () => {
   await rm(cacheDir, { recursive: true, force: true })
-
-  server = Bun.serve({
-    port: 0,
-    async fetch(req) {
-      const url = new URL(req.url)
-
-      // route /.well-known/skills/* to the fixture directory
-      if (url.pathname.startsWith("/.well-known/skills/")) {
-        const filePath = url.pathname.replace("/.well-known/skills/", "")
-        const fullPath = path.join(fixturePath, filePath)
-
-        if (await Filesystem.exists(fullPath)) {
-          if (!fullPath.endsWith("index.json")) {
-            downloadCount++
-          }
-          return new Response(Bun.file(fullPath))
-        }
-      }
-
-      return new Response("Not Found", { status: 404 })
-    },
-  })
-
-  CLOUDFLARE_SKILLS_URL = `http://localhost:${server.port}/.well-known/skills/`
+  CLOUDFLARE_SKILLS_URL = "https://skills.test/.well-known/skills/"
 })
 
 afterAll(async () => {
-  void server?.stop()
   await rm(cacheDir, { recursive: true, force: true })
 })
 
 describe("Discovery.pull", () => {
   const pull = (url: string) =>
-    Effect.runPromise(Discovery.Service.use((s) => s.pull(url)).pipe(Effect.provide(Discovery.defaultLayer)))
+    Effect.runPromise(
+      Discovery.Service.use((s) => s.pull(url)).pipe(
+        Effect.provide(
+          Discovery.layer.pipe(
+            Layer.provide(
+              mockHttpClient(async (req) => {
+                const url = new URL(req.url)
+
+                if (url.pathname.startsWith("/.well-known/skills/")) {
+                  const filePath = url.pathname.replace("/.well-known/skills/", "")
+                  const fullPath = path.join(fixturePath, filePath)
+
+                  if (await Filesystem.exists(fullPath)) {
+                    if (!fullPath.endsWith("index.json")) {
+                      downloadCount++
+                    }
+                    return new Response(Bun.file(fullPath))
+                  }
+                }
+
+                return new Response("Not Found", { status: 404 })
+              }),
+            ),
+            Layer.provide(AppFileSystem.defaultLayer),
+            Layer.provide(NodePath.layer),
+          ),
+        ),
+      ),
+    )
 
   test("downloads skills from cloudflare url", async () => {
     const dirs = await pull(CLOUDFLARE_SKILLS_URL)
@@ -70,13 +88,13 @@ describe("Discovery.pull", () => {
   })
 
   test("returns empty array for invalid url", async () => {
-    const dirs = await pull(`http://localhost:${server.port}/invalid-url/`)
+    const dirs = await pull("https://skills.test/invalid-url/")
     expect(dirs).toEqual([])
   })
 
   test("returns empty array for non-json response", async () => {
     // any url not explicitly handled in server returns 404 text "Not Found"
-    const dirs = await pull(`http://localhost:${server.port}/some-other-path/`)
+    const dirs = await pull("https://skills.test/some-other-path/")
     expect(dirs).toEqual([])
   })
 

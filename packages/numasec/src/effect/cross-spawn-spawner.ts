@@ -9,7 +9,9 @@ import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import * as Predicate from "effect/Predicate"
-import type * as Scope from "effect/Scope"
+import * as Queue from "effect/Queue"
+import * as Scope from "effect/Scope"
+import * as Cause from "effect/Cause"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
@@ -22,6 +24,10 @@ import {
   ProcessId,
 } from "effect/unstable/process/ChildProcessSpawner"
 import * as NodeChildProcess from "node:child_process"
+import * as NodeFs from "node:fs"
+import * as NodeFsPromises from "node:fs/promises"
+import * as NodeOs from "node:os"
+import * as NodePathModule from "node:path"
 import { PassThrough } from "node:stream"
 import launch from "cross-spawn"
 
@@ -93,6 +99,20 @@ const toPlatformError = (
 }
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
+type SpawnedProcess = NodeChildProcess.ChildProcess & {
+  __numasecAllRecorder?: OutputRecorder
+  __numasecStdoutRecorder?: OutputRecorder
+  __numasecStderrRecorder?: OutputRecorder
+}
+
+type OutputRecorder = {
+  chunks: Array<Uint8Array>
+  ended: boolean
+  error?: PlatformError.PlatformError
+  listeners: Set<(chunk: Uint8Array) => void>
+  endListeners: Set<() => void>
+  errorListeners: Set<(error: PlatformError.PlatformError) => void>
+}
 
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
@@ -143,16 +163,91 @@ export const make = Effect.gen(function* () {
       .toSorted((a, b) => a.fd - b.fd)
   }
 
+  const makeOutputRecorder = (): OutputRecorder => ({
+    chunks: [],
+    ended: false,
+    listeners: new Set(),
+    endListeners: new Set(),
+    errorListeners: new Set(),
+  })
+
+  const recordOutput = (
+    recorder: OutputRecorder,
+    source: NodeJS.ReadableStream,
+    onError: (error: Error) => PlatformError.PlatformError,
+    combined?: OutputRecorder,
+    onComplete?: () => void,
+  ) => {
+    source.on("data", (chunk) => {
+      const value = chunk instanceof Uint8Array ? new Uint8Array(chunk) : new Uint8Array(Buffer.from(chunk))
+      recorder.chunks.push(value)
+      for (const listener of recorder.listeners) listener(value)
+      if (combined) {
+        combined.chunks.push(value)
+        for (const listener of combined.listeners) listener(value)
+      }
+    })
+    source.on("end", () => {
+      recorder.ended = true
+      for (const listener of recorder.endListeners) listener()
+      onComplete?.()
+    })
+    source.on("error", (cause) => {
+      recorder.error = onError(toError(cause))
+      for (const listener of recorder.errorListeners) listener(recorder.error)
+      if (combined && !combined.error) {
+        combined.error = recorder.error
+        for (const listener of combined.errorListeners) listener(combined.error)
+      }
+    })
+    source.resume()
+  }
+
+  const outputStream = (recorder: OutputRecorder) =>
+    Stream.suspend(() => {
+      const replay = Stream.fromIterable(recorder.chunks)
+      if (recorder.error) return Stream.concat(replay, Stream.fail(recorder.error))
+      if (recorder.ended) return replay
+      return Stream.callback<Uint8Array, PlatformError.PlatformError>((queue) =>
+        Effect.sync(() => {
+          const onChunk = (chunk: Uint8Array) => {
+            Queue.offerUnsafe(queue, chunk)
+          }
+          const onEnd = () => {
+            Queue.endUnsafe(queue)
+          }
+          const onError = (error: PlatformError.PlatformError) => {
+            Queue.failCauseUnsafe(queue, Cause.fail(error))
+          }
+          recorder.listeners.add(onChunk)
+          recorder.endListeners.add(onEnd)
+          recorder.errorListeners.add(onError)
+          for (const chunk of recorder.chunks) Queue.offerUnsafe(queue, chunk)
+          if (recorder.error) {
+            Queue.failCauseUnsafe(queue, Cause.fail(recorder.error))
+          } else if (recorder.ended) {
+            Queue.endUnsafe(queue)
+          }
+          return Effect.sync(() => {
+            recorder.listeners.delete(onChunk)
+            recorder.endListeners.delete(onEnd)
+            recorder.errorListeners.delete(onError)
+          })
+        }),
+      )
+    })
+
   const stdios = (
     sin: ChildProcess.StdinConfig,
     sout: ChildProcess.StdoutConfig,
     serr: ChildProcess.StderrConfig,
     extra: ReadonlyArray<{ fd: number; config: ChildProcess.AdditionalFdConfig }>,
+    stdinFd?: number,
   ): NodeChildProcess.StdioOptions => {
     const pipe = (x: NodeChildProcess.IOType | undefined) =>
       process.platform === "win32" && x === "pipe" ? "overlapped" : x
-    const arr: Array<NodeChildProcess.IOType | undefined> = [
-      pipe(input(sin.stream)),
+    const arr: Array<NodeChildProcess.IOType | number | undefined> = [
+      stdinFd ?? pipe(input(sin.stream)),
       pipe(output(sout.stream)),
       pipe(output(serr.stream)),
     ]
@@ -218,6 +313,41 @@ export const make = Effect.gen(function* () {
     }
   })
 
+  const concatChunks = (chunks: ReadonlyArray<unknown>, encoding: BufferEncoding) => {
+    const buffers = chunks.map((chunk) => {
+      if (typeof chunk === "string") return Buffer.from(chunk, encoding)
+      if (chunk instanceof Uint8Array) return Buffer.from(chunk)
+      return Buffer.from(chunk as ArrayBuffer)
+    })
+    return Buffer.concat(buffers)
+  }
+
+  const stageStdin = Effect.fnUntraced(function* (stream: Stream.Stream<unknown, PlatformError.PlatformError>, encoding: BufferEncoding) {
+    const chunks = yield* Stream.runCollect(stream)
+    const data = concatChunks(Array.from(chunks), encoding)
+    const dir = yield* Effect.tryPromise({
+      try: () => NodeFsPromises.mkdtemp(NodePathModule.join(NodeOs.tmpdir(), "numasec-stdin-")),
+      catch: (cause) => toPlatformError("mkdtemp(stdin)", toError(cause), ChildProcess.make("stdin-stage")),
+    })
+    const file = NodePathModule.join(dir, "stdin.bin")
+    yield* Effect.tryPromise({
+      try: () => NodeFsPromises.writeFile(file, data),
+      catch: (cause) => toPlatformError("writeFile(stdin)", toError(cause), ChildProcess.make("stdin-stage")),
+    })
+    const fd = yield* Effect.try({
+      try: () => NodeFs.openSync(file, "r"),
+      catch: (cause) => toPlatformError("openSync(stdin)", toError(cause), ChildProcess.make("stdin-stage")),
+    })
+    const scope = yield* Scope.Scope
+    yield* Scope.addFinalizer(scope, Effect.sync(() => {
+      try {
+        NodeFs.closeSync(fd)
+      } catch {}
+      NodeFsPromises.rm(dir, { recursive: true, force: true }).catch(() => {})
+    }))
+    return fd
+  })
+
   const setupStdin = (
     command: ChildProcess.StandardCommand,
     proc: NodeChildProcess.ChildProcess,
@@ -225,47 +355,129 @@ export const make = Effect.gen(function* () {
   ) =>
     Effect.suspend(() => {
       let sink: Sink.Sink<void, unknown, never, PlatformError.PlatformError> = Sink.drain
+      if (Predicate.isNotNull(proc.stdin) && Stream.isStream(cfg.stream)) {
+        const stdin = proc.stdin
+        const writeChunk = (chunk: unknown) =>
+          Effect.tryPromise({
+            try: () =>
+              new Promise<void>((resolve, reject) => {
+                const onWrite = (cause?: Error | null) => {
+                  if (cause) {
+                    reject(cause)
+                    return
+                  }
+                  resolve()
+                }
+                if (typeof chunk === "string") {
+                  stdin.write(chunk, cfg.encoding ?? "utf-8", onWrite)
+                  return
+                }
+                stdin.write(chunk as Uint8Array, onWrite)
+              }),
+            catch: (cause) => toPlatformError("write(stdin)", toError(cause), command),
+          })
+        const endInput = cfg.endOnDone
+          ? Effect.tryPromise({
+              try: () =>
+                new Promise<void>((resolve, reject) => {
+                  stdin.end((cause?: Error | null) => {
+                    if (cause) {
+                      reject(cause)
+                      return
+                    }
+                    resolve()
+                  })
+                }),
+              catch: (cause) => toPlatformError("end(stdin)", toError(cause), command),
+            })
+          : Effect.void
+        return Effect.as(
+          Effect.forkScoped(Stream.runForEach(cfg.stream, writeChunk).pipe(Effect.andThen(endInput))),
+          sink,
+        )
+      }
       if (Predicate.isNotNull(proc.stdin)) {
-        sink = NodeSink.fromWritable({
+        const options: {
+          evaluate: () => NodeJS.WritableStream
+          onError: (err: unknown) => PlatformError.PlatformError
+          endOnDone: boolean
+          encoding?: BufferEncoding
+        } = {
           evaluate: () => proc.stdin!,
           onError: (err) => toPlatformError("fromWritable(stdin)", toError(err), command),
-          endOnDone: cfg.endOnDone,
-          encoding: cfg.encoding,
+          endOnDone: cfg.endOnDone ?? true,
+        }
+        if (!Stream.isStream(cfg.stream)) {
+          options.encoding = cfg.encoding
+        }
+        sink = NodeSink.fromWritable({
+          ...options,
         })
       }
-      if (Stream.isStream(cfg.stream)) return Effect.as(Effect.forkScoped(Stream.run(cfg.stream, sink)), sink)
       return Effect.succeed(sink)
     })
 
   const setupOutput = (
     command: ChildProcess.StandardCommand,
-    proc: NodeChildProcess.ChildProcess,
+    proc: SpawnedProcess,
     out: ChildProcess.StdoutConfig,
     err: ChildProcess.StderrConfig,
   ) => {
-    let stdout = proc.stdout
-      ? NodeStream.fromReadable({
-          evaluate: () => proc.stdout!,
-          onError: (cause) => toPlatformError("fromReadable(stdout)", toError(cause), command),
-        })
+    let stdout = proc.__numasecStdoutRecorder
+      ? outputStream(proc.__numasecStdoutRecorder)
       : Stream.empty
-    let stderr = proc.stderr
-      ? NodeStream.fromReadable({
-          evaluate: () => proc.stderr!,
-          onError: (cause) => toPlatformError("fromReadable(stderr)", toError(cause), command),
-        })
+    let stderr = proc.__numasecStderrRecorder
+      ? outputStream(proc.__numasecStderrRecorder)
       : Stream.empty
 
     if (Sink.isSink(out.stream)) stdout = Stream.transduce(stdout, out.stream)
     if (Sink.isSink(err.stream)) stderr = Stream.transduce(stderr, err.stream)
 
-    return { stdout, stderr, all: Stream.merge(stdout, stderr) }
+    const all = proc.__numasecAllRecorder ? outputStream(proc.__numasecAllRecorder) : Stream.merge(stdout, stderr)
+    return { stdout, stderr, all }
   }
 
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
     Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      const proc = launch(command.command, command.args, opts)
+      const proc = launch(command.command, command.args, opts) as SpawnedProcess
+      const allRecorder = makeOutputRecorder()
+      proc.__numasecAllRecorder = allRecorder
+      let openOutputs = 0
+      const onOutputComplete = () => {
+        openOutputs -= 1
+        if (openOutputs === 0 && !allRecorder.ended && !allRecorder.error) {
+          allRecorder.ended = true
+          for (const listener of allRecorder.endListeners) listener()
+        }
+      }
+      if (proc.stdout) {
+        openOutputs += 1
+        const stdoutRecorder = makeOutputRecorder()
+        recordOutput(
+          stdoutRecorder,
+          proc.stdout,
+          (cause) => toPlatformError("fromReadable(stdout)", cause, command),
+          allRecorder,
+          onOutputComplete,
+        )
+        proc.__numasecStdoutRecorder = stdoutRecorder
+      }
+      if (proc.stderr) {
+        openOutputs += 1
+        const stderrRecorder = makeOutputRecorder()
+        recordOutput(
+          stderrRecorder,
+          proc.stderr,
+          (cause) => toPlatformError("fromReadable(stderr)", cause, command),
+          allRecorder,
+          onOutputComplete,
+        )
+        proc.__numasecStderrRecorder = stderrRecorder
+      }
+      if (openOutputs === 0) {
+        allRecorder.ended = true
+      }
       let end = false
       let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
       proc.on("error", (err) => {
@@ -362,17 +574,24 @@ export const make = Effect.gen(function* () {
     function* (command) {
       switch (command._tag) {
         case "StandardCommand": {
+          const scope = yield* Scope.make()
+          const parentScope = yield* Scope.Scope
+          yield* Scope.addFinalizerExit(parentScope, (exit) => Scope.close(scope, exit))
           const sin = stdin(command.options)
           const sout = stdio(command.options, "stdout")
           const serr = stdio(command.options, "stderr")
           const extra = fds(command.options)
           const dir = yield* cwd(command.options)
+          const stagedStdinFd =
+            typeof Bun !== "undefined" && Stream.isStream(sin.stream)
+              ? yield* stageStdin(sin.stream, sin.encoding ?? "utf-8")
+              : undefined
 
           const [proc, signal] = yield* Effect.acquireRelease(
             spawn(command, {
               cwd: dir,
               env: env(command.options),
-              stdio: stdios(sin, sout, serr, extra),
+              stdio: stdios(sin, sout, serr, extra, stagedStdinFd),
               detached: command.options.detached ?? process.platform !== "win32",
               shell: command.options.shell,
               windowsHide: process.platform === "win32",
@@ -398,14 +617,14 @@ export const make = Effect.gen(function* () {
                 : attempt
               return yield* Effect.ignore(escalated)
             }),
-          )
+          ).pipe(Scope.provide(scope))
 
           const fd = yield* setupFds(command, proc, extra)
           const out = setupOutput(command, proc, sout, serr)
           let ref = true
           return makeHandle({
             pid: ProcessId(proc.pid!),
-            stdin: yield* setupStdin(command, proc, sin),
+            stdin: stagedStdinFd === undefined ? yield* setupStdin(command, proc, sin) : Sink.drain,
             stdout: out.stdout,
             stderr: out.stderr,
             all: out.all,

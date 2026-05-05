@@ -33,7 +33,7 @@ test.skipIf(process.platform === "win32")("postinstall prints a concise success 
     },
   })
 
-  const proc = Bun.spawn(["node", "postinstall.mjs"], {
+  const proc = Bun.spawn([process.execPath, path.join(fixture.path, "postinstall.mjs")], {
     cwd: fixture.path,
     stdout: "pipe",
     stderr: "pipe",
