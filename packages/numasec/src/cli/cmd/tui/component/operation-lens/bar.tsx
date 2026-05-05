@@ -53,25 +53,19 @@ export function OperationLensBar(props: {
     <box flexDirection="row" gap={1} flexWrap="no-wrap" paddingBottom={1} flexShrink={0}>
       <For each={barItems()}>
         {(item, index) => (
-          <>
-            <text
-              fg={item.id === props.view ? props.theme.primary : toneColor(props.theme, item.tone)}
-              attributes={item.id === props.view ? 1 : undefined}
-              wrapMode="none"
-              onMouseDown={() => props.onSelect(item.id)}
-            >
-              {item.id === props.view ? "[" : ""}
-              {item.name}
-              {item.value ? " " : ""}
-              {item.value ? <span style={{ fg: item.id === props.view ? props.theme.text : toneColor(props.theme, item.tone) }}>{item.value}</span> : null}
-              {item.id === props.view ? "]" : ""}
-            </text>
-            {index() < barItems().length - 1 ? (
-              <text fg={props.theme.textMuted} wrapMode="none">
-                ·
-              </text>
-            ) : null}
-          </>
+          <text
+            fg={item.id === props.view ? props.theme.primary : toneColor(props.theme, item.tone)}
+            attributes={item.id === props.view ? 1 : undefined}
+            wrapMode="none"
+            onMouseDown={() => props.onSelect(item.id)}
+          >
+            {item.id === props.view ? "[" : ""}
+            {item.name}
+            {item.value ? " " : ""}
+            {item.value ? <span style={{ fg: item.id === props.view ? props.theme.text : toneColor(props.theme, item.tone) }}>{item.value}</span> : null}
+            {item.id === props.view ? "]" : ""}
+            {index() < barItems().length - 1 ? <span style={{ fg: props.theme.textMuted }}> ·</span> : null}
+          </text>
         )}
       </For>
     </box>
