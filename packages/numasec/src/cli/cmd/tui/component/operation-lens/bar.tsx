@@ -8,24 +8,12 @@ import {
   type OperationConsoleSnapshot,
   workflowProgress,
 } from "./snapshot"
+import { toneColor } from "./ui"
 
 type LensBarItem = {
   id: SessionView
   label: string
   tone?: "normal" | "success" | "warning" | "error"
-}
-
-function toneColor(theme: TuiThemeCurrent, tone: LensBarItem["tone"]) {
-  switch (tone) {
-    case "success":
-      return theme.success
-    case "warning":
-      return theme.warning
-    case "error":
-      return theme.error
-    default:
-      return theme.textMuted
-  }
 }
 
 function items(snapshot: OperationConsoleSnapshot): LensBarItem[] {

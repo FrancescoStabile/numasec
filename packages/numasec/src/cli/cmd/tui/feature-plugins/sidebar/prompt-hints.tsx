@@ -39,9 +39,11 @@ function View(props: { api: TuiPluginApi }) {
           when={sessionView.current === "chat"}
           fallback={
             <text fg={theme().textMuted} wrapMode="none">
-              {sessionView.current === "findings"
-                ? "j/k select · enter detail · esc chat"
-                : "[ ] lens · esc chat"}
+              {sessionView.current === "findings" && "j/k select · e evidence · r replay · p report · esc chat"}
+              {sessionView.current === "evidence" && "j/k select · 0 all · back findings · esc chat"}
+              {sessionView.current === "replay" && "j/k select · 0 all · back findings · esc chat"}
+              {sessionView.current === "workflow" && "j/k select · esc chat"}
+              {sessionView.current === "report" && "j/k gate · esc chat"}
             </text>
           }
         >

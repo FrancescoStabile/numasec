@@ -93,9 +93,15 @@ import { SessionRetry } from "@/session/retry"
 import { OperationLensBar } from "@tui/component/operation-lens/bar"
 import { OperationLensPanel } from "@tui/component/operation-lens/panel"
 import {
+  evidenceRows,
   findingsRows,
   loadOperationConsoleSnapshot,
+  replayRows,
+  reportGateFocusIndex,
+  reportGateRows,
+  restoreSelectedIndex,
   type OperationConsoleSnapshot,
+  workflowRows,
 } from "@tui/component/operation-lens/snapshot"
 
 addDefaultParsers(parsers.parsers)
@@ -175,6 +181,12 @@ export function Session() {
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
   const [sessionView, setSessionView] = createSignal<SessionView>("chat")
   const [selectedFindingIndex, setSelectedFindingIndex] = createSignal(0)
+  const [selectedEvidenceIndex, setSelectedEvidenceIndex] = createSignal(0)
+  const [selectedReplayIndex, setSelectedReplayIndex] = createSignal(0)
+  const [selectedWorkflowIndex, setSelectedWorkflowIndex] = createSignal(0)
+  const [selectedReportGateIndex, setSelectedReportGateIndex] = createSignal(0)
+  const [focusedFindingKey, setFocusedFindingKey] = createSignal<string | undefined>()
+  const [filterFindingKey, setFilterFindingKey] = createSignal<string | undefined>()
   const [findingDetailOpen, setFindingDetailOpen] = createSignal(true)
   const [snapshotTick, setSnapshotTick] = createSignal(true)
 
@@ -204,6 +216,10 @@ export function Session() {
   })
   const snapshot = createMemo(() => operationSnapshot())
   const findingLensRows = createMemo(() => findingsRows(snapshot()))
+  const evidenceLensRows = createMemo(() => evidenceRows(snapshot(), { findingKey: filterFindingKey() }))
+  const replayLensRows = createMemo(() => replayRows(snapshot(), { findingKey: filterFindingKey() }))
+  const workflowLensRows = createMemo(() => workflowRows(snapshot()))
+  const reportLensRows = createMemo(() => reportGateRows(snapshot()))
   const hasOperationLenses = createMemo(() => Boolean(snapshot()?.active && snapshot()?.projected))
 
   function refreshSnapshot() {
@@ -213,6 +229,7 @@ export function Session() {
   function applySessionView(next: SessionView) {
     setSessionView(next)
     if (next === "chat") {
+      setFilterFindingKey(undefined)
       prompt?.focus()
       return
     }
@@ -228,6 +245,31 @@ export function Session() {
     if (currentIndex < 0 || lensIndex < 0) return
     const next = lenses[(lensIndex + step + lenses.length) % lenses.length]
     applySessionView(next)
+  }
+
+  function selectFindingIndex(next: number) {
+    const rows = findingLensRows()
+    const clamped = Math.max(0, Math.min(next, Math.max(0, rows.length - 1)))
+    setSelectedFindingIndex(clamped)
+    setFocusedFindingKey(rows[clamped]?.key)
+  }
+
+  function openEvidenceForFinding(findingKey?: string) {
+    setFilterFindingKey(findingKey)
+    setSelectedEvidenceIndex(0)
+    applySessionView("evidence")
+  }
+
+  function openReplayForFinding(findingKey?: string) {
+    setFilterFindingKey(findingKey)
+    setSelectedReplayIndex(0)
+    applySessionView("replay")
+  }
+
+  function openReportForFinding(findingKey?: string) {
+    setFilterFindingKey(undefined)
+    setSelectedReportGateIndex(reportGateFocusIndex(snapshot(), findingKey))
+    applySessionView("report")
   }
 
   createEffect(async () => {
@@ -254,10 +296,13 @@ export function Session() {
     const rows = findingLensRows()
     if (rows.length === 0) {
       setSelectedFindingIndex(0)
+      setFocusedFindingKey(undefined)
       return
     }
-    if (selectedFindingIndex() >= rows.length) {
-      setSelectedFindingIndex(rows.length - 1)
+    const restored = restoreSelectedIndex(rows, focusedFindingKey(), selectedFindingIndex())
+    if (restored !== selectedFindingIndex()) setSelectedFindingIndex(restored)
+    if (!focusedFindingKey() || rows[restored]?.key !== focusedFindingKey()) {
+      setFocusedFindingKey(rows[restored]?.key)
     }
   })
 
@@ -265,6 +310,42 @@ export function Session() {
     if (!hasOperationLenses() && sessionView() !== "chat") {
       applySessionView("chat")
     }
+  })
+
+  createEffect(() => {
+    const rows = evidenceLensRows()
+    if (rows.length === 0) {
+      setSelectedEvidenceIndex(0)
+      return
+    }
+    if (selectedEvidenceIndex() >= rows.length) setSelectedEvidenceIndex(rows.length - 1)
+  })
+
+  createEffect(() => {
+    const rows = replayLensRows()
+    if (rows.length === 0) {
+      setSelectedReplayIndex(0)
+      return
+    }
+    if (selectedReplayIndex() >= rows.length) setSelectedReplayIndex(rows.length - 1)
+  })
+
+  createEffect(() => {
+    const rows = workflowLensRows()
+    if (rows.length === 0) {
+      setSelectedWorkflowIndex(0)
+      return
+    }
+    if (selectedWorkflowIndex() >= rows.length) setSelectedWorkflowIndex(rows.length - 1)
+  })
+
+  createEffect(() => {
+    const rows = reportLensRows()
+    if (rows.length === 0) {
+      setSelectedReportGateIndex(0)
+      return
+    }
+    if (selectedReportGateIndex() >= rows.length) setSelectedReportGateIndex(rows.length - 1)
   })
 
   // Handle initial prompt from fork
@@ -378,35 +459,94 @@ export function Session() {
       return
     }
     if (evt.name === "f") {
+      setFilterFindingKey(undefined)
       applySessionView("findings")
       return
     }
     if (evt.name === "v") {
+      if (sessionView() === "findings") {
+        openEvidenceForFinding(findingLensRows()[selectedFindingIndex()]?.key)
+        return
+      }
       applySessionView("evidence")
       return
     }
     if (evt.name === "r") {
+      if (sessionView() === "findings") {
+        openReplayForFinding(findingLensRows()[selectedFindingIndex()]?.key)
+        return
+      }
       applySessionView("replay")
       return
     }
     if (evt.name === "w") {
+      setFilterFindingKey(undefined)
       applySessionView("workflow")
       return
     }
     if (evt.name === "p") {
+      if (sessionView() === "findings") {
+        openReportForFinding(findingLensRows()[selectedFindingIndex()]?.key)
+        return
+      }
+      setFilterFindingKey(undefined)
       applySessionView("report")
       return
     }
-    if (sessionView() !== "findings") return
-    if (evt.name === "j" || evt.name === "down") {
-      setSelectedFindingIndex((value) => Math.min(value + 1, Math.max(0, findingLensRows().length - 1)))
+    if ((evt.name === "0" || evt.name === "a") && (sessionView() === "evidence" || sessionView() === "replay")) {
+      setFilterFindingKey(undefined)
       return
+    }
+    if (evt.name === "backspace" && (sessionView() === "evidence" || sessionView() === "replay")) {
+      setFilterFindingKey(undefined)
+      applySessionView("findings")
+      return
+    }
+    if (evt.name === "j" || evt.name === "down") {
+      if (sessionView() === "findings") {
+        selectFindingIndex(selectedFindingIndex() + 1)
+        return
+      }
+      if (sessionView() === "evidence") {
+        setSelectedEvidenceIndex((value) => Math.min(value + 1, Math.max(0, evidenceLensRows().length - 1)))
+        return
+      }
+      if (sessionView() === "replay") {
+        setSelectedReplayIndex((value) => Math.min(value + 1, Math.max(0, replayLensRows().length - 1)))
+        return
+      }
+      if (sessionView() === "workflow") {
+        setSelectedWorkflowIndex((value) => Math.min(value + 1, Math.max(0, workflowLensRows().length - 1)))
+        return
+      }
+      if (sessionView() === "report") {
+        setSelectedReportGateIndex((value) => Math.min(value + 1, Math.max(0, reportLensRows().length - 1)))
+        return
+      }
     }
     if (evt.name === "k" || evt.name === "up") {
-      setSelectedFindingIndex((value) => Math.max(0, value - 1))
-      return
+      if (sessionView() === "findings") {
+        selectFindingIndex(selectedFindingIndex() - 1)
+        return
+      }
+      if (sessionView() === "evidence") {
+        setSelectedEvidenceIndex((value) => Math.max(0, value - 1))
+        return
+      }
+      if (sessionView() === "replay") {
+        setSelectedReplayIndex((value) => Math.max(0, value - 1))
+        return
+      }
+      if (sessionView() === "workflow") {
+        setSelectedWorkflowIndex((value) => Math.max(0, value - 1))
+        return
+      }
+      if (sessionView() === "report") {
+        setSelectedReportGateIndex((value) => Math.max(0, value - 1))
+        return
+      }
     }
-    if (evt.name === "return") {
+    if (sessionView() === "findings" && evt.name === "return") {
       setFindingDetailOpen((value) => !value)
     }
   })
@@ -1350,7 +1490,12 @@ export function Session() {
                         view={sessionView()}
                         snapshot={snapshot()!}
                         selectedFindingIndex={selectedFindingIndex()}
+                        selectedEvidenceIndex={selectedEvidenceIndex()}
+                        selectedReplayIndex={selectedReplayIndex()}
+                        selectedWorkflowIndex={selectedWorkflowIndex()}
+                        selectedReportGateIndex={selectedReportGateIndex()}
                         findingDetailOpen={findingDetailOpen()}
+                        filterFindingKey={filterFindingKey()}
                       />
                     </scrollbox>
                   </Match>

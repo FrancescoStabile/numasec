@@ -1,50 +1,13 @@
 import { createMemo, For, Show } from "solid-js"
 import type { TuiThemeCurrent } from "@numasec/plugin/tui"
 import { findingsRows, type FindingLensRow, type OperationConsoleSnapshot } from "./snapshot"
-
-function statusColor(theme: TuiThemeCurrent, row: FindingLensRow) {
-  switch (row.status) {
-    case "reportable":
-      return theme.success
-    case "verified":
-      return theme.info
-    case "suspected":
-      return theme.warning
-    case "rejected":
-      return theme.textMuted
-    case "candidate":
-      return theme.primary
-  }
-}
-
-function severityColor(theme: TuiThemeCurrent, row: FindingLensRow) {
-  switch (row.severityCode) {
-    case "C":
-      return theme.error
-    case "H":
-      return theme.warning
-    case "M":
-      return theme.info
-    case "L":
-      return theme.textMuted
-    case "I":
-      return theme.textMuted
-    default:
-      return theme.textMuted
-  }
-}
+import { LensDetail, LensEmpty, LensRow, LensTitle, severityColor, statusColor, toneColor, truncateMiddle } from "./ui"
 
 function replayLabel(row: FindingLensRow) {
   if (row.replay === "present") return "yes"
   if (row.replay === "exempt") return "exempt"
   if (row.replay === "missing") return "no"
   return "-"
-}
-
-function truncate(text: string, max: number) {
-  if (text.length <= max) return text
-  if (max <= 1) return text.slice(0, max)
-  return text.slice(0, max - 1) + "…"
 }
 
 export function OperationLensFindings(props: {
@@ -58,14 +21,12 @@ export function OperationLensFindings(props: {
 
   return (
     <box flexDirection="column" flexGrow={1} gap={1}>
-      <Show
-        when={rows().length > 0}
-        fallback={
-          <text fg={props.theme.textMuted} wrapMode="none">
-            no findings projected
-          </text>
-        }
-      >
+      <LensTitle
+        theme={props.theme}
+        title="FINDINGS"
+        summary={`proof table · ${rows().length} projected`}
+      />
+      <Show when={rows().length > 0} fallback={<LensEmpty theme={props.theme} message="no findings projected" />}>
         <box flexDirection="row" gap={2}>
           <text fg={props.theme.textMuted} wrapMode="none">
             Sev
@@ -87,46 +48,31 @@ export function OperationLensFindings(props: {
           </text>
         </box>
         <For each={rows()}>
-          {(row, index) => {
-            const active = () => index() === props.selectedIndex
-            return (
-              <box
-                flexDirection="row"
-                gap={2}
-                paddingLeft={active() ? 1 : 0}
-                backgroundColor={active() ? props.theme.backgroundElement : undefined}
-              >
-                <text fg={severityColor(props.theme, row)} wrapMode="none">
-                  {row.severityCode}
-                </text>
-                <text fg={statusColor(props.theme, row)} wrapMode="none">
-                  {row.status.padEnd(10, " ")}
-                </text>
-                <text fg={active() ? props.theme.text : props.theme.textMuted} wrapMode="none">
-                  {truncate(row.title, 54)}
-                </text>
-                <text fg={props.theme.textMuted} wrapMode="none">
-                  {String(row.evidenceCount).padStart(2, " ")}
-                </text>
-                <text fg={row.replay === "missing" ? props.theme.warning : props.theme.textMuted} wrapMode="none">
-                  {replayLabel(row).padEnd(6, " ")}
-                </text>
-                <text fg={props.theme.primary} wrapMode="none">
-                  {row.action}
-                </text>
-              </box>
-            )
-          }}
+          {(row, index) => (
+            <LensRow theme={props.theme} active={index() === props.selectedIndex}>
+              <text fg={severityColor(props.theme, row.severityCode)} wrapMode="none">
+                {row.severityCode}
+              </text>
+              <text fg={statusColor(props.theme, row.status)} wrapMode="none">
+                {row.status.padEnd(10, " ")}
+              </text>
+              <text fg={index() === props.selectedIndex ? props.theme.text : props.theme.textMuted} wrapMode="none">
+                {truncateMiddle(row.title, 56)}
+              </text>
+              <text fg={props.theme.textMuted} wrapMode="none">
+                {String(row.evidenceCount).padStart(2, " ")}
+              </text>
+              <text fg={row.replay === "missing" ? props.theme.warning : props.theme.textMuted} wrapMode="none">
+                {replayLabel(row).padEnd(6, " ")}
+              </text>
+              <text fg={toneColor(props.theme, "primary")} wrapMode="none">
+                {row.action}
+              </text>
+            </LensRow>
+          )}
         </For>
         <Show when={props.detailOpen && selected()}>
-          <box
-            flexDirection="column"
-            gap={1}
-            paddingLeft={1}
-            paddingTop={1}
-            border={["left"]}
-            borderColor={props.theme.borderSubtle}
-          >
+          <LensDetail theme={props.theme}>
             <text fg={props.theme.text} wrapMode="word">
               {selected()!.title}
             </text>
@@ -150,9 +96,9 @@ export function OperationLensFindings(props: {
               </text>
             </Show>
             <text fg={props.theme.textMuted} wrapMode="none">
-              j/k select · enter detail · esc chat
+              open evidence with `e` · replay with `r` · report with `p`
             </text>
-          </box>
+          </LensDetail>
         </Show>
       </Show>
     </box>

@@ -13,7 +13,12 @@ export function OperationLensPanel(props: {
   view: SessionView
   snapshot: OperationConsoleSnapshot
   selectedFindingIndex: number
+  selectedEvidenceIndex: number
+  selectedReplayIndex: number
+  selectedWorkflowIndex: number
+  selectedReportGateIndex: number
   findingDetailOpen: boolean
+  filterFindingKey?: string
 }) {
   return (
     <box flexDirection="column" flexGrow={1} gap={1}>
@@ -27,16 +32,34 @@ export function OperationLensPanel(props: {
           />
         </Match>
         <Match when={props.view === "evidence"}>
-          <OperationLensEvidence theme={props.theme} snapshot={props.snapshot} />
+          <OperationLensEvidence
+            theme={props.theme}
+            snapshot={props.snapshot}
+            selectedIndex={props.selectedEvidenceIndex}
+            filterFindingKey={props.filterFindingKey}
+          />
         </Match>
         <Match when={props.view === "replay"}>
-          <OperationLensReplay theme={props.theme} snapshot={props.snapshot} />
+          <OperationLensReplay
+            theme={props.theme}
+            snapshot={props.snapshot}
+            selectedIndex={props.selectedReplayIndex}
+            filterFindingKey={props.filterFindingKey}
+          />
         </Match>
         <Match when={props.view === "workflow"}>
-          <OperationLensWorkflow theme={props.theme} snapshot={props.snapshot} />
+          <OperationLensWorkflow
+            theme={props.theme}
+            snapshot={props.snapshot}
+            selectedIndex={props.selectedWorkflowIndex}
+          />
         </Match>
         <Match when={props.view === "report"}>
-          <OperationLensReport theme={props.theme} snapshot={props.snapshot} />
+          <OperationLensReport
+            theme={props.theme}
+            snapshot={props.snapshot}
+            selectedIndex={props.selectedReportGateIndex}
+          />
         </Match>
       </Switch>
     </box>
