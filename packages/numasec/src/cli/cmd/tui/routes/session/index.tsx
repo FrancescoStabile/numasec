@@ -65,6 +65,7 @@ import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
+import { DialogOperationRename } from "../../component/dialog-operation-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { Flag } from "@/flag/flag"
@@ -684,14 +685,19 @@ export function Session() {
     },
     {
       title: "Rename operation",
-      value: "session.rename",
+      value: "operation.rename",
       keybind: "session_rename",
-      category: "Session",
+      category: "Operation",
       slash: {
         name: "rename",
       },
       onSelect: (dialog) => {
-        dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
+        const active = snapshot()?.active
+        if (!active) {
+          dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
+          return
+        }
+        dialog.replace(() => <DialogOperationRename slug={active.slug} label={active.label} />)
       },
     },
     {

@@ -13,6 +13,7 @@ import path from "path"
 import { Keybind } from "@/util"
 import { Locale } from "@/util"
 import { Global } from "@/global"
+import { Permission } from "@/permission"
 import { useDialog } from "../../ui/dialog"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../context/tui-config"
@@ -149,6 +150,9 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
   })
 
   const { theme } = useTheme()
+  const canAlways = createMemo(
+    () => props.request.always.length > 0 || Permission.supportsToolWideAlways(props.request.permission),
+  )
 
   return (
     <Switch>
@@ -159,6 +163,11 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
             <Switch>
               <Match when={props.request.always.length === 1 && props.request.always[0] === "*"}>
                 <TextBody title={"This will allow " + props.request.permission + " until Numasec is restarted."} />
+              </Match>
+              <Match when={props.request.always.length === 0 && Permission.supportsToolWideAlways(props.request.permission)}>
+                <TextBody
+                  title={`This will allow ${props.request.permission} for this workspace. Operation scope and opsec boundaries still apply.`}
+                />
               </Match>
               <Match when={true}>
                 <box paddingLeft={1} gap={1}>
@@ -432,7 +441,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={canAlways() ? { once: "Allow once", always: "Allow always", reject: "Reject" } : { once: "Allow once", reject: "Reject" }}
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {

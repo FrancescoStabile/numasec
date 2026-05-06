@@ -98,6 +98,43 @@ describe("tool/workspace", () => {
     })
   })
 
+  test("rename updates the active operation label through the workspace tool", async () => {
+    await using fixture = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: fixture.path,
+      fn: async () => {
+        const started: any = await exec({
+          action: "start",
+          label: "Original Name",
+          kind: "pentest",
+          target: "https://target.test",
+        })
+        const slug = String(started.metadata.slug)
+
+        const result: any = await exec({
+          action: "rename",
+          label: "Renamed Operation",
+        })
+        const reread = await Operation.read(fixture.path, slug)
+        const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: slug, limit: 100 }))
+
+        expect(result.metadata.action).toBe("rename")
+        expect(result.metadata.slug).toBe(slug)
+        expect(reread?.label).toBe("Renamed Operation")
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "operation" &&
+              item.entity_key === slug &&
+              item.fact_name === "operation_state" &&
+              (item.value_json as { label?: string }).label === "Renamed Operation",
+          ),
+        ).toBe(true)
+      },
+    })
+  })
+
   test("graph_digest exposes relation counts and relation lines", async () => {
     await using fixture = await tmpdir({ git: true })
 

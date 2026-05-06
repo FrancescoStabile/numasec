@@ -9,12 +9,15 @@ import { Instance } from "../../src/project/instance"
 import { provideInstance, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
+import { PermissionTable } from "../../src/session/session.sql"
+import { Database } from "../../src/storage"
 
 const bus = Bus.layer
 const env = Layer.mergeAll(Permission.layer.pipe(Layer.provide(bus)), bus, CrossSpawnSpawner.defaultLayer)
 const it = testEffect(env)
 
 afterEach(async () => {
+  Database.use((db) => db.delete(PermissionTable).run())
   await Instance.disposeAll()
 })
 
@@ -743,6 +746,73 @@ it.live("reply - always persists approval and resolves", () =>
     }).pipe(run)
     expect(result).toBeUndefined()
   }),
+)
+
+it.live("reply - always grants wildcard for tool-wide cyber permissions with no explicit always patterns", () =>
+  withDir({ git: true }, () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionID.make("per_toolwide1"),
+        sessionID: SessionID.make("session_toolwide"),
+        permission: "http_request",
+        patterns: ["https://target.test/api/a"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionID.make("per_toolwide1"), reply: "always" })
+      yield* Fiber.join(fiber)
+
+      const result = yield* ask({
+        sessionID: SessionID.make("session_toolwide_next"),
+        permission: "http_request",
+        patterns: ["https://target.test/api/b"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      })
+      expect(result).toBeUndefined()
+
+      const rows = Database.use((db) => db.select().from(PermissionTable).all())
+      expect(rows[0]?.data).toContainEqual({ permission: "http_request", pattern: "*", action: "allow" })
+    }),
+  ),
+)
+
+it.live("reply - always does not create wildcard for unsafe permissions without explicit always patterns", () =>
+  withDir({ git: true }, () =>
+    Effect.gen(function* () {
+      const first = yield* ask({
+        id: PermissionID.make("per_unsafe1"),
+        sessionID: SessionID.make("session_unsafe"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionID.make("per_unsafe1"), reply: "always" })
+      yield* Fiber.join(first)
+
+      const second = yield* ask({
+        id: PermissionID.make("per_unsafe2"),
+        sessionID: SessionID.make("session_unsafe_next"),
+        permission: "bash",
+        patterns: ["pwd"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionID.make("per_unsafe2"), reply: "reject" })
+      yield* Fiber.await(second)
+    }),
+  ),
 )
 
 it.live("reply - reject cancels all pending for same session", () =>

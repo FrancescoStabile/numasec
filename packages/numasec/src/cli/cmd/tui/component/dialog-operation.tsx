@@ -3,7 +3,9 @@ import { DialogSelect } from "@tui/ui/dialog-select"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { useDialog } from "@tui/ui/dialog"
 import { useProject } from "@tui/context/project"
+import { useKeybind } from "@tui/context/keybind"
 import { Operation, type OperationKind } from "@/core/operation"
+import { DialogOperationRename } from "./dialog-operation-rename"
 
 const KIND_GLYPHS: Record<OperationKind, string> = {
   pentest: "◆",
@@ -22,6 +24,7 @@ const KINDS: OperationKind[] = ["pentest", "appsec", "osint", "hacking", "bughun
 export function DialogOperation() {
   const dialog = useDialog()
   const project = useProject()
+  const keybind = useKeybind()
   // Boolean-flip tick (≤2 distinct source values) — integer ticks make createResource
   // treat every refetch as a new source, stacking in-flight work. See commit 43ff009.
   const [tick, setTick] = createSignal(true)
@@ -125,6 +128,16 @@ export function DialogOperation() {
                   dialog.clear()
                 }}
                 keybind={[
+                  {
+                    keybind: keybind.all.session_rename?.[0],
+                    title: "rename",
+                    onTrigger: (option) => {
+                      if (option.value === NEW) return
+                      const op = d().ops.find((item) => item.slug === option.value)
+                      if (!op) return
+                      dialog.replace(() => <DialogOperationRename slug={op.slug} label={op.label} onRenamed={refresh} />)
+                    },
+                  },
                   {
                     title: "deactivate",
                     onTrigger: async (option) => {

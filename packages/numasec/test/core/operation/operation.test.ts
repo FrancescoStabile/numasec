@@ -67,6 +67,33 @@ describe("Operation v3 core", () => {
     expect(await Operation.activeSlug(ws)).toBe(a.slug)
   })
 
+  it("rename updates the operation label without changing the slug", async () => {
+    const info = await Operation.create({
+      workspace: ws,
+      label: "Initial Label",
+      kind: "pentest",
+      target: "https://target.test",
+    })
+
+    const renamed = await Operation.rename(ws, info.slug, "Client Approved Name")
+    const reread = await Operation.read(ws, info.slug)
+    const projectedState = await Operation.readProjectedState(ws, info.slug)
+    const contextPack = await Operation.readContextPack(ws, info.slug)
+    const cyberFacts = await Bun.file(path.join(ws, ".numasec", "operation", info.slug, "cyber", "facts.jsonl")).text()
+    const cyberLedger = await Bun.file(path.join(ws, ".numasec", "operation", info.slug, "cyber", "ledger.jsonl")).text()
+
+    expect(renamed.slug).toBe(info.slug)
+    expect(renamed.label).toBe("Client Approved Name")
+    expect(reread?.slug).toBe(info.slug)
+    expect(reread?.label).toBe("Client Approved Name")
+    expect(projectedState?.label).toBe("Client Approved Name")
+    expect(projectedState?.kind).toBe("pentest")
+    expect(projectedState?.target).toBe("https://target.test")
+    expect(contextPack).toContain("label: Client Approved Name")
+    expect(cyberFacts).toContain('"label":"Client Approved Name"')
+    expect(cyberLedger).toContain('"previous_label":"Initial Label"')
+  })
+
   it("list sorts by updated_at desc", async () => {
     await Operation.create({ workspace: ws, label: "Old", kind: "pentest" })
     await new Promise((r) => setTimeout(r, 20))

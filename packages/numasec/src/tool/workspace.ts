@@ -12,8 +12,9 @@ import { Instance } from "@/project/instance"
 import { Session } from "@/session"
 
 const parameters = z.object({
-  action: z.enum(["status", "list", "start", "graph_digest", "timeline"]).default("status"),
-  label: z.string().optional().describe("Required when action = start"),
+  action: z.enum(["status", "list", "start", "rename", "graph_digest", "timeline"]).default("status"),
+  label: z.string().optional().describe("Required when action = start or rename"),
+  slug: z.string().optional().describe("Optional operation slug when action = rename; defaults to active operation"),
   kind: z.enum(KINDS as [string, ...string[]]).optional().describe("Required when action = start"),
   target: z.string().optional().describe("Optional target when action = start"),
 })
@@ -91,6 +92,38 @@ export const WorkspaceTool = Tool.define<typeof parameters, Metadata, Session.Se
               title: `workspace · ${info.slug}`,
               output: `Started operation ${info.label} (${info.slug}) of kind ${info.kind}.`,
               metadata: { action: "start", slug: info.slug },
+            }
+          }
+
+          if (params.action === "rename") {
+            const label = params.label?.trim()
+            if (!label) {
+              return {
+                title: "workspace rename",
+                output: "Provide label when action = rename.",
+                metadata: { action: "rename" },
+              }
+            }
+            const active = yield* Effect.promise(() => Operation.activeSlug(workspace).catch(() => undefined))
+            const slug = params.slug ?? active
+            if (!slug) {
+              return {
+                title: "workspace rename",
+                output: "No active operation. Provide slug when action = rename.",
+                metadata: { action: "rename", active: false },
+              }
+            }
+            yield* ctx.ask({
+              permission: "workspace",
+              patterns: [`rename:${slug}`],
+              always: [],
+              metadata: { action: "rename", slug, label },
+            })
+            const renamed = yield* Effect.promise(() => Operation.rename(workspace, slug, label))
+            return {
+              title: `workspace · ${renamed.slug}`,
+              output: `Renamed operation ${renamed.slug} to ${renamed.label}.`,
+              metadata: { action: "rename", slug: renamed.slug, label: renamed.label },
             }
           }
 

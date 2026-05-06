@@ -17,6 +17,28 @@ import { PermissionID } from "./schema"
 
 const log = Log.create({ service: "permission" })
 
+const TOOL_WIDE_ALWAYS = new Set([
+  "appsec_probe",
+  "browser",
+  "codesearch",
+  "cve",
+  "glob",
+  "grep",
+  "http_request",
+  "net",
+  "play",
+  "runbook",
+  "skill",
+  "todo",
+  "todowrite",
+  "webfetch",
+  "websearch",
+])
+
+export function supportsToolWideAlways(permission: string): boolean {
+  return TOOL_WIDE_ALWAYS.has(permission)
+}
+
 export const Action = Schema.Literals(["allow", "deny", "ask"])
   .annotate({ identifier: "PermissionAction" })
   .pipe(withStatics((s) => ({ zod: zod(s) })))
@@ -143,6 +165,46 @@ interface State {
   approved: Ruleset
 }
 
+function approvalPatterns(request: Request): string[] {
+  if (request.always.length > 0) return [...request.always]
+  if (supportsToolWideAlways(request.permission)) return ["*"]
+  return []
+}
+
+function dedupeRules(rules: Ruleset): Ruleset {
+  const seen = new Set<string>()
+  const result: Ruleset = []
+  for (const rule of rules) {
+    const key = `${rule.permission}\u0000${rule.pattern}\u0000${rule.action}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(rule)
+  }
+  return result
+}
+
+function persistApproved(projectID: ProjectID, approved: Ruleset) {
+  const now = Date.now()
+  Database.use((db) =>
+    db
+      .insert(PermissionTable)
+      .values({
+        project_id: projectID,
+        data: dedupeRules(approved),
+        time_created: now,
+        time_updated: now,
+      })
+      .onConflictDoUpdate({
+        target: PermissionTable.project_id,
+        set: {
+          data: dedupeRules(approved),
+          time_updated: now,
+        },
+      })
+      .run(),
+  )
+}
+
 export function evaluate(permission: string, pattern: string, ...rulesets: Ruleset[]): Rule {
   log.info("evaluate", { permission, pattern, ruleset: rulesets.flat() })
   return evalRule(permission, pattern, ...rulesets)
@@ -248,13 +310,18 @@ export const layer = Layer.effect(
       yield* Deferred.succeed(existing.deferred, undefined)
       if (input.reply === "once") return
 
-      for (const pattern of existing.info.always) {
+      const patterns = approvalPatterns(existing.info)
+      for (const pattern of patterns) {
         approved.push({
           permission: existing.info.permission,
           pattern,
           action: "allow",
         })
       }
+      const deduped = dedupeRules(approved)
+      approved.splice(0, approved.length, ...deduped)
+      const ctx = yield* InstanceState.context
+      persistApproved(ctx.project.id, approved)
 
       for (const [id, item] of pending.entries()) {
         if (item.info.sessionID !== existing.info.sessionID) continue

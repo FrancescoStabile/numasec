@@ -477,6 +477,114 @@ export async function archive(workspace: string, slug: string): Promise<void> {
   if (current === slug) await deactivate(workspace)
 }
 
+export async function rename(workspace: string, slug: string, label: string): Promise<Info> {
+  const nextLabel = label.trim()
+  if (!nextLabel) throw new Error("Operation label cannot be empty.")
+
+  const info = await read(workspace, slug)
+  if (!info) throw new Error(`Operation not found: ${slug}`)
+
+  const [projectedState, scope] = await Promise.all([
+    readProjectedState(workspace, slug).catch(() => undefined),
+    readProjectedScopePolicy(workspace, slug).catch(() => undefined),
+  ])
+  const now = Date.now()
+
+  await Instance.provide({
+    directory: workspace,
+    fn: async () => {
+      const projectID = Instance.project.id
+      const eventID = cyberID("cled")
+      const operationStateID = cyberID("cfact")
+      const ledger: typeof CyberLedgerTable.$inferInsert = {
+        id: eventID,
+        project_id: projectID,
+        operation_slug: slug,
+        kind: "operation.note",
+        source: "operation",
+        status: "completed",
+        summary: `operation renamed ${slug}`,
+        data: {
+          previous_label: info.label,
+          label: nextLabel,
+        },
+        time_created: now,
+      }
+      const fact: typeof CyberFactTable.$inferInsert = {
+        id: operationStateID,
+        project_id: projectID,
+        operation_slug: slug,
+        entity_kind: "operation",
+        entity_key: slug,
+        fact_name: "operation_state",
+        status: "observed",
+        writer_kind: "operator",
+        confidence: 1000,
+        source_event_id: eventID,
+        time_created: now,
+        time_updated: now,
+        value_json: {
+          label: nextLabel,
+          kind: projectedState?.kind ?? info.kind,
+          target: projectedState?.target ?? info.target,
+          opsec: projectedState?.opsec ?? info.opsec,
+          in_scope: projectedState?.in_scope ?? scope?.in_scope ?? [],
+          out_of_scope: projectedState?.out_of_scope ?? scope?.out_of_scope ?? [],
+        },
+      }
+      Database.use((db) => {
+        db.insert(CyberLedgerTable).values(ledger).onConflictDoNothing().run()
+        db.insert(CyberFactTable)
+          .values(fact)
+          .onConflictDoUpdate({
+            target: [
+              CyberFactTable.project_id,
+              CyberFactTable.operation_slug,
+              CyberFactTable.entity_kind,
+              CyberFactTable.entity_key,
+              CyberFactTable.fact_name,
+            ],
+            set: {
+              value_json: fact.value_json,
+              writer_kind: fact.writer_kind,
+              status: fact.status,
+              confidence: fact.confidence,
+              source_event_id: fact.source_event_id,
+              evidence_refs: fact.evidence_refs,
+              expires_at: fact.expires_at,
+              time_updated: fact.time_updated,
+            },
+          })
+          .run()
+      })
+      await mkdir(cyberDir(workspace, slug), { recursive: true })
+      await appendFile(cyberLedgerFile(workspace, slug), `${JSON.stringify(ledger)}\n`, "utf8")
+      await appendFile(cyberFactsFile(workspace, slug), `${JSON.stringify(fact)}\n`, "utf8")
+    },
+  })
+
+  const file = opFile(workspace, slug)
+  if (existsSync(file)) {
+    const content = await readFile(file, "utf8")
+    if (!content.includes(DERIVED_NOTEBOOK_MARKER)) {
+      const lines = content.split("\n")
+      lines[0] = `# Operation: ${nextLabel}`
+      await writeFile(file, lines.join("\n"), "utf8")
+    }
+  }
+
+  const context = await readContextPack(workspace, slug).catch(() => undefined)
+  if (context) {
+    const lines = context.split("\n").map((line) => (line.startsWith("label: ") ? `label: ${nextLabel}` : line))
+    await writeContextPack(workspace, slug, lines.join("\n"))
+  }
+
+  await touch(workspace, slug)
+  const renamed = await read(workspace, slug)
+  if (!renamed) throw new Error(`Operation not found after rename: ${slug}`)
+  return renamed
+}
+
 async function parseHeader(content: string, fallback: { slug: string; createdAt: number }): Promise<{
   label: string
   kind: Kind
