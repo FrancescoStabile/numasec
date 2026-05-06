@@ -45,6 +45,7 @@ In practice, this is the cyber operator core.
 `browser` is the Playwright-driven browser for navigation, interaction, and state inspection.
 `scanner` covers surface mapping primitives such as crawl, dir fuzz, JavaScript analysis, port scan, service probe, and banner grabs.
 `vault` provides one place for local credentials and profiles.
+`cve` is a compatibility alias for CVE-style vulnerability lookups; prefer `knowledge` for new work so CVE/advisory, tradecraft, exploit-signal, and tool-doc context stay in one provenance-aware surface.
 
 The adapter tools expose deeper vertical workflows without bundling every
 security binary into numasec:
@@ -79,7 +80,7 @@ If an adapter is missing, the tool reports an unavailable or degraded state inst
 
 These tools turn the primitive palette into an operator workflow.
 
-- `doctor` checks runtime, workspace, CVE bundle, vault mode, and missing local tools
+- `doctor` checks runtime, workspace, Cyber Knowledge Broker sources/cache, vault mode, and missing local tools
 - `runbook` is the primary semantic capsule surface for operator workflows
 - `play` is the lower-level primitive behind `runbook`
 - `pwn_bootstrap` classifies a target and initializes a pentest operation
@@ -89,7 +90,7 @@ These tools turn the primitive palette into an operator workflow.
 - `identity` tracks active personas, credentials, and test identities without exposing secrets
 - `evidence` stores or references proof artifacts
 - `observation` records evidence-backed signals that are not yet findings
-- `knowledge` pulls supporting knowledge with provenance
+- `knowledge` routes vulnerability intelligence, methodology, tradecraft, exploit signals, and installed tool docs through the Cyber Knowledge Broker with provenance, workspace cache, component/version matching, KEV/EPSS enrichment, and explicit applicability states
 - `finding` manages candidate, verified, rejected, and stale finding state
 - `report` builds deliverables and report output
 - `autonomy` switches between permissioned and auto execution posture

@@ -57,7 +57,7 @@ It is intentionally concise and should be kept current as work lands so an agent
   - `binary_triage` now persists checksec evidence, writes binary hardening summaries, and emits candidate hardening-gap findings.
 - Started consolidating the model-facing tool surface:
   - `analyze` now delegates to `iac_triage`, `container_surface`, `cloud_posture`, and `binary_triage`;
-  - `knowledge` now delegates to `cve` and `websearch`.
+  - `knowledge` is the primary semantic research surface; legacy `cve` and optional `websearch` are compatibility/fallback paths.
 - Structured installed-tool inventory now persists in the kernel:
   - `doctor` writes environment summary, per-tool presence, and play/vertical readiness facts and relations.
 - Added `bench:cyber` entrypoint with domain gates for `appsec` and `pentest`.
@@ -774,3 +774,24 @@ It is intentionally concise and should be kept current as work lands so an agent
 - Verification:
   - `bun run typecheck` passes.
   - `bun test --timeout 30000 test/tool/report.test.ts test/script/bench-cyber.test.ts` passes (`37 pass`).
+- Replaced the embedded CVE bundle architecture with the Cyber Knowledge Broker:
+  - `knowledge` is now the primary model-facing surface for vulnerability intelligence, methodology, tradecraft, exploit signals, field research, and installed tool docs;
+  - `cve` remains as a compatibility alias, but delegates to the broker instead of reading `assets/cve/index.json.gz`;
+  - the broker uses no-key structured sources for vuln intelligence (NVD, CISA KEV, FIRST EPSS, OSV, GitHub Security Advisories), local methodology/tradecraft packs, local exploit signals, and installed tool `--help`/`--version`;
+  - results persist as evidence plus `knowledge_query`, `vulnerability`, `technique`, `tool_usage`, and relation facts, never as findings;
+  - workspace-scoped cache at `.numasec/knowledge-cache` supports offline reuse without restoring a bundled snapshot as source of truth;
+  - `doctor` now reports broker sources/cache instead of a CVE bundle, and the obsolete CVE refresh workflow/scripts/assets were removed.
+- Hardened the broker from lookup aggregation into component-aware vulnerability intelligence:
+  - `vuln_intel action=match_component` now normalizes infrastructure components such as `nginx 1.18.0`, `OpenSSH_8.2p1`, Apache httpd banners, and CPEs;
+  - NVD affected CPE/version ranges are parsed and evaluated, distinguishing `applicable`, `conditional`, `possible`, `not_applicable`, and `unknown`;
+  - `VulnIntelCard` now carries preconditions, version-match state, affected ranges, distro-backport notes, verification steps, KEV, and explicit EPSS probability/percentile fields;
+  - tool output now returns a compact operator summary and compact cards while the full result is persisted as evidence and kernel facts.
+- Added bounded auto-enrichment from first-party cyber tools:
+  - scanner/browser-derived routes, technologies, JS signals, container CVEs, and appsec probe candidates can trigger broker enrichment under the active operation;
+  - strict opsec maps enrichment to `opsec_strict`, avoiding target-specific external leakage;
+  - AppSec/Pentest prompts now prefer `knowledge` before legacy `cve` or optional web search.
+- Verification:
+  - `bun typecheck` passes.
+  - `bun test --timeout 30000 test/core/knowledge/broker.test.ts test/tool/knowledge.test.ts test/core/doctor/probe.test.ts test/tool/play.test.ts test/tool/scanner.test.ts test/tool/appsec-probe.test.ts test/tool/container-surface.test.ts` passes (`50 pass`).
+  - `bun test --timeout 30000` from `packages/numasec` passes (`2172 pass`, `20 skip`, `1 todo`).
+  - `bun run build` from `packages/numasec` passes after network access for the existing `models.dev` build snapshot.

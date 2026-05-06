@@ -5,6 +5,7 @@ import DESCRIPTION from "./container-surface.txt"
 import { runProcess } from "./process"
 import { Cyber } from "@/core/cyber"
 import { Evidence } from "@/core/evidence"
+import { autoEnrichKnowledge } from "@/core/knowledge"
 import { Operation } from "@/core/operation"
 import { Instance } from "@/project/instance"
 
@@ -252,6 +253,23 @@ export const ContainerSurfaceTool = Tool.define<typeof parameters, Metadata, nev
               evidence_refs: evidenceRefs,
             }).pipe(Effect.catch(() => Effect.succeed("")))
           }
+          yield* autoEnrichKnowledge({
+            workspace,
+            operation_slug: slug,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            source: "container_surface",
+            items: (summary?.findings ?? [])
+              .filter((item) => item.kind === "vulnerability" && typeof item.id === "string")
+              .slice(0, 6)
+              .map((item) => ({
+                intent: "vuln_intel" as const,
+                action: "prioritize" as const,
+                query: String(item.id),
+                observed_refs: [`container_image:${params.image}`],
+                limit: 5,
+              })),
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
           return toolResult
         }).pipe(Effect.orDie),
     }

@@ -1,17 +1,13 @@
-Offline CVE lookup. Queries a bundled, gzipped NVD-derived index shipped with numasec — no network calls, no API keys.
+Legacy CVE compatibility tool. Prefer `knowledge` with `intent: "vuln_intel"` for new work.
 
-Use this instead of websearch when:
-- You have a CVE ID and need its severity, CVSS score, summary, and affected CPEs.
-- You have a product/vendor name (e.g. "log4j", "openssl", "struts") and need the most severe known CVEs for it.
-- You want to correlate a discovered service banner or dependency version with public vulnerabilities without leaving the machine.
+This tool delegates to the Cyber Knowledge Broker and queries public no-key vulnerability intelligence sources such as NVD, CISA KEV, FIRST EPSS, OSV, and GitHub Security Advisories where applicable. Public sources may rate-limit unauthenticated requests.
 
-Arguments:
-- `query` (string, required) — matches against CVE id, summary text, and CPE URIs (case-insensitive substring).
-- `severity` (optional) — one of `low` | `medium` | `high` | `critical`; filters results.
-- `limit` (optional, default 10, max 50) — maximum entries returned.
+Use this when:
+- You have a CVE ID and need advisory context.
+- You have a product/package keyword and need vulnerability intelligence candidates.
+- You need compatibility with older numasec prompts or workflows that still call `cve`.
 
-Results are sorted by severity (critical → low) and then by published date (newest first).
-
-If the bundled index is missing (e.g. stripped build), the tool returns `{ available: false, reason: ... }` and will NOT fall back to the network. The operator has to run `gh workflow run cve-refresh` or wait for the scheduled refresh.
-
-Output is compact JSON. Each entry: `{ id, severity, cvss, summary, cpe[], published }`. Summaries are truncated to 280 chars at ingestion time.
+Important:
+- CVE intelligence is not a finding.
+- KEV/EPSS/exploit signals prioritize validation; they do not prove applicability.
+- A reportable finding still requires observed applicability plus evidence and replay or a structured replay exemption.

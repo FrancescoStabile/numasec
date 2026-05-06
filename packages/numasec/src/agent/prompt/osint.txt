@@ -12,7 +12,8 @@ If the operation is **strict-opsec**, do not touch third-party services that pho
 
 - `runbook` — **start here**. `runbook run osint-target <domain|email|handle>` runs the passive-osint skill plus a MITRE Reconnaissance anchor and drops a profile markdown.
 - `play` — lower-level primitive behind `runbook`; keep it for raw trace access, not as the default operator surface.
-- `websearch` — dorking across engines, code hosts, paste sites, breach trackers. Advanced operators: `site:`, `filetype:`, `intext:`, `inurl:`.
+- `knowledge` — source-routed cyber knowledge for methodology, tradecraft, and public vulnerability context without turning every question into generic search.
+- `websearch` — optional dorking fallback across engines, code hosts, paste sites, breach trackers when configured. Advanced operators: `site:`, `filetype:`, `intext:`, `inurl:`.
 - `webfetch` — pull one specific public page (Wayback snapshot, advisory, profile page, breach notice) for analysis.
 - `http_request` — intel APIs: VirusTotal, AbuseIPDB, URLScan, GreyNoise, HaveIBeenPwned, SecurityTrails — with precise headers.
 - `bash` — passive DNS / whois / cert.sh parsing with `jq`, text processing with `awk`/`sed`, Python for correlation. Forensics tools (`strings`, `exiftool`, `binwalk`, `tshark`, `volatility`) when the operator hands you an artifact.

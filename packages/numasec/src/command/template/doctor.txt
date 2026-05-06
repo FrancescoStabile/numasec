@@ -6,7 +6,7 @@ description: Run numasec's environment self-check and surface actionable fixes.
 
 The operator wants a health report for their local numasec environment. Follow this procedure exactly.
 
-1. Call the `doctor` tool with no arguments. It inspects runtime, OS, binaries on PATH that numasec skills rely on, the secret vault at `~/.config/numasec/vault.json`, the CVE bundle, and the current workspace. It never reads secret values.
+1. Call the `doctor` tool with no arguments. It inspects runtime, OS, binaries on PATH that numasec skills rely on, the secret vault at `~/.config/numasec/vault.json`, the Cyber Knowledge Broker, and the current workspace. It never reads secret values.
 2. Summarize the result for the operator in this order:
    - **Runtime** — one line with node/bun version and OS/arch.
    - **Tooling** — show `present/total` count, then list missing tools grouped into two tiers:
@@ -16,9 +16,9 @@ The operator wants a health report for their local numasec environment. Follow t
    - **Play readiness** — list any degraded or unavailable plays first; mention what is missing.
    - **Vertical readiness** — list any degraded or unavailable verticals first; mention what is missing.
    - **Vault** — present or not configured. If present, report only the file mode (e.g. `600`). Never echo the file's contents.
-   - **CVE bundle** — present or not configured.
+   - **Knowledge broker** — list live no-key sources, local sources, and workspace cache path.
    - **Workspace** — writable or read-only.
-3. End with a short **Next steps** block containing at most 3 actionable items, each concrete (e.g. `brew install nuclei`, `chmod 600 ~/.config/numasec/vault.json`, `mkdir -p assets/cve`). Skip the section if everything is healthy.
+3. End with a short **Next steps** block containing at most 3 actionable items, each concrete (e.g. `brew install nuclei`, `chmod 600 ~/.config/numasec/vault.json`, `nuclei -update-templates`). Skip the section if everything is healthy.
 4. Keep the whole response under ~40 lines. Do not dump the raw tool output unless the operator asks for it.
 5. Do NOT run additional shell commands to probe the environment — the `doctor` tool is the single source of truth for this slash command.
 

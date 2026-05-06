@@ -34,9 +34,10 @@ describe("Doctor.probe", () => {
     expect(typeof report.vault.present).toBe("boolean")
     expect(typeof report.vault.path).toBe("string")
 
-    expect(report.cve).toBeDefined()
-    expect(typeof report.cve.present).toBe("boolean")
-    expect(typeof report.cve.path).toBe("string")
+    expect(report.knowledge).toBeDefined()
+    expect(report.knowledge.api_keys_required).toBe(false)
+    expect(report.knowledge.live_sources).toContain("NVD")
+    expect(typeof report.knowledge.cache_path).toBe("string")
 
     expect(report.workspace).toBeDefined()
     expect(typeof report.workspace.writable).toBe("boolean")
@@ -62,7 +63,12 @@ describe("Doctor.probe", () => {
       ],
       browser: { present: false, reason: "Playwright unavailable. Run: bun add playwright && npx playwright install chromium" },
       vault: { present: false, path: "/tmp/vault.json" },
-      cve: { present: false, path: "/tmp/latest.json" },
+      knowledge: {
+        live_sources: ["NVD", "CISA KEV"],
+        local_sources: ["numasec methodology"],
+        cache_path: "/tmp/work/.numasec/knowledge-cache",
+        api_keys_required: false,
+      },
       workspace: { path: "/tmp/work", writable: true },
       capability: {
         plays: [
@@ -92,6 +98,8 @@ describe("Doctor.probe", () => {
     expect(text).toContain("Web Surface Map")
     expect(text).toContain("## vertical readiness")
     expect(text).toContain("Browser Inspection")
+    expect(text).toContain("## knowledge broker")
+    expect(text).toContain("api keys required · no")
   })
 
   it("treats browser runtime as unavailable when chromium cannot launch", async () => {

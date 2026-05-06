@@ -7,7 +7,12 @@ import { evaluateCapabilitySurface, type CapabilityReadiness, type CapabilitySur
 
 export type BinaryReport = { name: string; present: boolean; path?: string; version?: string }
 export type VaultReport = { present: boolean; path: string; mode?: string }
-export type CveReport = { present: boolean; path: string }
+export type KnowledgeBrokerReport = {
+  live_sources: string[]
+  local_sources: string[]
+  cache_path: string
+  api_keys_required: boolean
+}
 export type WorkspaceReport = { path: string; writable: boolean }
 export type BrowserReport = { present: boolean; executable?: string; reason?: string }
 export type BrowserRuntimeDriver = {
@@ -22,7 +27,7 @@ export type Report = {
   os: { platform: NodeJS.Platform; arch: string; release: string }
   binaries: BinaryReport[]
   browser: BrowserReport
-  cve: CveReport
+  knowledge: KnowledgeBrokerReport
   vault: VaultReport
   workspace: WorkspaceReport
   capability: CapabilitySurface
@@ -86,13 +91,12 @@ async function probeVault(): Promise<VaultReport> {
   }
 }
 
-async function probeCve(workspace: string): Promise<CveReport> {
-  const p = path.join(workspace, "assets", "cve", "latest.json")
-  try {
-    await access(p, constants.R_OK)
-    return { present: true, path: p }
-  } catch {
-    return { present: false, path: p }
+function probeKnowledge(workspace: string): KnowledgeBrokerReport {
+  return {
+    live_sources: ["NVD", "CISA KEV", "FIRST EPSS", "OSV", "GitHub Security Advisories"],
+    local_sources: ["numasec methodology", "curated tradecraft", "searchsploit", "nuclei templates", "installed tool help"],
+    cache_path: path.join(workspace, ".numasec", "knowledge-cache"),
+    api_keys_required: false,
   }
 }
 
@@ -265,15 +269,15 @@ function renderCapabilityLine(item: CapabilityReadiness) {
 export function probe(workspace: string = process.cwd()): Effect.Effect<Report> {
   return Effect.promise(async () => {
     const binaries = await Promise.all(BINARIES.map((item) => probeBinary(item.name)))
-    const [browser, vault, cve, ws] = await Promise.all([
+    const [browser, vault, ws] = await Promise.all([
       probeBrowserRuntime(workspace).catch(
         (err): BrowserReport =>
           browserUnavailable(`${BROWSER_INSTALL_HINT} — ${err instanceof Error ? err.message : String(err)}`),
       ),
       probeVault(),
-      probeCve(workspace),
       probeWorkspace(workspace),
     ])
+    const knowledge = probeKnowledge(workspace)
     const bunVersion = (globalThis as unknown as { Bun?: { version?: string } }).Bun?.version
     const present = new Set(binaries.filter((item) => item.present).map((item) => item.name))
     return {
@@ -281,7 +285,7 @@ export function probe(workspace: string = process.cwd()): Effect.Effect<Report> 
       os: { platform: process.platform, arch: process.arch, release: os.release() },
       binaries,
       browser,
-      cve,
+      knowledge,
       vault,
       workspace: ws,
       capability: evaluateCapabilitySurface({ binaries: present, browser_present: browser.present }),
@@ -328,8 +332,10 @@ export function format(report: Report): string {
   if (report.vault.present) lines.push(`- present · mode ${report.vault.mode} · ${report.vault.path}`)
   else lines.push(`- not configured (${report.vault.path})`)
   lines.push("")
-  lines.push("## cve bundle")
-  if (report.cve.present) lines.push(`- present · ${report.cve.path}`)
-  else lines.push(`- not configured (${report.cve.path})`)
+  lines.push("## knowledge broker")
+  lines.push(`- live no-key sources · ${report.knowledge.live_sources.join(", ")}`)
+  lines.push(`- local sources · ${report.knowledge.local_sources.join(", ")}`)
+  lines.push(`- cache · ${report.knowledge.cache_path}`)
+  lines.push(`- api keys required · ${report.knowledge.api_keys_required ? "yes" : "no"}`)
   return lines.join("\n")
 }

@@ -21,7 +21,7 @@ If the banner flags **strict-opsec**, skip third-party lookups (VT, urlscan, san
 - `http_request` — surgical web requests with exact headers and bodies.
 - `browser` — when JS / session / DOM state matters.
 - `read` / `write` / `edit` — drop exploit scripts into the operator's workspace and run them.
-- `cve` — offline CVE lookup. `websearch` only for current intel you do not already know.
+- `knowledge` — Cyber Knowledge Broker. Use `vuln_intel action=match_component`, `exploit_signal`, and `tool_docs` when the box needs current intel, local exploit signal, or installed-tool flag truth. `cve` is legacy compatibility; `websearch` is optional fallback only.
 - `methodology` — quick ATT&CK / PTES id confirmation.
 - `runbook` — semantic capsule surface for fresh targets.
 - `play` — lower-level primitive behind `runbook`; use it only if you explicitly want the raw trace.

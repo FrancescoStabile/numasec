@@ -61,38 +61,44 @@ describe("tool/knowledge", () => {
     expect(schema.type).toBe("object")
   })
 
-  test("delegates cve lookups and preserves structured knowledge facts", async () => {
+  test("persists broker knowledge cards without creating findings", async () => {
     await using fixture = await tmpdir({ git: true })
 
     await Instance.provide({
       directory: fixture.path,
       fn: async () => {
         const op = await Operation.create({ workspace: fixture.path, label: "Knowledge", kind: "appsec" })
-        const result: any = await exec({ source: "cve", query: "openssl", limit: 3 })
+        const result: any = await exec({
+          intent: "methodology",
+          action: "safe_next_actions",
+          query: "SQL injection",
+          mode: "offline",
+          limit: 3,
+        })
         const facts = await AppRuntime.runPromise(Cyber.listFacts({ operation_slug: op.slug, limit: 100 }))
         const relations = await AppRuntime.runPromise(Cyber.listRelations({ operation_slug: op.slug, limit: 100 }))
 
         expect(result.metadata.surface).toBe("knowledge")
-        expect(result.metadata.delegated_to).toBe("cve")
-        expect(result.metadata.source).toBe("cve")
-        expect(result.metadata.available).toBe(true)
-        expect(result.output).toContain("\"results\"")
-        expect(facts.some((item) => item.entity_kind === "cve" && item.fact_name === "details")).toBe(true)
+        expect(result.metadata.delegated_to).toBe("broker")
+        expect(result.metadata.intent).toBe("methodology")
+        expect(result.output).toContain("\"cards_compact\"")
         expect(
           facts.some(
             (item) =>
               item.entity_kind === "knowledge_query" &&
-              item.entity_key === "cve:openssl" &&
-              item.fact_name === "cve_result",
+              item.entity_key === "methodology:safe_next_actions:SQL injection" &&
+              item.fact_name === "result",
           ),
         ).toBe(true)
+        expect(facts.some((item) => item.entity_kind === "technique" && item.fact_name === "guidance")).toBe(true)
+        expect(facts.some((item) => item.entity_kind === "finding" || item.entity_kind === "finding_candidate")).toBe(false)
         expect(
           relations.some(
             (item) =>
               item.src_kind === "knowledge_query" &&
-              item.src_key === "cve:openssl" &&
-              item.relation === "matched" &&
-              item.dst_kind === "cve",
+              item.src_key === "methodology:safe_next_actions:SQL injection" &&
+              item.relation === "guided_by" &&
+              item.dst_kind === "technique",
           ),
         ).toBe(true)
       },

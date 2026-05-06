@@ -20,9 +20,11 @@ const play: Play = {
       label: "Anchor to AppSec methodology knowledge",
       tool: "knowledge",
       args: {
-        source: "cve",
+        intent: "methodology",
+        action: "safe_next_actions",
         query: "OWASP WSTG SQL injection XSS JWT IDOR CORS",
-        limit: 5,
+        mode: "offline",
+        limit: 10,
       },
     },
     {

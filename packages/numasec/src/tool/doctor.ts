@@ -38,7 +38,7 @@ export const persistDoctorProjection = Effect.fn("Doctor.persistDoctorProjection
       os: input.report.os,
       browser: input.report.browser,
       vault: input.report.vault,
-      cve: input.report.cve,
+      knowledge: input.report.knowledge,
       workspace: input.report.workspace,
       tools_present: present,
       tools_total: input.report.binaries.length,
@@ -132,7 +132,8 @@ export const DoctorTool = Tool.define<typeof parameters, Metadata, never>(
               verticals_total: report.capability.verticals.length,
               workspace_writable: report.workspace.writable,
               vault_present: report.vault.present,
-              cve_present: report.cve.present,
+              knowledge_sources: report.knowledge.live_sources,
+              knowledge_cache: report.knowledge.cache_path,
             },
           }).pipe(Effect.catch(() => Effect.succeed("")))
           yield* persistDoctorProjection({ report, eventID })

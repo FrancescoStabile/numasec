@@ -1,9 +1,24 @@
-Query curated cyber knowledge sources through a semantic surface instead of picking raw lookup tools manually.
+Cyber Knowledge Broker. Use this single semantic surface when the task needs current or domain-specific cyber knowledge instead of picking raw lookup tools manually.
 
-Use this when the task is knowledge-driven rather than execution-driven.
+Preferred arguments:
+- `intent`: `vuln_intel`, `methodology`, `tradecraft`, `exploit_signal`, `tool_docs`, or `field_research`.
+- `action`: `lookup`, `match_component`, `enrich_observed`, `enrich_dependency`, `prioritize`, or `safe_next_actions`.
+- `query`: CVE id, package spec (`npm:lodash@4.17.20`), observed technology, technique, tool name, or research topic.
+- `observed_refs`: optional cyber-kernel refs such as `service:host:443`, `http_route:https://target/api/users/123`, or `container_image:nginx:latest`.
+- `mode`: `live`, `offline`, or `opsec_strict`.
 
-Sources:
-- `cve` -> local bundled CVE/advisory index with structured results, evidence, and graph links
-- `web` -> live web search for current or external information when local bundles are insufficient
+Use cases:
+- `vuln_intel` -> NVD, CISA KEV, FIRST EPSS, OSV, and GitHub public advisories. No API key required, but public rate limits may apply.
+  - Use `action: "match_component"` for observed infrastructure/services such as `nginx 1.18.0`, `OpenSSH_8.2p1`, `Apache httpd 2.4.49`, or a CPE. This evaluates affected version ranges and separates applicability from possibility.
+  - Use `action: "lookup"` for known CVE/advisory ids or broad research.
+  - Use `action: "enrich_dependency"` for package specs such as `npm:lodash@4.17.20` or purl values.
+- `methodology` -> local OWASP WSTG / PTES / MITRE guidance.
+- `tradecraft` -> curated safe testing guidance for topics like IDOR, JWT, CORS, XSS, SQLi, SSRF.
+- `exploit_signal` -> local SearchSploit / nuclei template signal when installed. Signal only, never proof.
+- `tool_docs` -> installed tool version/help. Prefer this over model memory for command flags.
 
-This tool delegates to the first-party source adapters. Evidence and graph persistence are owned by the delegated tool when supported.
+Compatibility:
+- `source: "cve"` maps to `intent: "vuln_intel", action: "lookup"`.
+- `source: "web"` delegates to optional generic websearch. Do not use it as the default broker path.
+
+Outputs are compact operator summaries plus Knowledge Cards persisted as evidence and cyber-kernel facts. Cards are intelligence only. They must not be treated as findings, verified vulnerabilities, or reportable proof without target-specific evidence and replay.

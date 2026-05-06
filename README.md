@@ -89,7 +89,7 @@ numasec turns a terminal session into an operation.
 | --- | --- |
 | Cyber operations | Start scoped AppSec or Pentest work with an operation label, target, autonomy posture, opsec policy, and durable state. |
 | Runbooks | Use semantic cyber capsules such as AppSec triage, web surface mapping, API surface, auth surface, and network surface. |
-| Real tools | Drive installed tools and adapters from the terminal: browser, HTTP, scanner, CVE lookup, knowledge, vault, net, crypto, evidence, finding, report, and more. |
+| Real tools | Drive installed tools and adapters from the terminal: browser, HTTP, scanner, Cyber Knowledge Broker, vault, net, crypto, evidence, finding, report, and more. |
 | Evidence-first claims | Store tool output, browser artifacts, HTTP traces, screenshots, and supporting files before turning signals into durable findings. |
 | Replay-aware reporting | Reportable findings require evidence plus replay material, or an explicit structured replay exemption. |
 | Operator control | Run in permissioned mode with allow/deny/allow-always, or auto mode inside the operation boundary. |
@@ -100,7 +100,7 @@ numasec turns a terminal session into an operation.
 - bug bounty hunters who need faster triage without losing proof
 - pentesters who want an AI operator inside their terminal workflow
 - AppSec engineers who need evidence-backed reports, not scanner noise
-- security researchers who live across shell, browser, HTTP, CVEs, and notes
+- security researchers who live across shell, browser, HTTP, vulnerability intelligence, tradecraft, and notes
 - CTF players who want a structured agent loop without giving up tool control
 
 numasec is designed for authorized security work. Keep scope explicit and use it only where you have permission to test.
@@ -218,6 +218,8 @@ evidence, observation, knowledge, finding, report, autonomy, share, remediate,
 analyze, doctor
 ```
 
+`knowledge` is the preferred cyber research surface. It routes vulnerability intelligence, methodology, tradecraft, exploit signals, and installed tool docs through one provenance-aware broker. For observed components (`nginx 1.18.0`, `OpenSSH_8.2p1`, package specs), it separates possibility from applicability with version-range matching, KEV/EPSS enrichment, and safe next actions. `cve` remains as a compatibility alias for CVE-style lookups.
+
 Local tools make numasec stronger. If these are installed, the harness can use or reason around them:
 
 ```bash
@@ -263,7 +265,7 @@ flowchart TB
     http["HTTP"]
     scanner["Scanner"]
     shell["Shell"]
-    cve["CVE / knowledge"]
+    knowledge["Knowledge broker"]
     vault["Vault"]
   end
 
@@ -271,7 +273,7 @@ flowchart TB
   runbooks --> http
   runbooks --> scanner
   runbooks --> shell
-  runbooks --> cve
+  runbooks --> knowledge
   runbooks --> vault
 
   subgraph kernel["Cyber operation kernel"]
@@ -287,7 +289,7 @@ flowchart TB
   http --> evidence
   scanner --> evidence
   shell --> evidence
-  cve --> facts
+  knowledge --> facts
   vault --> facts
 
   ledger --> facts
@@ -308,7 +310,7 @@ flowchart TB
   classDef findingNode fill:#190808,stroke:#ff5f6d,color:#fff0f0,stroke-width:1.5px;
 
   class operator,console,control,agents,runbooks top;
-  class browser,http,scanner,shell,cve,vault tool;
+  class browser,http,scanner,shell,knowledge,vault tool;
   class ledger,facts,relations,workflow state;
   class evidence,replay,deliverables proofNode;
   class lifecycle findingNode;

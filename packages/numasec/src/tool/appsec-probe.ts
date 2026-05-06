@@ -6,6 +6,7 @@ import { Guard, ScopeDeniedError } from "@/core/boundary"
 import { Cyber } from "@/core/cyber"
 import type { Fact } from "@/core/cyber/cyber"
 import { Evidence } from "@/core/evidence"
+import { autoEnrichKnowledge } from "@/core/knowledge"
 import { Observation } from "@/core/observation"
 import { Operation } from "@/core/operation"
 import { Instance } from "@/project/instance"
@@ -775,6 +776,48 @@ export const AppsecProbeTool = Tool.define<typeof parameters, Metadata, never>(
             )
             yield* Effect.promise(() => Observation.linkEvidence(workspace, slug, obs.id, evidence.sha256))
           }
+          yield* autoEnrichKnowledge({
+            workspace,
+            operation_slug: slug,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            source: "appsec_probe",
+            items: [
+              ...(surface.forms.length > 0
+                ? [
+                    {
+                      intent: "tradecraft" as const,
+                      action: "safe_next_actions" as const,
+                      query: "observed web forms SQL injection XSS CSRF safe verification",
+                      observed_refs: surface.forms.slice(0, 5).map((form) => `http_form:${form.method}:${routePathFromUrl(form.action)}`),
+                      limit: 3,
+                    },
+                  ]
+                : []),
+              ...(surface.routes.some((route) => /\/\d+(?:\/|$)|[?&](?:id|user|account|object|basket)=/i.test(route.url))
+                ? [
+                    {
+                      intent: "tradecraft" as const,
+                      action: "safe_next_actions" as const,
+                      query: "IDOR BOLA numeric object route safe replay verification",
+                      observed_refs: surface.routes.slice(0, 5).map((route) => `http_route:${route.url}`),
+                      limit: 3,
+                    },
+                  ]
+                : []),
+              ...(candidates.length > 0
+                ? [
+                    {
+                      intent: "methodology" as const,
+                      action: "safe_next_actions" as const,
+                      query: candidates.map((candidate) => candidate.title).join(" "),
+                      observed_refs: candidates.map((candidate) => `finding_candidate:${candidate.key}`),
+                      limit: 5,
+                    },
+                  ]
+                : []),
+            ],
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
 
           for (const result of results) {
             let path = "/"

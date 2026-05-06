@@ -12,6 +12,7 @@ import { probeServices, type ServiceProbeResult } from "../scanner/service-probe
 import type { DirFuzzResult } from "../scanner/dir-fuzzer"
 import { Cyber } from "@/core/cyber"
 import { Evidence } from "@/core/evidence"
+import { autoEnrichKnowledge } from "@/core/knowledge"
 import { Observation } from "@/core/observation"
 import { Operation } from "@/core/operation"
 import { Instance } from "@/project/instance"
@@ -159,6 +160,82 @@ function scannerObservationDraft(mode: Params["mode"], target: string, result: u
       tags: ["pentest", "recon", "web", "dir-fuzz"],
     }
   }
+}
+
+function scannerKnowledgeItems(mode: Params["mode"], target: string, result: unknown) {
+  const data = result as Record<string, unknown>
+  if (mode === "crawl") {
+    const technologies = Array.isArray(data.technologies)
+      ? data.technologies.filter((item): item is string => typeof item === "string")
+      : []
+    const forms = Array.isArray(data.forms) ? data.forms.length : 0
+    return [
+      ...technologies.slice(0, 3).map((technology) => ({
+        intent: "vuln_intel" as const,
+        action: "enrich_observed" as const,
+        query: technology,
+        observed_refs: [`web:${target}`],
+        limit: 5,
+      })),
+      ...(forms > 0
+        ? [
+            {
+              intent: "tradecraft" as const,
+              action: "safe_next_actions" as const,
+              query: "web input forms XSS SQL injection CSRF safe validation",
+              observed_refs: [`web:${target}`],
+              limit: 3,
+            },
+          ]
+        : []),
+    ]
+  }
+  if (mode === "js") {
+    const endpoints = Array.isArray(data.endpoints)
+      ? data.endpoints.filter((item): item is string => typeof item === "string")
+      : []
+    const secrets = Array.isArray(data.secrets) ? data.secrets.length : 0
+    return [
+      ...(endpoints.some((endpoint) => /\/\d+(?:\/|$)|[?&](?:id|user|account|object)=/i.test(endpoint))
+        ? [
+            {
+              intent: "tradecraft" as const,
+              action: "safe_next_actions" as const,
+              query: "IDOR BOLA numeric API route safe verification",
+              observed_refs: endpoints.slice(0, 5).map((endpoint) => `http_route:${endpoint}`),
+              limit: 3,
+            },
+          ]
+        : []),
+      ...(secrets > 0
+        ? [
+            {
+              intent: "tradecraft" as const,
+              action: "safe_next_actions" as const,
+              query: "JavaScript secret exposure validation and replay evidence",
+              observed_refs: [`web:${target}`],
+              limit: 3,
+            },
+          ]
+        : []),
+    ]
+  }
+  if (mode === "service") {
+    const services = Array.isArray(data.services)
+      ? data.services.filter((item): item is { service?: string; version?: string; port?: number } => Boolean(item && typeof item === "object"))
+      : []
+    return services
+      .filter((item) => item.service && item.service !== "unknown" && item.service !== "filtered")
+      .slice(0, 4)
+      .map((item) => ({
+        intent: "vuln_intel" as const,
+        action: "enrich_observed" as const,
+        query: [item.service, item.version].filter(Boolean).join(" "),
+        observed_refs: [`service:${extractHost(target)}:${item.port ?? "unknown"}`],
+        limit: 5,
+      }))
+  }
+  return []
 }
 
 function writeCrawlFacts(input: { target: string; result: CrawlResult; eventID?: string; evidenceRefs?: string[] }) {
@@ -627,6 +704,14 @@ export const ScannerTool = Tool.define<typeof parameters, Metadata, never>(
             const obs = yield* Effect.promise(() => Observation.add(workspace, slug, observation))
             yield* Effect.promise(() => Observation.linkEvidence(workspace, slug, obs.id, evidence.sha256))
           }
+          yield* autoEnrichKnowledge({
+            workspace,
+            operation_slug: slug,
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            source: "scanner",
+            items: scannerKnowledgeItems(params.mode, params.target, result),
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
 
           return {
             title: summarize(params.mode, result) ?? `scanner ${params.mode} ${params.target}`,

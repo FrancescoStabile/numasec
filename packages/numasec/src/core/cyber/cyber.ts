@@ -120,6 +120,14 @@ export interface ProjectedKnowledgeState {
   severity?: string
   type?: string
   livecrawl?: string
+  intent?: string
+  action?: string
+  mode?: string
+  source_pack?: string
+  card_count?: number
+  degraded?: boolean
+  fetched_at?: number
+  stale_after?: number
 }
 
 export interface ProjectedToolAdapterState {
@@ -647,6 +655,11 @@ function knowledgeLine(fact: Fact) {
     results?: Array<{ id?: string; severity?: string }>
     type?: string
     livecrawl?: string
+    intent?: string
+    action?: string
+    mode?: string
+    card_count?: number
+    degraded?: boolean
   }
   const resultSummary = Array.isArray(value.results)
     ? value.results
@@ -655,7 +668,7 @@ function knowledgeLine(fact: Fact) {
         .filter(Boolean)
         .join(", ")
     : undefined
-  return `- ${fact.entity_key} · ${fact.fact_name} · status=${fact.status}${typeof value.returned === "number" ? ` · returned=${value.returned}` : ""}${value.severity ? ` · severity=${value.severity}` : ""}${value.type ? ` · type=${value.type}` : ""}${value.livecrawl ? ` · livecrawl=${value.livecrawl}` : ""}${resultSummary ? ` · ${resultSummary}` : ""}`
+  return `- ${fact.entity_key} · ${fact.fact_name} · status=${fact.status}${value.intent ? ` · intent=${value.intent}` : ""}${value.action ? ` · action=${value.action}` : ""}${value.mode ? ` · mode=${value.mode}` : ""}${typeof value.card_count === "number" ? ` · cards=${value.card_count}` : ""}${typeof value.returned === "number" ? ` · returned=${value.returned}` : ""}${value.severity ? ` · severity=${value.severity}` : ""}${value.type ? ` · type=${value.type}` : ""}${value.livecrawl ? ` · livecrawl=${value.livecrawl}` : ""}${value.degraded ? " · degraded" : ""}${resultSummary ? ` · ${resultSummary}` : ""}`
 }
 
 function planLine(fact: Fact) {
@@ -1945,6 +1958,14 @@ export namespace Cyber {
           severity: typeof value?.severity === "string" ? value.severity : undefined,
           type: typeof value?.type === "string" ? value.type : undefined,
           livecrawl: typeof value?.livecrawl === "string" ? value.livecrawl : undefined,
+          intent: typeof value?.intent === "string" ? value.intent : undefined,
+          action: typeof value?.action === "string" ? value.action : undefined,
+          mode: typeof value?.mode === "string" ? value.mode : undefined,
+          source_pack: typeof value?.source_pack === "string" ? value.source_pack : undefined,
+          card_count: typeof value?.card_count === "number" ? value.card_count : undefined,
+          degraded: typeof value?.degraded === "boolean" ? value.degraded : undefined,
+          fetched_at: typeof value?.fetched_at === "number" ? value.fetched_at : undefined,
+          stale_after: typeof value?.stale_after === "number" ? value.stale_after : undefined,
         })
         continue
       }

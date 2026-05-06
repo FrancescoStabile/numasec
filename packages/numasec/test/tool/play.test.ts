@@ -67,7 +67,7 @@ function fakeProbe(browserPresent: boolean, binaryNames: string[] = []) {
       os: { platform: "linux", arch: "x64", release: "0" },
       binaries: binaryNames.map((name) => ({ name, present: true })),
       browser: { present: browserPresent },
-      cve: { present: false, path: "" },
+      knowledge: { live_sources: [], local_sources: [], cache_path: "", api_keys_required: false },
       vault: { present: false, path: "" },
       workspace: { path: "", writable: true },
       capability: { plays: [], verticals: [] },
