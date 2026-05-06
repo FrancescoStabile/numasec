@@ -37,4 +37,8 @@ describe("Kind registry", () => {
       expect(pack.glyph.length).toBeGreaterThan(0)
     }
   })
+
+  test("appsec glyph is stable in Windows Terminal selection", () => {
+    expect(Kind.byId("appsec")?.glyph).toBe("<>")
+  })
 })

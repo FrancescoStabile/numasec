@@ -12,6 +12,16 @@ describe("shouldEnableMouseMovement", () => {
     ).toBe(false)
   })
 
+  test("disables mouse movement on WSL by lowercase kernel release", () => {
+    expect(
+      shouldEnableMouseMovement({
+        platform: "linux",
+        release: "5.15.167.4-microsoft-standard-wsl2",
+        env: {},
+      }),
+    ).toBe(false)
+  })
+
   test("disables mouse movement on WSL by environment", () => {
     expect(
       shouldEnableMouseMovement({

@@ -85,7 +85,7 @@ const PACKS: Record<KindId, KindPack> = {
     label: "Application Security Review",
     short: "asec",
     agent: "appsec",
-    glyph: "❮❯",
+    glyph: "<>",
     accent: "accent",
     tagline: "Read the code like a reviewer — bugs, sinks, fixes",
     placeholders: {
