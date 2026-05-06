@@ -2,26 +2,28 @@
 
 ## 1.2.0
 
-numasec 1.2.0 turns the project into a terminal-native AI cyber operator harness: scoped operations, runbooks, real local tools, evidence, replay, finding lifecycle, knowledge, and report generation in one workflow.
+numasec 1.2.0 is the release where the project becomes a real cyber operator console.
+
+It gives the agent an operation, a scope, local tools, evidence, replay material, findings with lifecycle, cyber knowledge, and reports that come from proof instead of vibes. The point is simple: if AI agents are becoming normal for coding, security deserves one built for the way hackers, pentesters, AppSec engineers, and bug bounty hunters actually work.
 
 ### Highlights
 
-- Repositioned numasec around cyber operations instead of generic coding assistance.
-- Added kernel-first operation state for ledger events, facts, relations, evidence, replay, workflow, and deliverables.
-- Promoted AppSec and Pentest to evidence-backed release domains with local benchmark coverage.
-- Added operation lenses in the terminal UI for findings, evidence, replay, workflow, and report state.
-- Tightened finding semantics across candidate, observed, verified, rejected, stale, and reportable states.
-- Made reportability require evidence plus replay material, or an explicit structured replay exemption.
-- Added Cyber Knowledge Broker support through the `knowledge` tool for vulnerability intelligence, KEV/EPSS enrichment, applicability states, and safe next actions.
-- Added operation sharing, report building, AppSec/Pentest runbooks, and runtime readiness/capability state.
+- Operations now have real state: ledger events, projected facts, relations, evidence, replay, workflow, and deliverables.
+- The TUI now behaves like an operation console, with lenses for findings, evidence, replay, workflow, and report state.
+- AppSec and Pentest are the hard-gated 1.2 domains. Other cyber domains exist, but they are maturity-labeled instead of overclaimed.
+- Findings now move through candidate, observed, verified, rejected, stale, and reportable states.
+- A finding is not reportable just because the model sounds confident. It needs evidence and replay material, or an explicit structured replay exemption.
+- The `knowledge` tool now acts as a Cyber Knowledge Broker for vulnerability intelligence, KEV/EPSS enrichment, applicability states, and safe next actions.
+- Reports are built from operation state, not from a polished chat transcript.
+- Runtime readiness now matters: numasec tracks installed tools, degraded capabilities, and what the local environment can actually do.
 
 ### Operator workflow
 
-- `/pwn <target>` creates a scoped pentest operation and selects the appropriate starter capsule.
-- `/runbook run web-surface <target>` maps web attack surface through the runbook surface.
-- `/runbook run appsec-web-triage <target>` performs AppSec triage with evidence and candidate findings.
-- `/doctor` reports local tool readiness and degraded capabilities.
-- report tooling builds deliverables from operation state rather than chat transcript confidence.
+- Start with `/pwn <target>` to create a scoped pentest operation and kick off the right starter capsule.
+- Use `/runbook run web-surface <target>` to map a web target through the runbook surface.
+- Use `/runbook run appsec-web-triage <target>` for AppSec triage with evidence and candidate findings.
+- Use `/doctor` to see which local tools are ready, degraded, or missing.
+- Build reports only after the operation has enough state to support them.
 
 ### Release gates
 
@@ -37,7 +39,9 @@ AppSec and Pentest benchmarks remain local/manual validation tools for release c
 
 Thanks to the bug bounty hunters, security researchers, and early users who tested numasec in real workflows and shared candid feedback.
 
-Special thanks to @wendellmeset for putting real time into the project and opening detailed issues. Those reports caught rough edges in the terminal UX and helped make this release harder to break.
+Special thanks to Deafen, a bug bounty hunter who tested numasec in real bounty work, shared useful feedback, and told me about successful results using it. That is the kind of signal that matters: numasec has to work outside demos.
+
+Special thanks to @wendellmeset for putting real time into the project and opening detailed public issues. Those reports caught rough edges in the terminal UX and helped make this release harder to break.
 
 ### Compatibility
 
