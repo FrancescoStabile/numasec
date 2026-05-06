@@ -27,7 +27,8 @@ These are release-level standards, not optional polish:
 - cyber claims must be evidence-first
 - active or reportable findings need replay material, or an explicit structured replay exemption
 - reports must not present unsupported confirmed claims
-- AppSec and Pentest benchmarks are release gates
+- AppSec and Pentest benchmarks are manual release evidence, not CI/CD gates
+- public releases need a complete `CHANGELOG.md` section before the release workflow runs
 - no regressions to markdown-as-canonical-state
 - `numasec.md` may exist as context, but the cyber kernel remains the source of truth
 
@@ -76,6 +77,6 @@ Changes in these areas need extra care:
 - evidence, replay, and report semantics
 - finding lifecycle and anti-overclaiming logic
 - installed-tool degradation behavior
-- benchmark and release gate logic
+- benchmark scoring and release validation logic
 
 If you touch those systems, include explicit verification notes in the PR.

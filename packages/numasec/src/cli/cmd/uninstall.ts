@@ -130,10 +130,10 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g numasec-ai",
-      pnpm: "pnpm uninstall -g numasec-ai",
-      bun: "bun remove -g numasec-ai",
-      yarn: "yarn global remove numasec-ai",
+      npm: "npm uninstall -g numasec",
+      pnpm: "pnpm uninstall -g numasec",
+      bun: "bun remove -g numasec",
+      yarn: "yarn global remove numasec",
       brew: "brew uninstall numasec",
       choco: "choco uninstall numasec",
       scoop: "scoop uninstall numasec",
@@ -181,10 +181,10 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "numasec-ai"],
-      pnpm: ["pnpm", "uninstall", "-g", "numasec-ai"],
-      bun: ["bun", "remove", "-g", "numasec-ai"],
-      yarn: ["yarn", "global", "remove", "numasec-ai"],
+      npm: ["npm", "uninstall", "-g", "numasec"],
+      pnpm: ["pnpm", "uninstall", "-g", "numasec"],
+      bun: ["bun", "remove", "-g", "numasec"],
+      yarn: ["yarn", "global", "remove", "numasec"],
       brew: ["brew", "uninstall", "numasec"],
       choco: ["choco", "uninstall", "numasec"],
       scoop: ["scoop", "uninstall", "numasec"],

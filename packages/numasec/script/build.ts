@@ -257,6 +257,17 @@ for (const item of targets) {
       {
         name,
         version: Script.version,
+        description: `numasec standalone binary for ${item.os}/${item.arch}${item.abi ? `/${item.abi}` : ""}${item.avx2 === false ? " baseline" : ""}`,
+        license: pkg.license,
+        repository: {
+          type: "git",
+          url: "https://github.com/FrancescoStabile/numasec",
+        },
+        homepage: "https://github.com/FrancescoStabile/numasec",
+        bugs: {
+          url: "https://github.com/FrancescoStabile/numasec/issues",
+        },
+        keywords: ["cybersecurity", "appsec", "pentest", "security", "agent", "terminal"],
         os: [item.os],
         cpu: [item.arch],
       },
@@ -265,17 +276,6 @@ for (const item of targets) {
     ),
   )
   binaries[name] = Script.version
-}
-
-if (Script.release) {
-  for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
-      await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
-    } else {
-      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
-    }
-  }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }

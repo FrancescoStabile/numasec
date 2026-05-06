@@ -1,16 +1,15 @@
 <p align="center">
-  <!-- SCREENSHOT PLACEHOLDER: replace this asset with the strongest current numasec hero shot before launch. Ideal: dark TUI home screen with the hacker-green ASCII logo and clean prompt. -->
-  <img src="assets/readmeimage.png" alt="numasec terminal home" width="760" />
+  <img src="assets/topreadme.png" alt="numasec terminal home" width="920" />
 </p>
 
 <h1 align="center">numasec</h1>
 
 <p align="center">
-  <b>The terminal-native AI cyber operator harness.</b>
+  <b>The security-native AI agent.</b>
 </p>
 
 <p align="center">
-  Security deserves its own Codex-style terminal agent: scoped operations, real tools, evidence, replay, runbooks, and reports.
+  Security deserves its own terminal agent: scoped operations, real tools, evidence, replay, runbooks, and reports from one operator console.
 </p>
 
 <p align="center">
@@ -25,6 +24,7 @@
 <p align="center">
   <a href="#why-numasec">Why</a> |
   <a href="#demo">Demo</a> |
+  <a href="#product-tour">Product Tour</a> |
   <a href="#what-it-does">What It Does</a> |
   <a href="#install">Install</a> |
   <a href="#commands">Commands</a> |
@@ -39,15 +39,15 @@
 
 Coding has terminal agents.
 
-Cyber security still too often has a pile of scanners, browser tabs, notes, shell history, screenshots, and reports that do not agree with each other.
+Cyber security still runs on scattered evidence: scanners in one pane, browser tabs in another, shell history somewhere else, screenshots on disk, notes in markdown, and a report that has to be reconstructed after the fact.
 
 numasec is built around a different premise:
 
-> The AI agent should not just chat about security. It should operate inside a cyber-ready environment, use real local tools, preserve evidence, keep operation state, and only report claims it can support.
+> The AI agent should not just talk about security. It should operate in a cyber-ready environment, use real local tools, preserve evidence, keep operation state, and only report claims it can support.
 
 It is not a generic coding assistant. It is not a flat scanner wrapper. It is not "ask an LLM to run nmap".
 
-numasec is a cyber operator harness: the LLM is wrapped with terminal access, browser automation, HTTP execution, installed security tools, operation memory, provenance, replay material, permission modes, and report generation.
+numasec is a cyber operator: the LLM is wrapped with terminal access, browser automation, HTTP execution, installed security tools, operation memory, provenance, replay material, permission modes, and report generation.
 
 The goal is simple: make AI useful for real AppSec, pentest, bug bounty, OSINT, CTF, and security research workflows without losing the discipline that makes security work trustworthy.
 
@@ -59,27 +59,47 @@ Security needs the same shift, but the wrapper has to be different.
 
 Cyber work needs scope. It needs opsec. It needs a browser, raw HTTP, installed tools, target memory, evidence, replay, finding states, and report discipline. A generic coding agent can help, but it was not designed around those constraints.
 
-numasec is the open-source attempt to build that missing layer.
+numasec is the open-source attempt to build that missing layer: not another scanner, not another chatbot, but the terminal-native workbench for AI-assisted security operations.
 
 ## Demo
 
-<!-- SCREENSHOT PLACEHOLDER: replace with a polished operation-console capture showing:
-     - active operation header
-     - right sidebar with proof/capability/activity
-     - findings/evidence/replay/workflow/report signal
-     - no secrets, no private target, no noisy local paths if possible
--->
-
 <p align="center">
-  <img src="assets/operations-demo.gif" alt="numasec operation console" width="940" />
+  <a href="assets/demo.mp4">
+    <img src="assets/demo-preview.gif" alt="numasec running a cyber operation from the terminal" width="940" />
+  </a>
+  <br />
+  <sub>Click the preview for the full terminal recording.</sub>
 </p>
 
-<!-- SCREENSHOT PLACEHOLDER: optional second media slot. Replace with a short pentest run GIF once the current TUI capture is final.
+## Product tour
+
+numasec is designed to feel like a cyber operator console, not a generic chat window with a pile of tools attached.
 
 <p align="center">
-  <img src="assets/pentest-demo.gif" alt="numasec pentest workflow" width="940" />
+  <img src="assets/dashboard.png" alt="numasec chat-first cyber console home screen" width="840" />
 </p>
--->
+
+Start from a chat-first terminal surface, then move into scoped operation work without leaving the shell. The UI keeps the important things close: current agent, provider, command palette, operation context, and the next action the operator can take.
+
+<p align="center">
+  <img src="assets/findings.png" alt="numasec findings lens with evidence, replay, reportability and operation sidebar" width="940" />
+</p>
+
+The findings lens is where numasec stops being "LLM output" and becomes an operator tool. Each row is a claim with a lifecycle state, severity, evidence count, replay status, and a next action. Candidate signals can stay candidates. Rejected findings stay visible. Reportable findings must be backed by proof.
+
+The right sidebar keeps the engagement honest while you work: scope, opsec, runbook progress, tool readiness, plan state, activity, evidence volume, replay coverage, and final report status. You do not have to scroll through chat to know whether the operation is actually ready.
+
+<p align="center">
+  <img src="assets/switchagents.gif" alt="switching between numasec cyber specialist agents" width="760" />
+</p>
+
+Switch between specialist cyber agents when the work changes. Use Security for broad triage, AppSec for code and application review, Pentest for scoped offensive operations, OSINT for public-source investigation, and Hacking for raw lab-style work. The point is not "more personas"; it is keeping the model inside the right operating posture for the job.
+
+<p align="center">
+  <img src="assets/operations.png" alt="numasec operation selector with rename support" width="760" />
+</p>
+
+Operations are durable engagements. Name them, rename them, resume them, switch between them, and export them without turning chat history into canonical state.
 
 ## What it does
 
@@ -88,8 +108,10 @@ numasec turns a terminal session into an operation.
 | Capability | What it means in practice |
 | --- | --- |
 | Cyber operations | Start scoped AppSec or Pentest work with an operation label, target, autonomy posture, opsec policy, and durable state. |
+| Operation console | Keep scope, proof, runbook progress, tool readiness, activity, and report status visible while the agent works. |
 | Runbooks | Use semantic cyber capsules such as AppSec triage, web surface mapping, API surface, auth surface, and network surface. |
 | Real tools | Drive installed tools and adapters from the terminal: browser, HTTP, scanner, Cyber Knowledge Broker, vault, net, crypto, evidence, finding, report, and more. |
+| Finding lenses | Separate candidate, observed, verified, rejected, stale, and reportable claims instead of flattening everything into scanner noise. |
 | Evidence-first claims | Store tool output, browser artifacts, HTTP traces, screenshots, and supporting files before turning signals into durable findings. |
 | Replay-aware reporting | Reportable findings require evidence plus replay material, or an explicit structured replay exemption. |
 | Operator control | Run in permissioned mode with allow/deny/allow-always, or auto mode inside the operation boundary. |
@@ -211,8 +233,9 @@ For best results, run numasec in a workspace directory and keep the target scope
 numasec exposes normal agent primitives and cyber-specific tools through one operator harness.
 
 ```text
-bash, read, write, edit, apply_patch, grep, glob, task, fetch, search, code, skill,
-httprequest, browser, scanner, crypto, net, vault, interact, methodology, cve,
+bash, read, write, edit, apply_patch, grep, glob, task, webfetch, websearch,
+codesearch, skill, http_request, browser, scanner, crypto, net, vault, interact,
+methodology, cve,
 runbook, play, pwn_bootstrap, appsec_probe, workspace, scope, opsec, identity,
 evidence, observation, knowledge, finding, report, autonomy, share, remediate,
 analyze, doctor
@@ -220,7 +243,7 @@ analyze, doctor
 
 `knowledge` is the preferred cyber research surface. It routes vulnerability intelligence, methodology, tradecraft, exploit signals, and installed tool docs through one provenance-aware broker. For observed components (`nginx 1.18.0`, `OpenSSH_8.2p1`, package specs), it separates possibility from applicability with version-range matching, KEV/EPSS enrichment, and safe next actions. `cve` remains as a compatibility alias for CVE-style lookups.
 
-Local tools make numasec stronger. If these are installed, the harness can use or reason around them:
+Local tools make numasec stronger. If these are installed, the agent can use or reason around them:
 
 ```bash
 # Debian / Kali / Ubuntu
@@ -247,7 +270,7 @@ numasec is model-agnostic. It wraps the model you choose with a cyber-ready runt
 
 Supported provider families include OpenAI, Anthropic, Google, xAI, Bedrock, OpenRouter, Ollama, Vercel AI Gateway, OpenAI-compatible endpoints, and other providers supported through the local model stack.
 
-The product bet is not "one model will solve cyber." The bet is that strong models become much more useful when they are placed inside the right operational harness.
+The product bet is not "one model will solve cyber." The bet is that strong models become much more useful when they are placed inside the right operational environment.
 
 ## Architecture
 
@@ -388,7 +411,7 @@ The gate is intentionally evidence-oriented:
 - observations must be projected
 - findings must not overclaim
 - reports must not promote unsupported claims
-- AppSec/Pentest benchmark runs must pass before public release claims
+- AppSec/Pentest benchmark runs are manual evidence for public maturity claims
 
 What numasec does not claim yet:
 
@@ -410,7 +433,7 @@ The long-term vision is a multi-domain cyber operator:
 - Cloud/container/IaC: adapter-backed posture and misconfiguration triage
 - Team operations: shareable operation bundles, redaction, handoff, review
 
-The short-term rule is stricter: every domain that claims maturity needs benchmark gates and proof semantics.
+The short-term rule is stricter: every domain that claims maturity needs proof semantics and manual benchmark evidence.
 
 ## Documentation
 

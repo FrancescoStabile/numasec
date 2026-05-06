@@ -38,7 +38,10 @@ session.json
 notes/
 .superpowers/
 
+# Release evidence generated locally or by CI
+/packages/numasec/bench-results-*.json
+/docs/releases/*-evidence/
+
 # Internal documentation (not for public release)
-/docs
 /docs/superpowers
 opencode.json

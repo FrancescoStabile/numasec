@@ -8,6 +8,8 @@ import {
   reportGateRows,
   reportStatus,
   restoreSelectedIndex,
+  shouldRefreshOperationConsoleSnapshotForPart,
+  stabilizeOperationConsoleSnapshot,
   type OperationConsoleSnapshot,
 } from "../../../src/cli/cmd/tui/component/operation-lens/snapshot"
 
@@ -231,5 +233,57 @@ describe("tui operation lens snapshot helpers", () => {
     const rows = findingsRows(makeSnapshot())
     expect(restoreSelectedIndex(rows, "ver-missing", 0)).toBe(3)
     expect(restoreSelectedIndex(rows, "missing-key", 99)).toBe(rows.length - 1)
+  })
+
+  test("snapshot refreshes only for completed tool mutations", () => {
+    expect(shouldRefreshOperationConsoleSnapshotForPart(undefined)).toBe(false)
+    expect(shouldRefreshOperationConsoleSnapshotForPart({ type: "text" })).toBe(false)
+    expect(shouldRefreshOperationConsoleSnapshotForPart({ type: "tool", state: { status: "pending" } })).toBe(false)
+    expect(shouldRefreshOperationConsoleSnapshotForPart({ type: "tool", state: { status: "running" } })).toBe(false)
+    expect(shouldRefreshOperationConsoleSnapshotForPart({ type: "tool", state: { status: "completed" } })).toBe(true)
+    expect(shouldRefreshOperationConsoleSnapshotForPart({ type: "tool", state: { status: "error" } })).toBe(true)
+  })
+
+  test("stabilizeOperationConsoleSnapshot keeps the last good snapshot during empty refreshes", () => {
+    const previous = makeSnapshot()
+    expect(stabilizeOperationConsoleSnapshot(previous, undefined)).toBe(previous)
+  })
+
+  test("stabilizeOperationConsoleSnapshot preserves projection for same operation on partial reads", () => {
+    const previous = makeSnapshot()
+    const next = {
+      ...previous,
+      projected: undefined,
+      evidenceCount: 0,
+      evidenceEntries: [],
+      activeWorkflow: undefined,
+      workflow: undefined,
+      deliverable: undefined,
+      timeline: [],
+    } as OperationConsoleSnapshot
+
+    const stable = stabilizeOperationConsoleSnapshot(previous, next)
+    expect(stable?.active?.slug).toBe("demo")
+    expect(stable?.projected).toBe(previous.projected)
+    expect(stable?.evidenceEntries).toBe(previous.evidenceEntries)
+    expect(stable?.evidenceCount).toBe(previous.evidenceCount)
+    expect(stable?.workflow).toBe(previous.workflow)
+    expect(stable?.deliverable).toBe(previous.deliverable)
+  })
+
+  test("stabilizeOperationConsoleSnapshot does not carry projection across operations", () => {
+    const previous = makeSnapshot()
+    const next = {
+      ...previous,
+      active: {
+        ...previous.active!,
+        slug: "other",
+      },
+      projected: undefined,
+    } as OperationConsoleSnapshot
+
+    const stable = stabilizeOperationConsoleSnapshot(previous, next)
+    expect(stable?.active?.slug).toBe("other")
+    expect(stable?.projected).toBeUndefined()
   })
 })

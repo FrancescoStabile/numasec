@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
-BUMP_TYPE=${1:-patch}
+set -euo pipefail
 
-gh workflow run release.yml -f bump="$BUMP_TYPE"
+VERSION=${1:-}
+
+if [ -n "$VERSION" ]; then
+  gh workflow run release.yml -f version="$VERSION"
+else
+  gh workflow run release.yml
+fi

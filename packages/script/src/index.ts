@@ -21,7 +21,6 @@ const env = {
   NUMASEC_CHANNEL: process.env["NUMASEC_CHANNEL"],
   NUMASEC_BUMP: process.env["NUMASEC_BUMP"],
   NUMASEC_VERSION: process.env["NUMASEC_VERSION"],
-  NUMASEC_RELEASE: process.env["NUMASEC_RELEASE"],
 }
 const CHANNEL = await (async () => {
   if (env.NUMASEC_CHANNEL) return env.NUMASEC_CHANNEL
@@ -67,9 +66,6 @@ export const Script = {
   },
   get preview() {
     return IS_PREVIEW
-  },
-  get release(): boolean {
-    return !!env.NUMASEC_RELEASE
   },
   get team() {
     return team

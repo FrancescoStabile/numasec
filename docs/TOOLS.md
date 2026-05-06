@@ -16,8 +16,9 @@ These are the base filesystem and search primitives. `bash` remains the escape h
 - `task`
 - `todo`
 - `skill`
-- `fetch`
-- `search`
+- `webfetch`
+- `websearch`
+- `codesearch`
 - `question` when the current client allows operator prompts
 - `plan` when experimental plan mode is enabled in the CLI
 
@@ -25,7 +26,7 @@ These tools keep long sessions usable: background work, planning, web fetch, web
 
 ## Security primitives
 
-- `httprequest`
+- `http_request`
 - `browser`
 - `scanner`
 - `crypto`
@@ -41,7 +42,7 @@ These tools keep long sessions usable: background work, planning, web fetch, web
 
 In practice, this is the cyber operator core.
 
-`httprequest` handles raw HTTP with auth, cookies, redirects, and replay.
+`http_request` handles raw HTTP with auth, cookies, redirects, and replay.
 `browser` is the Playwright-driven browser for navigation, interaction, and state inspection.
 `scanner` covers surface mapping primitives such as crawl, dir fuzz, JavaScript analysis, port scan, service probe, and banner grabs.
 `vault` provides one place for local credentials and profiles.

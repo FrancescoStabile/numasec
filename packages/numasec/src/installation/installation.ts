@@ -187,9 +187,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
 
         for (const check of checks) {
           const output = yield* check.command()
-          const installedName =
-            check.name === "brew" || check.name === "choco" || check.name === "scoop" ? "numasec" : "numasec-ai"
-          if (output.includes(installedName)) {
+          if (output.includes("numasec")) {
             return check.name
           }
         }
@@ -222,7 +220,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           const registry = reg.endsWith("/") ? reg.slice(0, -1) : reg
           const channel = InstallationChannel
           const response = yield* httpOk.execute(
-            HttpClientRequest.get(`${registry}/numasec-ai/${channel}`).pipe(HttpClientRequest.acceptJson),
+            HttpClientRequest.get(`${registry}/numasec/${channel}`).pipe(HttpClientRequest.acceptJson),
           )
           const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
           return data.version
@@ -264,13 +262,13 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
             result = yield* upgradeCurl(target)
             break
           case "npm":
-            result = yield* run(["npm", "install", "-g", `numasec-ai@${target}`])
+            result = yield* run(["npm", "install", "-g", `numasec@${target}`])
             break
           case "pnpm":
-            result = yield* run(["pnpm", "install", "-g", `numasec-ai@${target}`])
+            result = yield* run(["pnpm", "install", "-g", `numasec@${target}`])
             break
           case "bun":
-            result = yield* run(["bun", "install", "-g", `numasec-ai@${target}`])
+            result = yield* run(["bun", "install", "-g", `numasec@${target}`])
             break
           case "brew": {
             const formula = yield* getBrewFormula()

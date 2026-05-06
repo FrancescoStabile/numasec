@@ -1,7 +1,12 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/tui"
 import type { ToolPart } from "@numasec/sdk/v2"
 import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
-import { loadOperationConsoleSnapshot } from "./operation-console"
+import {
+  loadOperationConsoleSnapshot,
+  shouldRefreshOperationConsoleSnapshotForPart,
+  stabilizeOperationConsoleSnapshot,
+  type OperationConsoleSnapshot,
+} from "./operation-console"
 
 const id = "internal:sidebar-activity"
 
@@ -217,17 +222,29 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [tick, setTick] = createSignal(true)
   const refresh = () => setTick((value) => !value)
   let inflight = false
+  let queued = false
+  let stableSnapshot: OperationConsoleSnapshot | undefined
 
   const messages = createMemo(() => props.api.state.session.messages(props.session_id))
-  const [snapshot] = createResource(tick, async () => {
-    if (inflight) return undefined
+  const [snapshotResource] = createResource<OperationConsoleSnapshot | undefined, boolean>(tick, async () => {
+    if (inflight) {
+      queued = true
+      return stableSnapshot
+    }
     inflight = true
     try {
-      return await loadOperationConsoleSnapshot(props.api.state.path.directory)
+      const next = await loadOperationConsoleSnapshot(props.api.state.path.directory)
+      stableSnapshot = stabilizeOperationConsoleSnapshot(stableSnapshot, next)
+      return stableSnapshot
     } finally {
       inflight = false
+      if (queued) {
+        queued = false
+        queueMicrotask(refresh)
+      }
     }
   })
+  const snapshot = createMemo(() => snapshotResource() ?? stableSnapshot)
 
   const rows = createMemo<Row[]>(() => {
     const acc: Row[] = []
@@ -275,7 +292,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const empty = createMemo(() => effectiveRows().length === 0)
 
   const offIdle = props.api.event.on("session.idle", () => refresh())
-  const offPart = props.api.event.on("message.part.updated", () => refresh())
+  const offPart = props.api.event.on("message.part.updated", (evt) => {
+    if (shouldRefreshOperationConsoleSnapshotForPart(evt.properties.part)) refresh()
+  })
   onCleanup(() => {
     offIdle()
     offPart()

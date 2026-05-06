@@ -1,37 +1,20 @@
 #!/usr/bin/env bun
 
-import { Script } from "@numasec/script"
-import { $ } from "bun"
+import path from "path"
 
-const version = Script.version.replace(/^v/, "")
-const tag = `v${version}`
-const output = [`version=${version}`]
-
-if (!Script.preview) {
-  const sha = process.env.GITHUB_SHA ?? (await $`git rev-parse HEAD`.text()).trim()
-  const file = `${process.cwd()}/UPCOMING_CHANGELOG.md`
-  await $`bun script/changelog.ts --to ${sha}`.cwd(process.cwd()).nothrow()
-  const body = await Bun.file(file)
-    .text()
-    .catch(() => "No notable changes")
-  const dir = process.env.RUNNER_TEMP ?? "/tmp"
-  const notesFile = `${dir}/numasec-release-notes.txt`
-  await Bun.write(notesFile, body)
-  await $`gh release create ${tag} -d --title ${tag} --notes-file ${notesFile}`.nothrow()
-  const release = await $`gh release view ${tag} --json tagName,databaseId`.json()
-  output.push(`release=${release.databaseId}`)
-  output.push(`tag=${release.tagName}`)
-} else if (Script.channel === "beta") {
-  await $`gh release create ${tag} -d --title ${tag} --repo ${process.env.GH_REPO}`.nothrow()
-  const release = await $`gh release view ${tag} --json tagName,databaseId --repo ${process.env.GH_REPO}`.json()
-  output.push(`release=${release.databaseId}`)
-  output.push(`tag=${release.tagName}`)
+const root = path.resolve(import.meta.dir, "..")
+const pkg = await Bun.file(path.join(root, "packages/numasec/package.json")).json()
+const requested = process.env.NUMASEC_VERSION || process.env.GITHUB_REF_NAME || pkg.version
+const version = requested.replace(/^v/, "")
+if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+  throw new Error(`invalid release version: ${requested}`)
 }
-
-output.push(`repo=${process.env.GH_REPO}`)
+const tag = `v${version}`
+const repo = process.env.GH_REPO ?? "FrancescoStabile/numasec"
+const output = [`version=${version}`, `tag=${tag}`, `repo=${repo}`]
 
 if (process.env.GITHUB_OUTPUT) {
-  await Bun.write(process.env.GITHUB_OUTPUT, output.join("\n"))
+  await Bun.write(process.env.GITHUB_OUTPUT, `${output.join("\n")}\n`)
 }
 
 process.exit(0)

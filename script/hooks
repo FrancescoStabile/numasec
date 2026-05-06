@@ -16,4 +16,4 @@ bun run typecheck
 EOF
 
 chmod +x .git/hooks/pre-push
-echo "✅ Pre-push hook installed"
+echo "Pre-push hook installed"

@@ -6,17 +6,8 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      bump:
-        description: Release bump
-        required: true
-        default: patch
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
       version:
-        description: Existing version or tag to republish
+        description: Version or tag to release. Defaults to packages/numasec/package.json.
         required: false
         type: string
 
@@ -42,7 +33,6 @@ jobs:
       - id: meta
         env:
           GH_REPO: ${{ github.repository }}
-          NUMASEC_BUMP: ${{ inputs.bump }}
           NUMASEC_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version || '' }}
         run: bun run script/version.ts
 
@@ -55,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
       - run: bun typecheck
-      - run: bun run build
+      - run: bun run build --single --skip-install
         working-directory: packages/numasec
       - run: bun test --timeout 30000
         working-directory: packages/numasec
@@ -64,6 +54,7 @@ jobs:
     name: Startup Smoke (${{ matrix.os }})
     needs: [version, validate]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -73,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
-      - run: bun run build --single
+      - run: bun run build --single --skip-install
         working-directory: packages/numasec
         env:
           NUMASEC_VERSION: ${{ needs.version.outputs.version }}
@@ -139,22 +130,29 @@ jobs:
     name: GitHub Release
     needs: [version, build-agent]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
       - uses: actions/download-artifact@v4
         with:
           pattern: numasec-*
           path: artifacts/
+      - name: Build release notes
+        run: bun script/release-notes.ts --version ${{ needs.version.outputs.version }} --output release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           draft: false
+          body_path: release-notes.md
           files: artifacts/**/*
 
   publish-npm:
     name: Publish to npm
-    needs: [version, build-agent]
+    needs: [version, build-agent, github-release]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -260,6 +258,23 @@ jobs:
 
           chmod +x publish-packages/numasec/bin/numasec
 
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const root = 'publish-packages/numasec';
+            const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+            if (pkg.name !== 'numasec') throw new Error('meta package must be named numasec');
+            if (!pkg.optionalDependencies || Object.keys(pkg.optionalDependencies).length === 0) throw new Error('missing binary optionalDependencies');
+            for (const file of ['README.md', 'LICENSE', 'bin/numasec', 'postinstall.mjs']) {
+              if (!fs.existsSync(path.join(root, file))) throw new Error('missing publish file: ' + file);
+            }
+            for (const [name] of Object.entries(pkg.optionalDependencies)) {
+              const dir = path.join('publish-packages', name);
+              const bin = name.includes('windows') ? 'numasec.exe' : 'numasec';
+              if (!fs.existsSync(path.join(dir, 'bin', bin))) throw new Error('missing binary for ' + name);
+            }
+          "
+
           for dir in publish-packages/numasec-*/; do
             [ -d "$dir" ] || continue
             publish_dir "$dir"
@@ -277,11 +292,11 @@ jobs:
 
   publish-docker:
     name: Publish Docker Image
-    needs: [version, validate]
+    needs: [version, github-release]
     timeout-minutes: 30
     runs-on: ubuntu-latest
     permissions:
-      packages: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun

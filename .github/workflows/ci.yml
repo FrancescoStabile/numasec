@@ -57,5 +57,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
-      - run: bun run build
+      - run: bun run build --single --skip-install
         working-directory: packages/numasec

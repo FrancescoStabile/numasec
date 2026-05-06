@@ -1,7 +1,14 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@numasec/plugin/tui"
 import { createMemo, createResource, createSignal, onCleanup, Show } from "solid-js"
 import { useSessionView } from "@tui/context/session-view"
-import { loadOperationConsoleSnapshot, replayCoveredCount, reportStatus } from "@tui/component/operation-lens/snapshot"
+import {
+  loadOperationConsoleSnapshot,
+  replayCoveredCount,
+  reportStatus,
+  shouldRefreshOperationConsoleSnapshotForPart,
+  stabilizeOperationConsoleSnapshot,
+  type OperationConsoleSnapshot,
+} from "@tui/component/operation-lens/snapshot"
 
 const id = "internal:prompt-hints"
 
@@ -11,22 +18,35 @@ function View(props: { api: TuiPluginApi }) {
   const [tick, setTick] = createSignal(true)
   const refresh = () => setTick((value) => !value)
   let inflight = false
+  let queued = false
+  let stableSnapshot: OperationConsoleSnapshot | undefined
 
-  const [data] = createResource(tick, async () => {
-    if (inflight) return undefined
+  const [data] = createResource<OperationConsoleSnapshot | undefined, boolean>(tick, async () => {
+    if (inflight) {
+      queued = true
+      return stableSnapshot
+    }
     inflight = true
     try {
-      return await loadOperationConsoleSnapshot(props.api.state.path.directory)
+      const next = await loadOperationConsoleSnapshot(props.api.state.path.directory)
+      stableSnapshot = stabilizeOperationConsoleSnapshot(stableSnapshot, next)
+      return stableSnapshot
     } finally {
       inflight = false
+      if (queued) {
+        queued = false
+        queueMicrotask(refresh)
+      }
     }
   })
 
-  const snapshot = createMemo(() => data())
+  const snapshot = createMemo(() => data() ?? stableSnapshot)
   const summary = createMemo(() => snapshot()?.projected?.summary)
 
   const offIdle = props.api.event.on("session.idle", () => refresh())
-  const offPart = props.api.event.on("message.part.updated", () => refresh())
+  const offPart = props.api.event.on("message.part.updated", (evt) => {
+    if (shouldRefreshOperationConsoleSnapshotForPart(evt.properties.part)) refresh()
+  })
   onCleanup(() => {
     offIdle()
     offPart()

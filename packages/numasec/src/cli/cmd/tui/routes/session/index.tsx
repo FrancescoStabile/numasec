@@ -101,6 +101,8 @@ import {
   reportGateFocusIndex,
   reportGateRows,
   restoreSelectedIndex,
+  shouldRefreshOperationConsoleSnapshotForPart,
+  stabilizeOperationConsoleSnapshot,
   type OperationConsoleSnapshot,
   workflowRows,
 } from "@tui/component/operation-lens/snapshot"
@@ -206,16 +208,27 @@ export function Session() {
   const toast = useToast()
   const sdk = useSDK()
   let snapshotInflight = false
+  let snapshotQueued = false
+  let stableOperationSnapshot: OperationConsoleSnapshot | undefined
   const [operationSnapshot] = createResource<OperationConsoleSnapshot | undefined, boolean>(snapshotTick, async () => {
-    if (snapshotInflight) return undefined
+    if (snapshotInflight) {
+      snapshotQueued = true
+      return stableOperationSnapshot
+    }
     snapshotInflight = true
     try {
-      return await loadOperationConsoleSnapshot(sync.path.directory)
+      const next = await loadOperationConsoleSnapshot(sync.path.directory)
+      stableOperationSnapshot = stabilizeOperationConsoleSnapshot(stableOperationSnapshot, next)
+      return stableOperationSnapshot
     } finally {
       snapshotInflight = false
+      if (snapshotQueued) {
+        snapshotQueued = false
+        queueMicrotask(refreshSnapshot)
+      }
     }
   })
-  const snapshot = createMemo(() => operationSnapshot())
+  const snapshot = createMemo(() => operationSnapshot() ?? stableOperationSnapshot)
   const findingLensRows = createMemo(() => findingsRows(snapshot()))
   const evidenceLensRows = createMemo(() => evidenceRows(snapshot(), { findingKey: filterFindingKey() }))
   const replayLensRows = createMemo(() => replayRows(snapshot(), { findingKey: filterFindingKey() }))
@@ -406,13 +419,13 @@ export function Session() {
     const title = Locale.truncate(session()?.title ?? "", 50)
     const pad = (text: string) => text.padEnd(10, " ")
     const weak = (text: string) => UI.Style.TEXT_DIM + pad(text) + UI.Style.TEXT_NORMAL
-    const logo = UI.logo("  ").split(/\r?\n/)
+    const logo =
+      (process.stdout.columns ?? 120) >= 78
+        ? UI.logo("  ").split(/\r?\n/)
+        : [`  ${UI.Style.TEXT_SUCCESS_BOLD}numasec${UI.Style.TEXT_NORMAL}`]
     return exit.message.set(
       [
-        `${logo[0] ?? ""}`,
-        `${logo[1] ?? ""}`,
-        `${logo[2] ?? ""}`,
-        `${logo[3] ?? ""}`,
+        ...logo,
         ``,
         `  ${weak("Session")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
         `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}numasec -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
@@ -1318,7 +1331,9 @@ export function Session() {
   createEffect(on(() => route.sessionID, toBottom))
 
   const offIdle = event.on("session.idle", () => refreshSnapshot())
-  const offPart = event.on("message.part.updated", () => refreshSnapshot())
+  const offPart = event.on("message.part.updated", (evt) => {
+    if (shouldRefreshOperationConsoleSnapshotForPart(evt.properties.part)) refreshSnapshot()
+  })
   onCleanup(() => {
     offIdle()
     offPart()

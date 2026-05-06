@@ -3,6 +3,7 @@ import { createMemo, createResource, createSignal, onCleanup, Show } from "solid
 import { Doctor } from "@/core/doctor"
 import type { DoctorReport } from "@/core/doctor"
 import { Operation } from "@/core/operation"
+import { shouldRefreshOperationConsoleSnapshotForPart } from "./operation-console"
 
 const id = "internal:sidebar-doctor"
 
@@ -17,23 +18,33 @@ function View(props: { api: TuiPluginApi }) {
   // accumulating in-flight probes (see dialog-operation.tsx:23-45 + commit 43ff009).
   const [tick, setTick] = createSignal(true)
   let inflight = false
+  let queued = false
+  let stableSnapshot: Snapshot | undefined
 
   const [data] = createResource<Snapshot | undefined, boolean>(tick, async () => {
-    if (inflight) return undefined
+    if (inflight) {
+      queued = true
+      return stableSnapshot
+    }
     inflight = true
     try {
       const directory = props.api.state.path.directory
       const report = await Doctor.probePromise(directory)
       const active = directory ? await Operation.active(directory).catch(() => undefined) : undefined
-      return { report, opsec: active?.opsec ?? "normal" }
+      stableSnapshot = { report, opsec: active?.opsec ?? "normal" }
+      return stableSnapshot
     } catch {
-      return undefined
+      return stableSnapshot
     } finally {
       inflight = false
+      if (queued) {
+        queued = false
+        queueMicrotask(() => setTick((value) => !value))
+      }
     }
   })
 
-  const ready = createMemo(() => data())
+  const ready = createMemo(() => data() ?? stableSnapshot)
   const tools = createMemo(() => {
     const r = ready()?.report
     if (!r) return { present: 0, total: 0 }
@@ -90,7 +101,9 @@ function View(props: { api: TuiPluginApi }) {
   const wsOk = createMemo(() => ready()?.report.workspace.writable !== false)
   const opsecStrict = createMemo(() => ready()?.opsec === "strict")
   const offIdle = props.api.event.on("session.idle", () => setTick((value) => !value))
-  const offPart = props.api.event.on("message.part.updated", () => setTick((value) => !value))
+  const offPart = props.api.event.on("message.part.updated", (evt) => {
+    if (shouldRefreshOperationConsoleSnapshotForPart(evt.properties.part)) setTick((value) => !value)
+  })
   onCleanup(() => {
     offIdle()
     offPart()

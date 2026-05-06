@@ -32,6 +32,42 @@ export type OperationConsoleSnapshot = {
   timeline: ProjectedTimelineEvent[]
 }
 
+type OperationConsolePartLike = {
+  type?: string
+  state?: {
+    status?: string
+  }
+}
+
+export function shouldRefreshOperationConsoleSnapshotForPart(part: OperationConsolePartLike | undefined) {
+  if (part?.type !== "tool") return false
+  return part.state?.status === "completed" || part.state?.status === "error"
+}
+
+export function stabilizeOperationConsoleSnapshot(
+  previous: OperationConsoleSnapshot | undefined,
+  next: OperationConsoleSnapshot | undefined,
+): OperationConsoleSnapshot | undefined {
+  if (!next) return previous
+  if (!previous) return next
+
+  if (!next.active) return next
+  if (next.active.slug !== previous.active?.slug) return next
+  if (next.projected) return next
+  if (!previous.projected) return next
+
+  return {
+    ...next,
+    projected: previous.projected,
+    evidenceCount: next.evidenceEntries.length > 0 ? next.evidenceCount : previous.evidenceCount,
+    evidenceEntries: next.evidenceEntries.length > 0 ? next.evidenceEntries : previous.evidenceEntries,
+    activeWorkflow: next.activeWorkflow ?? previous.activeWorkflow,
+    workflow: next.workflow ?? previous.workflow,
+    deliverable: next.deliverable ?? previous.deliverable,
+    timeline: next.timeline.length > 0 ? next.timeline : previous.timeline,
+  }
+}
+
 export type FindingLensStatus = "reportable" | "verified" | "suspected" | "rejected" | "candidate"
 
 export type FindingLensRow = {

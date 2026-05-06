@@ -71,9 +71,15 @@ const money = new Intl.NumberFormat("en-US", {
   currency: "USD",
 })
 
+const CTRL_C_EXIT_WINDOW = 1_500
+
 function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
+}
+
+function isPlainCtrlC(evt: { name: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
+  return evt.name === "c" && evt.ctrl === true && evt.meta !== true && evt.shift !== true
 }
 
 export function Prompt(props: PromptProps) {
@@ -766,6 +772,7 @@ export function Prompt(props: PromptProps) {
     input.clear()
   }
   const exit = useExit()
+  let lastEmptyCtrlC = 0
 
   function pasteText(text: string, virtualText: string) {
     const currentOffset = input.visualCursor.offset
@@ -1016,6 +1023,7 @@ export function Prompt(props: PromptProps) {
                   // If no image, let the default paste behavior continue
                 }
                 if (keybind.match("input_clear", e) && store.prompt.input !== "") {
+                  lastEmptyCtrlC = 0
                   input.clear()
                   input.extmarks.clear()
                   setStore("prompt", {
@@ -1026,6 +1034,33 @@ export function Prompt(props: PromptProps) {
                   return
                 }
                 if (keybind.match("app_exit", e)) {
+                  if (isPlainCtrlC(e)) {
+                    e.preventDefault()
+                    if (store.prompt.input !== "") {
+                      lastEmptyCtrlC = 0
+                      input.clear()
+                      input.extmarks.clear()
+                      setStore("prompt", {
+                        input: "",
+                        parts: [],
+                      })
+                      setStore("extmarkToPartIndex", new Map())
+                      return
+                    }
+
+                    const now = Date.now()
+                    if (now - lastEmptyCtrlC <= CTRL_C_EXIT_WINDOW) {
+                      await exit()
+                      return
+                    }
+                    lastEmptyCtrlC = now
+                    toast.show({
+                      message: "Press Ctrl+C again to exit",
+                      variant: "info",
+                      duration: CTRL_C_EXIT_WINDOW,
+                    })
+                    return
+                  }
                   if (store.prompt.input === "") {
                     await exit()
                     // Don't preventDefault - let textarea potentially handle the event

@@ -1,20 +1,47 @@
-name: 🚀 Feature Request
-description: Suggest an idea, feature, or enhancement
-labels: [discussion]
-title: "[FEATURE]:"
+name: Feature request
+description: Propose a numasec capability, workflow, adapter, or UI improvement
+labels: ["enhancement"]
+title: "[Feature]: "
 
 body:
   - type: checkboxes
     id: verified
     attributes:
-      label: Feature hasn't been suggested before.
+      label: Existing issues
       options:
-        - label: I have verified this feature I'm about to request hasn't been suggested before.
+        - label: I searched existing issues and discussions before opening this request.
           required: true
 
   - type: textarea
+    id: problem
     attributes:
-      label: Describe the enhancement you want to request
-      description: What do you want to change or add? What are the benefits of implementing this? Try to be detailed so we can understand your request better :)
+      label: Operator workflow or problem
+      description: What cyber workflow is blocked, slow, noisy, or hard to trust today?
+      placeholder: e.g. AppSec triage loses evidence for browser-discovered forms
     validations:
       required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should numasec do differently?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Domain
+      options:
+        - AppSec
+        - Pentest
+        - OSINT
+        - CTF / hacking
+        - Cloud / container / IaC
+        - Forensics / binary
+        - TUI / UX
+        - Release / CI
+        - Other
+    validations:
+      required: false

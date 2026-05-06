@@ -8,6 +8,8 @@ import {
   replayCoveredCount,
   reportStatus,
   scopeDecision,
+  shouldRefreshOperationConsoleSnapshotForPart,
+  stabilizeOperationConsoleSnapshot,
   type OperationConsoleSnapshot,
 } from "@tui/feature-plugins/sidebar/operation-console"
 
@@ -42,24 +44,37 @@ export function OperationBanner() {
   // stack dozens of in-flight fetches with fresh source identities.
   const [tick, setTick] = createSignal(true)
   let inflight = false
+  let queued = false
+  let stableSnapshot: OperationConsoleSnapshot | undefined
 
   const refresh = () => setTick((value) => !value)
   const [info] = createResource<OperationConsoleSnapshot | undefined, boolean>(tick, async () => {
-    if (inflight) return
+    if (inflight) {
+      queued = true
+      return stableSnapshot
+    }
     inflight = true
     try {
       const dir = project.instance.directory()
       if (!dir) return undefined
-      return await loadOperationConsoleSnapshot(dir)
+      const next = await loadOperationConsoleSnapshot(dir)
+      stableSnapshot = stabilizeOperationConsoleSnapshot(stableSnapshot, next)
+      return stableSnapshot
     } finally {
       inflight = false
+      if (queued) {
+        queued = false
+        queueMicrotask(refresh)
+      }
     }
   })
-  const snapshot = createMemo(() => info())
+  const snapshot = createMemo(() => info() ?? stableSnapshot)
   const active = createMemo(() => snapshot()?.active)
 
   const offIdle = event.on("session.idle", () => refresh())
-  const offPart = event.on("message.part.updated", () => refresh())
+  const offPart = event.on("message.part.updated", (evt) => {
+    if (shouldRefreshOperationConsoleSnapshotForPart(evt.properties.part)) refresh()
+  })
   const offStatus = event.on("session.status", () => refresh())
   onCleanup(() => {
     offIdle()
