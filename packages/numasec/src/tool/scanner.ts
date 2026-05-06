@@ -12,6 +12,7 @@ import { probeServices, type ServiceProbeResult } from "../scanner/service-probe
 import type { DirFuzzResult } from "../scanner/dir-fuzzer"
 import { Cyber } from "@/core/cyber"
 import { Evidence } from "@/core/evidence"
+import { Observation } from "@/core/observation"
 import { Operation } from "@/core/operation"
 import { Instance } from "@/project/instance"
 
@@ -113,6 +114,51 @@ function persistScanResult(input: {
       source: "scanner",
     }),
   )
+}
+
+function scannerObservationDraft(mode: Params["mode"], target: string, result: unknown) {
+  const origin = target.startsWith("http://") || target.startsWith("https://") ? new URL(target).origin : target
+  const data = result as Record<string, unknown>
+  if (mode === "crawl") {
+    const urls = (data.urls as unknown[] | undefined)?.length ?? 0
+    const forms = (data.forms as unknown[] | undefined)?.length ?? 0
+    return {
+      subtype: "intel-fact" as const,
+      title: `Web crawl completed for ${origin}`,
+      severity: "info" as const,
+      confidence: 0.6,
+      note: `${urls} URLs and ${forms} forms discovered.`,
+      tags: ["pentest", "recon", "web", "crawl"],
+    }
+  }
+  if (mode === "js") {
+    const endpoints = (data.endpoints as unknown[] | undefined)?.length ?? 0
+    const files = (data.jsFiles as unknown[] | undefined)?.length ?? 0
+    const secrets = (data.secrets as unknown[] | undefined)?.length ?? 0
+    const subtype: "risk" | "intel-fact" = secrets > 0 || endpoints > 0 ? "risk" : "intel-fact"
+    const severity: "medium" | "info" = secrets > 0 ? "medium" : "info"
+    return {
+      subtype,
+      title: `JavaScript surface analysis completed for ${origin}`,
+      severity,
+      confidence: 0.6,
+      note: `${files} JavaScript files, ${endpoints} endpoints, ${secrets} secret-shaped strings observed.`,
+      tags: ["pentest", "recon", "web", "js"],
+    }
+  }
+  if (mode === "dir-fuzz") {
+    const found = (data.found as unknown[] | undefined)?.length ?? 0
+    const tested = Number(data.testedCount ?? 0)
+    const severity: "low" | "info" = found > 0 ? "low" : "info"
+    return {
+      subtype: "intel-fact" as const,
+      title: `Directory fuzzing completed for ${origin}`,
+      severity,
+      confidence: 0.6,
+      note: `${found} candidate paths discovered across ${tested} requests.`,
+      tags: ["pentest", "recon", "web", "dir-fuzz"],
+    }
+  }
 }
 
 function writeCrawlFacts(input: { target: string; result: CrawlResult; eventID?: string; evidenceRefs?: string[] }) {
@@ -574,6 +620,12 @@ export const ScannerTool = Tool.define<typeof parameters, Metadata, never>(
               eventID: eventID || undefined,
               evidenceRefs,
             })
+          }
+
+          const observation = scannerObservationDraft(params.mode, params.target, result)
+          if (slug && evidence && observation) {
+            const obs = yield* Effect.promise(() => Observation.add(workspace, slug, observation))
+            yield* Effect.promise(() => Observation.linkEvidence(workspace, slug, obs.id, evidence.sha256))
           }
 
           return {

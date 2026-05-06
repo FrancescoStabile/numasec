@@ -411,7 +411,7 @@ jobs:
           persist-credentials: false
 
       - name: Run numasec
-        uses: numasec/numasec/github@latest${envStr}
+        uses: FrancescoStabile/numasec/github@latest${envStr}
         with:
           model: ${provider}/${model}`,
             )

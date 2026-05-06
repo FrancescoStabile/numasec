@@ -202,9 +202,8 @@ export function Prompt(props: PromptProps) {
 
       syncedSessionID = sessionID
 
-      // Only set agent if it's a primary agent (not a subagent)
-      const isPrimaryAgent = local.agent.list().some((x) => x.name === msg.agent)
-      if (msg.agent && isPrimaryAgent) {
+      // Only set agent if it's a selectable primary agent; plan is valid but hidden from Tab.
+      if (msg.agent && local.agent.has(msg.agent)) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
         if (msg.model) {

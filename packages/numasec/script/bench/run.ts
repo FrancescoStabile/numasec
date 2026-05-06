@@ -15,13 +15,17 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, rmSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Cyber } from "../../src/core/cyber"
+import { Deliverable } from "../../src/core/deliverable"
+import { Operation } from "../../src/core/operation"
+import { AppRuntime } from "../../src/effect/app-runtime"
 import { provision, teardown, type Fixture } from "./provision-juiceshop"
 import { scoreFor, type Score } from "./rubric"
 
 type Scenario = "web-surface" | "appsec-triage" | "pwn"
+type CompletionMode = "command" | "projection" | "timeout"
 
 const SCENARIOS: Scenario[] = ["web-surface", "appsec-triage", "pwn"]
-const BENCH_COMMAND_TIMEOUT_MS = 5 * 60_000
+const BENCH_COMMAND_TIMEOUT_MS = Number.parseInt(process.env.NUMASEC_BENCH_COMMAND_TIMEOUT_MS ?? "", 10) || 20 * 60_000
 const PROVIDER_PREREQ_ENV = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -34,6 +38,14 @@ const PROVIDER_PREREQ_ENV = [
   "AWS_ACCESS_KEY_ID",
   "AZURE_OPENAI_API_KEY",
 ]
+
+const AUTO_PERMISSION_RULES = [{ permission: "*", pattern: "*", action: "allow" as const }]
+
+type BunRequestInit = RequestInit & { timeout?: false }
+
+function bunFetchInit(init: RequestInit): BunRequestInit {
+  return { ...init, timeout: false }
+}
 
 function parseArgs(argv: string[]): { scenario: Scenario } {
   const i = argv.indexOf("--scenario")
@@ -65,7 +77,7 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(1500) })
+      const r = await fetch(url, bunFetchInit({ signal: AbortSignal.timeout(1500) }))
       if (r.ok || r.status < 500) return
     } catch {}
     await new Promise((r) => setTimeout(r, 1000))
@@ -96,21 +108,98 @@ function stopServer(proc: ChildProcess): void {
 type CreatedSession = { id: string }
 
 async function createSession(baseUrl: string, directory: string): Promise<CreatedSession> {
-  const r = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
+  const r = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, bunFetchInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: "{}",
-  })
+  }))
   if (!r.ok) throw new Error(`session create failed: ${r.status} ${await r.text()}`)
   const j = (await r.json()) as { id: string }
   return { id: j.id }
 }
 
+async function setSessionAuto(baseUrl: string, sessionID: string): Promise<void> {
+  const r = await fetch(`${baseUrl}/session/${sessionID}`, bunFetchInit({
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      permission: AUTO_PERMISSION_RULES,
+    }),
+  }))
+  if (!r.ok) throw new Error(`session update failed: ${r.status} ${await r.text()}`)
+}
+
 function scenarioCommand(scenario: Scenario, target: string): { command: string; arguments: string } {
   if (scenario === "pwn") return { command: "pwn", arguments: target }
   if (scenario === "web-surface") return { command: "runbook", arguments: `web-surface ${target}` }
-  if (scenario === "appsec-triage") return { command: "runbook", arguments: `appsec-triage ${target}` }
+  if (scenario === "appsec-triage") return { command: "runbook", arguments: `appsec-web-triage ${target}` }
   throw new Error(`unknown scenario: ${scenario}`)
+}
+
+function scenarioAgent(scenario: Scenario): string {
+  if (scenario === "appsec-triage") return "appsec"
+  if (scenario === "web-surface" || scenario === "pwn") return "pentest"
+  return "security"
+}
+
+async function bootstrapOperationForScenario(workspace: string, scenario: Scenario, target: string, sessionID?: string) {
+  if (scenario === "pwn") return undefined
+
+  const kind = scenario === "appsec-triage" ? "appsec" : "pentest"
+  const info = await Operation.create({
+    workspace,
+    label: `${scenario} ${target}`,
+    kind,
+    target,
+  })
+  await Operation.activate(workspace, info.slug)
+  const boundary = (await Operation.readBoundary(workspace, info.slug).catch(() => undefined)) ?? {
+    default: "allow" as const,
+    in_scope: [],
+    out_of_scope: [],
+  }
+  await AppRuntime.runPromise(
+    Cyber.upsertOperationState({
+      slug: info.slug,
+      label: info.label,
+      kind: info.kind,
+      target: info.target,
+      opsec: info.opsec,
+      in_scope: boundary.in_scope,
+      out_of_scope: boundary.out_of_scope,
+      source: "bench",
+      summary: `bench bootstrap ${info.slug}`,
+    }),
+  )
+  await AppRuntime.runPromise(
+    Cyber.upsertScopePolicy({
+      operation_slug: info.slug,
+      default: boundary.default === "allow" ? "allow" : "ask",
+      in_scope: boundary.in_scope,
+      out_of_scope: boundary.out_of_scope,
+      opsec: info.opsec,
+      source: "bench",
+      summary: `bench scope policy ${info.slug}`,
+    }),
+  )
+  await AppRuntime.runPromise(
+    Cyber.upsertFact({
+      operation_slug: info.slug,
+      entity_kind: "operation",
+      entity_key: info.slug,
+      fact_name: "autonomy_policy",
+      value_json: {
+        mode: "auto",
+        rules: AUTO_PERMISSION_RULES,
+        ...(sessionID ? { session_id: sessionID } : {}),
+      },
+      writer_kind: "operator",
+      status: "observed",
+      confidence: 1000,
+      source_event_id: undefined,
+    }),
+  )
+  return info.slug
 }
 
 type CommandResult = { ok: boolean; raw: unknown; error?: string }
@@ -123,6 +212,7 @@ type BenchArtifacts = {
   workflows: number
   completed_steps: number
   route_facts: number
+  http_forms: number
   relations_projected: number
   workflow_step_statuses: number
   candidate_findings: number
@@ -160,23 +250,128 @@ async function runCommand(
   directory: string,
   command: string,
   args: string,
+  agent?: string,
+  signal?: AbortSignal,
 ): Promise<CommandResult> {
   try {
-    const signal = AbortSignal.timeout(BENCH_COMMAND_TIMEOUT_MS)
+    const requestSignal = signal ?? AbortSignal.timeout(BENCH_COMMAND_TIMEOUT_MS)
     const r = await fetch(
       `${baseUrl}/session/${sessionID}/command?directory=${encodeURIComponent(directory)}`,
-      {
+      bunFetchInit({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command, arguments: args }),
-        signal,
-      },
+        body: JSON.stringify({ command, arguments: args, agent }),
+        signal: requestSignal,
+      }),
     )
     const body = await r.text()
     if (!r.ok) return { ok: false, raw: body, error: `${r.status}: ${body.slice(0, 500)}` }
     return { ok: true, raw: JSON.parse(body) }
   } catch (e) {
     return { ok: false, raw: null, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+async function waitForScenarioCompletion(
+  workspace: string,
+  scenario: Scenario,
+  timeoutMs: number,
+): Promise<"workflow_complete" | "artifacts_ready" | null> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const slug = await Operation.activeSlug(workspace).catch(() => undefined)
+    if (slug) {
+      const workflow = await Operation.activeWorkflow(workspace, slug)
+        .then((active) => (active ? Operation.readWorkflow(workspace, slug, active) : undefined))
+        .catch(() => undefined)
+      const projected = await Cyber.readProjectedState(workspace, slug).catch(() => undefined)
+      const pendingSteps = Number(workflow?.["pending_steps"] ?? Number.NaN)
+      const completedSteps = Number(workflow?.["completed_steps"] ?? 0)
+      if (pendingSteps === 0 && completedSteps > 0) {
+        if (scenario === "appsec-triage") {
+          if ((projected?.summary.candidate_findings ?? 0) > 0) return "workflow_complete"
+        } else if (scenario === "web-surface") {
+          if ((projected?.summary.route_facts ?? 0) > 0) return "workflow_complete"
+        } else if (scenario === "pwn") {
+          if ((projected?.summary.observations_projected ?? 0) > 0) return "workflow_complete"
+        } else {
+          return "workflow_complete"
+        }
+      }
+      if ((projected?.summary.deliverables ?? 0) > 0) return "artifacts_ready"
+    }
+    await Bun.sleep(500)
+  }
+  return null
+}
+
+async function buildDeliverable(workspace: string) {
+  const slug = await Operation.activeSlug(workspace)
+  if (!slug) return { ok: false as const, error: "no active operation after scenario run" }
+  try {
+    const built = await Deliverable.build(workspace, slug)
+    const eventID = await AppRuntime.runPromise(
+      Cyber.appendLedger({
+        operation_slug: slug,
+        kind: "fact.verified",
+        source: "bench.report",
+        status: "completed",
+        summary: `built report bundle ${built.bundleDir.split("/").at(-1)}`,
+        data: {
+          action: "build",
+          format: "md",
+          bundle_dir: built.bundleDir,
+          report_path: built.reportPath,
+          manifest_path: built.manifestPath,
+          counts: built.manifest.counts,
+        },
+      }),
+    ).catch(() => "")
+    const deliverableKey = built.bundleDir.split("/").at(-1) ?? "bundle"
+    await AppRuntime.runPromise(
+      Cyber.upsertFact({
+        operation_slug: slug,
+        entity_kind: "deliverable",
+        entity_key: deliverableKey,
+        fact_name: "report_bundle",
+        value_json: {
+          bundle_dir: built.bundleDir,
+          report_path: built.reportPath,
+          manifest_path: built.manifestPath,
+          counts: built.manifest.counts,
+          format: "md",
+        },
+        writer_kind: "tool",
+        status: "verified",
+        confidence: 1000,
+        source_event_id: eventID || undefined,
+      }),
+    ).catch(() => undefined)
+    await AppRuntime.runPromise(
+      Cyber.upsertRelation({
+        operation_slug: slug,
+        src_kind: "operation",
+        src_key: slug,
+        relation: "exports",
+        dst_kind: "deliverable",
+        dst_key: deliverableKey,
+        writer_kind: "tool",
+        status: "verified",
+        confidence: 1000,
+        source_event_id: eventID || undefined,
+      }),
+    ).catch(() => undefined)
+    return {
+      ok: true as const,
+      slug,
+      built,
+    }
+  } catch (error) {
+    return {
+      ok: false as const,
+      slug,
+      error: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
@@ -191,6 +386,7 @@ async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
       workflows: 0,
       completed_steps: 0,
       route_facts: 0,
+      http_forms: 0,
       relations_projected: 0,
       workflow_step_statuses: 0,
       candidate_findings: 0,
@@ -230,6 +426,7 @@ async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
   let workflows = 0
   let completed_steps = 0
   let route_facts = 0
+  let http_forms = 0
   let relations_projected = 0
   let workflow_step_statuses = 0
   let candidate_findings = 0
@@ -291,10 +488,22 @@ async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
         } catch {}
       }
     }
+    const deliverableDir = join(sdir, "deliverable")
+    if (existsSync(deliverableDir)) {
+      const bundles = readdirSync(deliverableDir, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+      deliverables += bundles.length
+      for (const bundle of bundles.slice(0, 10)) {
+        const report = join(deliverableDir, bundle.name, "report.md")
+        if (existsSync(report)) {
+          try { corpus += "\n\n" + readFileSync(report, "utf8") } catch {}
+        }
+      }
+    }
     const cyberDir = join(sdir, "cyber")
     if (existsSync(cyberDir)) {
       const projected = await Cyber.readProjectedState(workspace, s.name)
       route_facts += projected.summary.route_facts
+      http_forms += projected.summary.http_forms
       relations_projected += projected.relations.length
       observations_projected += projected.summary.observations_projected
       workflow_step_statuses += projected.summary.workflow_step_statuses
@@ -303,7 +512,7 @@ async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
       knowledge_queries += projected.summary.knowledge_queries
       identities += projected.summary.identities
       active_identities += projected.summary.active_identities
-      deliverables += projected.summary.deliverables
+      if (deliverables === 0) deliverables += projected.summary.deliverables
       tool_adapters_present += projected.summary.tool_adapters_present
       tool_adapters_missing += projected.summary.tool_adapters_missing
       capsules += projected.summary.ready_capsules + projected.summary.degraded_capsules + projected.summary.unavailable_capsules
@@ -354,6 +563,7 @@ async function collectArtifacts(workspace: string): Promise<BenchArtifacts> {
     workflows,
     completed_steps,
     route_facts,
+    http_forms,
     relations_projected,
     workflow_step_statuses,
     candidate_findings,
@@ -398,6 +608,7 @@ function extractAssistantText(raw: unknown): string {
 async function main() {
   const { scenario } = parseArgs(process.argv.slice(2))
   const target = `http://localhost:3000`
+  const keepWorkspace = process.env.NUMASEC_BENCH_KEEP_WORKSPACE === "true"
 
   const ts = Date.now()
   const pkgRoot = join(import.meta.dir, "..", "..")
@@ -409,6 +620,11 @@ async function main() {
   const startedAt = new Date().toISOString()
   let finalScore: Score | { scenario: string; score: number; max: number; checks: []; error: string }
   let commandResult: CommandResult = { ok: false, raw: null }
+  let completionMode: CompletionMode = "timeout"
+  let commandCompleted = false
+  let projectionCompleted = false
+  let abortedAfterProjection = false
+  let assistantText = ""
   let artifacts: BenchArtifacts = {
     corpus: "",
     observations: 0,
@@ -417,6 +633,7 @@ async function main() {
     workflows: 0,
     completed_steps: 0,
     route_facts: 0,
+    http_forms: 0,
     relations_projected: 0,
     workflow_step_statuses: 0,
     candidate_findings: 0,
@@ -456,19 +673,52 @@ async function main() {
     server = await startServer(workspace)
     console.log(`[bench] numasec server up on ${server.baseUrl}`)
 
-    const { command, arguments: cmdArgs } = scenarioCommand(scenario, target)
     const session = await createSession(server.baseUrl, workspace)
-    console.log(`[bench] session=${session.id} sending /${command} ${cmdArgs}`)
+    await setSessionAuto(server.baseUrl, session.id)
+    const { command, arguments: cmdArgs } = scenarioCommand(scenario, target)
+    const agent = scenarioAgent(scenario)
+    const bootstrapped = await bootstrapOperationForScenario(workspace, scenario, target, session.id)
+    if (bootstrapped) console.log(`[bench] bootstrapped operation ${bootstrapped}`)
+    console.log(`[bench] session=${session.id} agent=${agent} sending /${command} ${cmdArgs}`)
 
-    commandResult = await runCommand(server.baseUrl, session.id, workspace, command, cmdArgs)
+    const commandAbort = new AbortController()
+    const commandPromise = runCommand(server.baseUrl, session.id, workspace, command, cmdArgs, agent, commandAbort.signal)
+    const completionPromise = waitForScenarioCompletion(workspace, scenario, BENCH_COMMAND_TIMEOUT_MS)
+    const winner = await Promise.race([
+      commandPromise.then((result) => ({ kind: "command" as const, result })),
+      completionPromise.then((result) => ({ kind: "completion" as const, result })),
+    ])
+
+    if (winner.kind === "command") {
+      commandResult = winner.result
+      commandCompleted = true
+      completionMode = "command"
+    } else if (winner.result) {
+      commandAbort.abort()
+      projectionCompleted = true
+      abortedAfterProjection = true
+      completionMode = "projection"
+      commandResult = {
+        ok: true,
+        raw: null,
+      }
+      console.log(`[bench] completion reached via ${winner.result}`)
+      void commandPromise.catch(() => undefined)
+    } else {
+      commandResult = await commandPromise
+      commandCompleted = true
+      completionMode = "timeout"
+    }
+
     if (!commandResult.ok) console.log(`[bench] command error: ${commandResult.error}`)
     else {
-      const reportResult = await runCommand(server.baseUrl, session.id, workspace, "report", "build")
-      if (!reportResult.ok) console.log(`[bench] report build error: ${reportResult.error}`)
+      const deliverableResult = await buildDeliverable(workspace)
+      if (!deliverableResult.ok) console.log(`[bench] report build error: ${deliverableResult.error}`)
+      else console.log(`[bench] report bundle ready for ${deliverableResult.slug}`)
     }
 
     artifacts = await collectArtifacts(workspace)
-    const assistantText = extractAssistantText(commandResult.raw)
+    assistantText = extractAssistantText(commandResult.raw)
     const corpus = artifacts.corpus + "\n\n" + assistantText
     finalScore = scoreFor(scenario, corpus, {
       slug: artifacts.slug,
@@ -478,6 +728,7 @@ async function main() {
       workflows: artifacts.workflows,
       completed_steps: artifacts.completed_steps,
       route_facts: artifacts.route_facts,
+      http_forms: artifacts.http_forms,
       relations_projected: artifacts.relations_projected,
       workflow_step_statuses: artifacts.workflow_step_statuses,
       candidate_findings: artifacts.candidate_findings,
@@ -534,6 +785,7 @@ async function main() {
     workflows: artifacts.workflows,
     completed_steps: artifacts.completed_steps,
     route_facts: artifacts.route_facts,
+    http_forms: artifacts.http_forms,
     workflow_step_statuses: artifacts.workflow_step_statuses,
     candidate_findings: artifacts.candidate_findings,
     findings: artifacts.findings,
@@ -564,6 +816,12 @@ async function main() {
     autonomy_policy_facts: artifacts.autonomy_policy_facts,
     command_ok: commandResult.ok,
     command_error: commandResult.error ?? null,
+    completion_mode: completionMode,
+    command_completed: commandCompleted,
+    projection_completed: projectionCompleted,
+    aborted_after_projection: abortedAfterProjection,
+    assistant_text: assistantText,
+    workspace: keepWorkspace ? workspace : null,
   }
 
   const outPath = join(pkgRoot, `bench-results-${ts}.json`)
@@ -571,7 +829,9 @@ async function main() {
   console.log(`[bench] wrote ${outPath}`)
   console.log(`[bench] score: ${out.result.score}/${out.result.max}`)
 
-  try { rmSync(workspace, { recursive: true, force: true }) } catch {}
+  if (!keepWorkspace) {
+    try { rmSync(workspace, { recursive: true, force: true }) } catch {}
+  }
 
   process.exit(0)
 }

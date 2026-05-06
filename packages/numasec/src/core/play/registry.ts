@@ -2,6 +2,7 @@ import type { Play } from "./play"
 import webSurface from "./data/web-surface"
 import networkSurface from "./data/network-surface"
 import appsecTriage from "./data/appsec-triage"
+import appsecWebTriage from "./data/appsec-web-triage"
 import osintTarget from "./data/osint-target"
 import ctfWarmup from "./data/ctf-warmup"
 import apiSurface from "./data/api-surface"
@@ -15,6 +16,7 @@ const plays: Record<string, Play> = {
   [webSurface.id]: webSurface,
   [networkSurface.id]: networkSurface,
   [appsecTriage.id]: appsecTriage,
+  [appsecWebTriage.id]: appsecWebTriage,
   [osintTarget.id]: osintTarget,
   [ctfWarmup.id]: ctfWarmup,
   [apiSurface.id]: apiSurface,

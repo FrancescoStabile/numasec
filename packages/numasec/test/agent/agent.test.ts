@@ -38,6 +38,42 @@ test("returns default native agents when no config", async () => {
   })
 })
 
+test("plan is selectable but not switchable", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const agents = await load(tmp.path, (svc) => svc.list())
+      const security = agents.find((a) => a.name === "security")
+      const plan = agents.find((a) => a.name === "plan")
+      expect(security).toBeDefined()
+      expect(plan).toBeDefined()
+      expect(Agent.isSelectable(plan!)).toBe(true)
+      expect(Agent.isSwitchable(plan!)).toBe(false)
+      expect(Agent.isSwitchable(security!)).toBe(true)
+    },
+  })
+})
+
+test("native switchable agents have distinct semantic colors", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const agents = await load(tmp.path, (svc) => svc.list())
+      const colors = ["security", "pentest", "appsec", "osint", "hacking"].map((name) => {
+        const agent = agents.find((item) => item.name === name)
+        expect(agent).toBeDefined()
+        expect(Agent.isSwitchable(agent!)).toBe(true)
+        return agent!.color
+      })
+
+      expect(colors).toEqual(["secondary", "error", "primary", "warning", "#D16BFF"])
+      expect(new Set(colors).size).toBe(colors.length)
+    },
+  })
+})
+
 test("security agent has correct default properties", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
@@ -597,7 +633,7 @@ description: Permission skill.
   }
 })
 
-test("defaultAgent returns build when no default_agent config", async () => {
+test("defaultAgent returns security when no default_agent config", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({
     directory: tmp.path,
@@ -724,7 +760,7 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      // build and plan are disabled, no primary-capable agents remain
+      // all primary-capable agents are disabled
       await expect(load(tmp.path, (svc) => svc.defaultAgent())).rejects.toThrow("no primary visible agent found")
     },
   })

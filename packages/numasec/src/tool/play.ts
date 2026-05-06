@@ -15,7 +15,7 @@ const parameters = z.object({
   id: z
     .string()
     .describe(
-      "play id (e.g. web-surface, network-surface, appsec-triage, osint-target, ctf-warmup, api-surface, auth-surface, cloud-posture, container-surface, iac-triage, binary-triage)",
+      "play id (e.g. web-surface, network-surface, appsec-web-triage, appsec-triage, osint-target, ctf-warmup, api-surface, auth-surface, cloud-posture, container-surface, iac-triage, binary-triage)",
     ),
   args: z.record(z.string(), z.unknown()).optional().describe("play-specific arguments"),
 })

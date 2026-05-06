@@ -28,6 +28,7 @@ import { Effect, Context, Layer } from "effect"
 import { InstanceState } from "@/effect"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import { isSelectableAgent, isSwitchableAgent } from "./switching"
 
 export namespace Agent {
   export const Info = z
@@ -56,6 +57,14 @@ export namespace Agent {
       ref: "Agent",
     })
   export type Info = z.infer<typeof Info>
+
+  export function isSelectable(agent: Pick<Info, "mode" | "hidden">) {
+    return isSelectableAgent(agent)
+  }
+
+  export function isSwitchable(agent: Pick<Info, "name" | "mode" | "hidden">) {
+    return isSwitchableAgent(agent)
+  }
 
   export interface Interface {
     readonly get: (agent: string) => Effect.Effect<Agent.Info>
@@ -115,6 +124,7 @@ export namespace Agent {
             security: {
               name: "security",
               description: "General-purpose security expert. Handles any security task: pentesting, code review, OSINT, CTF, incident response, threat modeling.",
+              color: "secondary",
               prompt: PROMPT_SECURITY,
               options: {},
               permission: Permission.merge(
@@ -133,6 +143,7 @@ export namespace Agent {
             pentest: {
               name: "pentest",
               description: "Penetration testing specialist. Systematic recon, enumeration, exploitation, and reporting.",
+              color: "error",
               prompt: PROMPT_PENTEST,
               options: {},
               permission: Permission.merge(
@@ -151,6 +162,7 @@ export namespace Agent {
             appsec: {
               name: "appsec",
               description: "Application security specialist. Source code review, SAST/DAST, dependency analysis, OWASP Top 10.",
+              color: "primary",
               prompt: PROMPT_APPSEC,
               options: {},
               permission: Permission.merge(
@@ -169,6 +181,7 @@ export namespace Agent {
             osint: {
               name: "osint",
               description: "OSINT and forensics specialist. Intelligence gathering, digital forensics, threat intelligence.",
+              color: "warning",
               prompt: PROMPT_OSINT,
               options: {},
               permission: Permission.merge(
@@ -187,6 +200,7 @@ export namespace Agent {
             hacking: {
               name: "hacking",
               description: "CTF, exploit development, and reverse engineering specialist.",
+              color: "#D16BFF",
               prompt: PROMPT_HACKING,
               options: {},
               permission: Permission.merge(
@@ -204,7 +218,7 @@ export namespace Agent {
             },
             plan: {
               name: "plan",
-              description: "Plan mode. Disallows all edit tools.",
+              description: "Cyber planning agent. Defines scope, runbooks, evidence, replay, proof policy, and exit criteria without executing.",
               options: {},
               permission: Permission.merge(
                 defaults,

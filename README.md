@@ -1,184 +1,166 @@
 <p align="center">
-  <img src="assets/readmeimage.png" alt="numasec" width="720" />
+  <!-- SCREENSHOT PLACEHOLDER: replace this asset with the strongest current numasec hero shot before launch. Ideal: dark TUI home screen with the hacker-green ASCII logo and clean prompt. -->
+  <img src="assets/readmeimage.png" alt="numasec terminal home" width="760" />
 </p>
 
 <h1 align="center">numasec</h1>
 
-<p align="center"><b>AI Security Agent for operators, builders, and hackers.</b></p>
+<p align="center">
+  <b>The terminal-native AI cyber operator harness.</b>
+</p>
 
 <p align="center">
-  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=develop&style=for-the-badge&label=CI&logo=github" alt="CI"></a>
-  <a href="https://github.com/FrancescoStabile/numasec/releases"><img src="https://img.shields.io/github/v/release/FrancescoStabile/numasec?include_prereleases&style=for-the-badge&color=00ff41&label=release" alt="release"></a>
-  <a href="https://www.npmjs.com/package/numasec"><img src="https://img.shields.io/npm/v/numasec?style=for-the-badge&color=00ff41&logo=npm" alt="npm"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT"></a>
-  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=for-the-badge&color=yellow&logo=starship" alt="stars"></a>
+  Security deserves its own Codex-style terminal agent: scoped operations, real tools, evidence, replay, runbooks, and reports.
+</p>
+
+<p align="center">
+  <a href="https://github.com/FrancescoStabile/numasec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrancescoStabile/numasec/ci.yml?branch=main&style=for-the-badge&label=CI&logo=github" alt="CI"></a>
+  <a href="https://github.com/FrancescoStabile/numasec/releases"><img src="https://img.shields.io/github/v/release/FrancescoStabile/numasec?include_prereleases&style=for-the-badge&color=00ff88&label=release" alt="release"></a>
+  <a href="https://www.npmjs.com/package/numasec"><img src="https://img.shields.io/npm/v/numasec?style=for-the-badge&color=00ff88&logo=npm" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/numasec"><img src="https://img.shields.io/npm/dm/numasec?style=for-the-badge&color=00c2ff&label=downloads" alt="npm downloads"></a>
+  <a href="https://github.com/FrancescoStabile/numasec/stargazers"><img src="https://img.shields.io/github/stars/FrancescoStabile/numasec?style=for-the-badge&color=00ff88" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00c2ff?style=for-the-badge" alt="MIT license"></a>
 </p>
 
 <p align="center">
   <a href="#why-numasec">Why</a> |
-  <a href="#what-it-can-do">Capabilities</a> |
-  <a href="#plays">Plays</a> |
-  <a href="#operations">Operations</a> |
+  <a href="#demo">Demo</a> |
+  <a href="#what-it-does">What It Does</a> |
   <a href="#install">Install</a> |
-  <a href="#community">Community</a>
+  <a href="#commands">Commands</a> |
+  <a href="#architecture">Architecture</a> |
+  <a href="#quality-bar">Quality Bar</a> |
+  <a href="#roadmap">Roadmap</a>
 </p>
 
-<p align="center">
-  <img src="assets/pentest-demo.gif" alt="numasec running a pentest against OWASP Juice Shop" width="900" />
-</p>
+---
 
 ## Why numasec
 
-Security work is not a single prompt.
+Coding has terminal agents.
 
-It is scope, recon, browser state, raw requests, screenshots, notes, payloads, dead ends, local tools, findings, retests, and a report that still makes sense next week.
+Cyber security still too often has a pile of scanners, browser tabs, notes, shell history, screenshots, and reports that do not agree with each other.
 
-numasec is a terminal-native AI workbench built around that reality: it gives you specialist security agents, durable operation memory, a real browser, raw HTTP, local tool execution, reusable plays, plugin hooks, and adapter-driven workflows for web, code, cloud, containers, IaC, and binaries.
+numasec is built around a different premise:
 
-If Coding Agents are Software Engineers, **numasec is a Cyber Security Operator**.
+> The AI agent should not just chat about security. It should operate inside a cyber-ready environment, use real local tools, preserve evidence, keep operation state, and only report claims it can support.
 
-<p align="center"><sub>5 primary agents | 7 operation kinds | 11 built-in plays | 30+ built-in tools | embedded skills | plugin API</sub></p>
+It is not a generic coding assistant. It is not a flat scanner wrapper. It is not "ask an LLM to run nmap".
 
-## What it can do
+numasec is a cyber operator harness: the LLM is wrapped with terminal access, browser automation, HTTP execution, installed security tools, operation memory, provenance, replay material, permission modes, and report generation.
 
-numasec sits between a chat agent and a security distribution, it can reason and talk like an assistant, but it can also act through the tools that matter during an assessment.
+The goal is simple: make AI useful for real AppSec, pentest, bug bounty, OSINT, CTF, and security research workflows without losing the discipline that makes security work trustworthy.
 
-| Area | What numasec brings |
-|---|---|
-| Web application testing | Browser automation, raw HTTP, crawling, JavaScript inspection, authenticated request replay, scanner orchestration, `/pwn`, `/play web-surface`, `/play auth-surface`, `/play api-surface` |
-| Network recon | Port and service discovery, banner collection, scanner-backed pipelines, methodology guidance, scoped execution |
-| AppSec review | Repository triage, source search, sink discovery, dependency/CVE context, remediation guidance, code-aware subagents |
-| OSINT | Passive target profiling, subdomain and archive workflows, source notes, confidence and provenance discipline |
-| Cloud posture | Adapter-backed checks for cloud accounts using the tools you already trust locally |
-| Container security | Image surface triage with package, layer, exposed-port, and vulnerability signals when adapters are available |
-| IaC triage | Terraform, Kubernetes, and infrastructure config review with adapter output normalized for the agent |
-| Binary and CTF work | Artifact-first warmups, strings/metadata enrichment, reverse-engineering handoff, forensics skill support |
-| Reporting | Operation notes, scoped findings, remediation advice, redacted share archives, signed handoffs |
+## Why now
 
-## The operator model
+AI agents are moving from autocomplete into operating systems for work. Coding agents can read repos, edit files, run tests, and ship patches from the terminal.
 
-numasec is organized around security modes instead of one generic assistant voice.
+Security needs the same shift, but the wrapper has to be different.
 
-| Mode | Use it for |
-|---|---|
-| `security` | General security help, logs, tooling, quick research, setup, explanation |
-| `pentest` | Authorized recon, exploitation workflow, evidence, findings, report-ready notes |
-| `appsec` | Code review, authz bugs, dependency risk, secure design, patch advice |
-| `osint` | Passive intelligence, attribution-safe research, provenance-heavy investigation |
-| `hacking` | CTFs, exploit dev, reversing, shells, quick-and-dirty lab work |
+Cyber work needs scope. It needs opsec. It needs a browser, raw HTTP, installed tools, target memory, evidence, replay, finding states, and report discipline. A generic coding agent can help, but it was not designed around those constraints.
 
-Subagents let numasec go wide without losing the main thread:
+numasec is the open-source attempt to build that missing layer.
 
-| Subagent | Use it for |
-|---|---|
-| `explore` | Fast codebase scouting and "where does this live?" questions |
-| `general` | Parallel research or multi-step work that should not pollute the main context |
+## Demo
 
-## Plays
-
-A play is a reusable security workflow: more structured than "ask the model", more flexible than a scanner preset.
-
-Plays declare inputs, required capabilities, tool steps, skipped/degraded states, and the final evidence shape. That makes them testable, reviewable, and easy to extend without turning the agent into a pile of prompt soup.
-
-Built-in plays in 1.1.7:
-
-| Play | Purpose |
-|---|---|
-| `web-surface` | Crawl, inspect JavaScript, map routes, and collect web surface evidence |
-| `api-surface` | Probe API shape, endpoints, auth assumptions, and request/response behavior |
-| `auth-surface` | Inspect login, session, token, CSRF, and authorization boundaries |
-| `network-surface` | Port scan, service probe, and banner collection |
-| `appsec-triage` | Repository-first security triage for patterns, sinks, and risky areas |
-| `osint-target` | Passive profile for domains, emails, handles, and public footprint |
-| `ctf-warmup` | Artifact-first CTF and forensics warmup with optional local enrichment |
-| `cloud-posture` | Cloud account posture checks through local security adapters |
-| `container-surface` | Container image surface and vulnerability triage |
-| `iac-triage` | Infrastructure-as-code checks for Terraform, Kubernetes, and config risk |
-| `binary-triage` | Binary metadata, strings, and quick reverse-engineering triage |
-
-Run one directly:
-
-```text
-/play web-surface http://localhost:3000
-/play container-surface bkimminich/juice-shop
-/play iac-triage ./infra
-/play binary-triage ./challenge
-```
-
-Or let `/pwn` classify the target, create an operation, choose the best play, and start with the right specialist.
-
-## Tools that actually do work
-
-The built-in palette includes normal agent tools and security-specific primitives:
-
-```text
-bash, read, write, edit, grep, glob, task, fetch, search, code, skill,
-httprequest, browser, scanner, crypto, net, vault, interact, methodology,
-cve, play, pwn_bootstrap, doctor, opsec, share, remediate,
-cloud_posture, container_surface, iac_triage, binary_triage
-```
-
-If `nmap`, `ffuf`, `gobuster`, `sqlmap`, `nuclei`, `prowler`, `trivy`, `checkov`, `checksec`, or your own tooling is on `PATH`, numasec can use it through scoped shell/tool flows. If an adapter is missing, plays report that honestly instead of pretending the scan happened.
-
-## Operations
-
-Every real engagement becomes an operation.
-
-An operation is a durable notebook at:
-
-```text
-.numasec/operation/<slug>/numasec.md
-```
-
-numasec reloads that file into the active system context. Scope, target details, assumptions, findings, attempted payloads, rejected hypotheses, screenshots, and next steps stay with the engagement instead of disappearing into chat history.
+<!-- SCREENSHOT PLACEHOLDER: replace with a polished operation-console capture showing:
+     - active operation header
+     - right sidebar with proof/capability/activity
+     - findings/evidence/replay/workflow/report signal
+     - no secrets, no private target, no noisy local paths if possible
+-->
 
 <p align="center">
-  <img src="assets/operations-demo.gif" alt="creating an operation in numasec" width="900" />
+  <img src="assets/operations-demo.gif" alt="numasec operation console" width="940" />
 </p>
 
-The TUI keeps the work readable while the agent is acting:
+<!-- SCREENSHOT PLACEHOLDER: optional second media slot. Replace with a short pentest run GIF once the current TUI capture is final.
 
-| Panel | What it shows |
-|---|---|
-| Pulse | Current target, operation state, and mode |
-| Plan | Live todo list even when the selected model has no native planning UI |
-| Activity | Tool calls, adapter runs, browser/HTTP activity, and evidence flow |
+<p align="center">
+  <img src="assets/pentest-demo.gif" alt="numasec pentest workflow" width="940" />
+</p>
+-->
 
-`/opsec strict` turns scope into a guardrail. Out-of-scope browser, HTTP, and shell actions are blocked before they leave the tool.
+## What it does
 
-## Commands worth remembering
+numasec turns a terminal session into an operation.
 
-```text
-/pwn https://target           classify target, create operation, choose play, begin
-/play                         list reusable workflows
-/play web-surface https://x   run a specific play
-/operations                   switch between saved engagements
-/agents                       choose a specialist agent
-/mode appsec                  switch mode directly
-/doctor                       inspect runtime, tools, vault, and CVE bundle
-/opsec strict                 enforce declared scope
-/teach                        narrate tool use for demos and learning
-/share --sign                 create a redacted, optionally signed handoff archive
-/remediate OBS-001            turn an observation into patch guidance
-/models                       switch model/provider inside the TUI
+| Capability | What it means in practice |
+| --- | --- |
+| Cyber operations | Start scoped AppSec or Pentest work with an operation label, target, autonomy posture, opsec policy, and durable state. |
+| Runbooks | Use semantic cyber capsules such as AppSec triage, web surface mapping, API surface, auth surface, and network surface. |
+| Real tools | Drive installed tools and adapters from the terminal: browser, HTTP, scanner, CVE lookup, knowledge, vault, net, crypto, evidence, finding, report, and more. |
+| Evidence-first claims | Store tool output, browser artifacts, HTTP traces, screenshots, and supporting files before turning signals into durable findings. |
+| Replay-aware reporting | Reportable findings require evidence plus replay material, or an explicit structured replay exemption. |
+| Operator control | Run in permissioned mode with allow/deny/allow-always, or auto mode inside the operation boundary. |
+| Deliverables | Build operation reports from the kernel state instead of trusting chat transcript confidence. |
+
+## Built for
+
+- bug bounty hunters who need faster triage without losing proof
+- pentesters who want an AI operator inside their terminal workflow
+- AppSec engineers who need evidence-backed reports, not scanner noise
+- security researchers who live across shell, browser, HTTP, CVEs, and notes
+- CTF players who want a structured agent loop without giving up tool control
+
+numasec is designed for authorized security work. Keep scope explicit and use it only where you have permission to test.
+
+## The operator loop
+
+```mermaid
+flowchart LR
+  target["Target"] --> operation["Operation"]
+  operation --> posture["Scope + Opsec + Autonomy"]
+  posture --> runbook["Runbook capsule"]
+  runbook --> tools["Cyber tools"]
+
+  tools --> evidence["Evidence store"]
+  evidence --> observations["Observations"]
+  observations --> findings["Finding lifecycle"]
+  findings --> proof["Replay / proof policy"]
+  proof --> report["Report + handoff"]
+
+  operation -. kernel source of truth .-> kernel["Cyber kernel"]
+  kernel --> evidence
+  kernel --> findings
+  kernel --> report
+
+  classDef primary fill:#04130d,stroke:#00ff88,color:#eafff4,stroke-width:2px;
+  classDef secondary fill:#061014,stroke:#00c2ff,color:#eaf9ff,stroke-width:1.5px;
+  classDef proofNode fill:#151104,stroke:#ffcc66,color:#fff7df,stroke-width:1.5px;
+  classDef findingNode fill:#190808,stroke:#ff5f6d,color:#fff0f0,stroke-width:1.5px;
+
+  class target,operation,posture,runbook,tools primary;
+  class evidence,observations,kernel secondary;
+  class proof,report proofNode;
+  class findings findingNode;
 ```
 
+The key difference is that the operation is not just a markdown file or a chat transcript. The cyber kernel is the source of truth.
+
 ## Install
+
+### npm
 
 ```bash
 npm install -g numasec
 numasec
 ```
 
-The npm package is intentionally small: it installs a JavaScript wrapper plus the matching platform binary package. Seeing only a handful of packages added is normal.
-
-Docker:
+### Bun
 
 ```bash
-docker run -it --rm -v "$PWD:/work" -w /work numasec/numasec:latest
+bun add -g numasec
+numasec
 ```
 
-From source:
+### Docker
+
+```bash
+docker run -it --rm -v "$PWD:/work" -w /work francescostabile/numasec:latest
+```
+
+### From source
 
 ```bash
 git clone https://github.com/FrancescoStabile/numasec.git
@@ -188,39 +170,7 @@ cd packages/numasec
 bun run build
 ```
 
-## Recommended local toolkit
-
-numasec works out of the box, then gets sharper as your machine gains security tools.
-
-```bash
-# Debian / Kali / Ubuntu
-apt install nmap sqlmap ffuf gobuster nikto
-
-# macOS
-brew install nmap sqlmap ffuf gobuster nikto
-
-# Browser support
-npx playwright install chromium
-```
-
-Useful optional adapters:
-
-| Workflow | Tools that unlock more signal |
-|---|---|
-| Cloud posture | `prowler` |
-| Container surface | `trivy`, `docker` |
-| IaC triage | `checkov` |
-| Binary triage | `checksec` |
-
-Run `/doctor` any time to inspect the core runtime and common local tooling. Adapter-backed plays also report missing adapter tools directly in their own output.
-
-## Models and providers
-
-numasec works with the model stack you already use: Anthropic, OpenAI, Google, xAI, Bedrock, GitHub Models, OpenRouter, Ollama, Vercel AI Gateway, and OpenAI-compatible endpoints.
-
-Most newly released model IDs do not require a numasec release if your provider accepts custom model strings. Provider package updates still matter when the SDK needs new API features, metadata, transport behavior, or capability flags.
-
-## First run
+## Quick start
 
 ```bash
 numasec
@@ -229,92 +179,298 @@ numasec
 Then try:
 
 ```text
+/doctor
+/mode appsec
 /pwn http://localhost:3000
+/runbook run web-surface http://localhost:3000
+/share
 ```
 
-numasec classifies the target, creates an operation, loads the right security mode, and starts from the best available play.
+For best results, run numasec in a workspace directory and keep the target scope explicit.
 
-For persistent project instructions outside a specific operation, add `numasec.md` or `.numasec.md` at the project root:
+## Commands
 
-```markdown
-# Target: internal-api.corp.com
-- Base: https://internal-api.corp.com/v2
-- Auth: Bearer token in `Authorization`
-- Test account: seeded local test user
-- Focus: IDOR, privilege escalation, JWT/session handling
-- Out of scope: DoS, brute force, social engineering
+```text
+/pwn <target>                  classify a target, create an operation, choose a capsule
+/runbook list                  list available runbook capsules
+/runbook run web-surface <x>   map a web target through the primary runbook surface
+/runbook run appsec-web-triage <x>
+/operations                    inspect or switch active operations
+/mode appsec                   switch specialist agent
+/mode pentest                  switch specialist agent
+/agents                        switch agent from the TUI
+/doctor                        inspect runtime, local tools, and capability readiness
+/opsec strict                  enforce strict operation scope
+/models                        switch provider/model
+/share                         export the active operation bundle
+/remediate <observation_id>    turn an observation into advice or patch scaffolding
 ```
 
-## Extending numasec
+## Tool surface
 
-The project is designed to grow by contribution instead of by one giant prompt.
+numasec exposes normal agent primitives and cyber-specific tools through one operator harness.
 
-| Extension point | What you can add |
-|---|---|
-| Skills | `SKILL.md` workflows for repeatable domain knowledge |
-| Plugins | Tools, commands, TUI surfaces, and SDK-backed integrations |
-| Plays | Deterministic security workflows with capability checks and tests |
-| Adapters | Thin wrappers around best-of-breed local security tools |
-| Docs | Operator playbooks, methodology notes, examples, and lab recipes |
+```text
+bash, read, write, edit, apply_patch, grep, glob, task, fetch, search, code, skill,
+httprequest, browser, scanner, crypto, net, vault, interact, methodology, cve,
+runbook, play, pwn_bootstrap, appsec_probe, workspace, scope, opsec, identity,
+evidence, observation, knowledge, finding, report, autonomy, share, remediate,
+analyze, doctor
+```
 
-The cleanest community contribution is often a play: pick one repeatable workflow, define the inputs, wire the tools, describe degraded behavior, and add tests. Users get something practical immediately, and maintainers get a small reviewable unit.
+Local tools make numasec stronger. If these are installed, the harness can use or reason around them:
 
-## Docs
+```bash
+# Debian / Kali / Ubuntu
+apt install nmap sqlmap ffuf gobuster nikto nuclei trivy checksec
 
-| Doc | What it covers |
-|---|---|
-| [`AGENTS.md`](./AGENTS.md) | Agent behavior, prompts, conventions |
-| [`docs/MANIFESTO.md`](./docs/MANIFESTO.md) | Product philosophy and boundaries |
-| [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) | Operation memory, scope, workflow |
-| [`docs/TOOLS.md`](./docs/TOOLS.md) | The tool palette |
-| [`docs/PROMPTS.md`](./docs/PROMPTS.md) | Prompting model by model |
-| [`docs/PLUGINS.md`](./docs/PLUGINS.md) | Extensibility and plugin hooks |
-| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | How to contribute |
-| [`SECURITY.md`](./SECURITY.md) | Responsible disclosure |
+# macOS
+brew install nmap sqlmap ffuf gobuster nikto nuclei trivy checksec
+```
 
-## FAQ
+Use `/doctor` to see what is available, degraded, or missing on the current machine.
 
-**Is numasec only for red teams?**
+## How numasec is different
 
-No, it is useful for authorized pentesting, AppSec review, secure design, OSINT, research, CTFs, and training.
+| Category | What usually happens | What numasec is trying to do |
+| --- | --- | --- |
+| Generic coding agents | Strong at code edits, weak at cyber operation state and proof workflow. | Keep the terminal-agent feel, but wrap it in cyber scope, tools, evidence, replay, and reports. |
+| Scanner wrappers | Produce findings fast, but often lose context, proof, and operator reasoning. | Treat scanner output as evidence and candidate facts inside a larger operation. |
+| MCP tool servers | Expose tools to LLMs, but often leave memory, lifecycle, and reporting to the user. | Provide a complete operator loop: runbook, operation kernel, findings, evidence, replay, deliverable. |
+| Manual pentest notes | Flexible but fragile: screenshots, shell history, notes, and reports drift apart. | Keep human-readable context as a derived view over kernel-backed state. |
 
-**Is it just a scanner?**
+## Models and providers
 
-No, it can drive scanners, but the product is the workflow around them: scope, context, evidence, decisions, and handoff.
+numasec is model-agnostic. It wraps the model you choose with a cyber-ready runtime.
 
-**Can it run without external tools?**
+Supported provider families include OpenAI, Anthropic, Google, xAI, Bedrock, OpenRouter, Ollama, Vercel AI Gateway, OpenAI-compatible endpoints, and other providers supported through the local model stack.
 
-Yes: built-in browser, HTTP, code, methodology, CVE, and file tools work immediately, external adapters unlock deeper checks.
+The product bet is not "one model will solve cyber." The bet is that strong models become much more useful when they are placed inside the right operational harness.
 
-**Can I use new models as they come out?**
+## Architecture
 
-Yes through ai-sdk.
+numasec wraps the model instead of trying to change the model.
 
-**Can I extend it?**
+```mermaid
+flowchart TB
+  operator["Operator"] --> console["Chat-first terminal console"]
+  console --> control["Permissioned / auto execution"]
+  control --> agents["Specialist cyber agents"]
+  agents --> runbooks["Runbooks and plays"]
 
-Yes: skills, plugins, adapters, and plays are first-class extension points.
+  subgraph tool_layer["Tool layer"]
+    browser["Browser"]
+    http["HTTP"]
+    scanner["Scanner"]
+    shell["Shell"]
+    cve["CVE / knowledge"]
+    vault["Vault"]
+  end
+
+  runbooks --> browser
+  runbooks --> http
+  runbooks --> scanner
+  runbooks --> shell
+  runbooks --> cve
+  runbooks --> vault
+
+  subgraph kernel["Cyber operation kernel"]
+    ledger["Ledger"]
+    facts["Facts"]
+    relations["Relations"]
+    evidence["Evidence"]
+    replay["Replay"]
+    workflow["Workflow"]
+  end
+
+  browser --> evidence
+  http --> evidence
+  scanner --> evidence
+  shell --> evidence
+  cve --> facts
+  vault --> facts
+
+  ledger --> facts
+  facts --> relations
+  evidence --> replay
+  facts --> workflow
+
+  facts --> lifecycle["Finding lifecycle"]
+  relations --> lifecycle
+  replay --> lifecycle
+  workflow --> deliverables["Reports / share bundles / remediation"]
+  lifecycle --> deliverables
+
+  classDef top fill:#04130d,stroke:#00ff88,color:#eafff4,stroke-width:2px;
+  classDef tool fill:#061014,stroke:#00c2ff,color:#eaf9ff,stroke-width:1.5px;
+  classDef state fill:#0b0f0a,stroke:#7affb2,color:#eafff4,stroke-width:1.5px;
+  classDef proofNode fill:#151104,stroke:#ffcc66,color:#fff7df,stroke-width:1.5px;
+  classDef findingNode fill:#190808,stroke:#ff5f6d,color:#fff0f0,stroke-width:1.5px;
+
+  class operator,console,control,agents,runbooks top;
+  class browser,http,scanner,shell,cve,vault tool;
+  class ledger,facts,relations,workflow state;
+  class evidence,replay,deliverables proofNode;
+  class lifecycle findingNode;
+```
+
+### Kernel-first state
+
+An operation is stored as ledger events, projected cyber facts, relations, evidence, replay artifacts, workflow state, and deliverables.
+
+`numasec.md` can exist as a derived context pack, but it is not canonical state.
+
+### Finding lifecycle
+
+numasec separates weak signals from claims:
+
+```mermaid
+flowchart LR
+  candidate["Candidate<br/>machine/model suspicion"] --> observed["Observed<br/>evidence-backed signal"]
+  observed --> verified["Verified<br/>promoted through lifecycle"]
+  verified --> reportable["Reportable<br/>evidence + replay/exemption"]
+
+  candidate --> rejected["Rejected<br/>ruled out"]
+  observed --> stale["Stale<br/>no longer trusted"]
+  verified --> stale
+
+  classDef weak fill:#12170c,stroke:#d6ff66,color:#f8ffd8,stroke-width:1.5px;
+  classDef proof fill:#061014,stroke:#00c2ff,color:#eaf9ff,stroke-width:1.5px;
+  classDef report fill:#04130d,stroke:#00ff88,color:#eafff4,stroke-width:2px;
+  classDef stop fill:#190808,stroke:#ff5f6d,color:#fff0f0,stroke-width:1.5px;
+
+  class candidate weak;
+  class observed,verified proof;
+  class reportable report;
+  class rejected,stale stop;
+```
+
+Reportable means evidence-backed and replay-backed, or evidence-backed with a structured replay exemption.
+
+### Runbooks over raw tools
+
+The primary surface is `runbook`: semantic capsules that coordinate lower-level plays and tools.
+
+Benchmark-backed today:
+
+- `appsec-web-triage`
+- `web-surface`
+- `pwn` / Pentest starter flow
+
+Maturity-labeled surfaces:
+
+- repository AppSec triage (`appsec-triage`)
+- API surface
+- auth surface
+- network surface
+- OSINT target work
+- CTF warmup
+- cloud posture
+- container surface
+- IaC triage
+- binary triage
+
+## Quality bar
+
+numasec is built around a strict rule: the product should not claim more than the operation state can support.
+
+Benchmark-backed domains:
+
+- AppSec
+- Pentest
+
+The gate is intentionally evidence-oriented:
+
+- operation state must exist
+- workflow state must complete
+- observations must be projected
+- findings must not overclaim
+- reports must not promote unsupported claims
+- AppSec/Pentest benchmark runs must pass before public release claims
+
+What numasec does not claim yet:
+
+- it is not equally mature across every cyber domain
+- it does not magically prove exploitability without evidence
+- it does not bundle every security binary
+- it is not a replacement for authorization, scope, or operator judgment
+
+That honesty is part of the product. Security tools lose trust when they confuse confidence with proof.
+
+## Roadmap
+
+The long-term vision is a multi-domain cyber operator:
+
+- AppSec: DAST, SAST, SCA, authz, API, remediation
+- Pentest: recon, web, network, credentials, evidence, reporting
+- OSINT: passive target intelligence with provenance
+- CTF and labs: structured exploit/reversing/forensics workflows
+- Cloud/container/IaC: adapter-backed posture and misconfiguration triage
+- Team operations: shareable operation bundles, redaction, handoff, review
+
+The short-term rule is stricter: every domain that claims maturity needs benchmark gates and proof semantics.
+
+## Documentation
+
+- [Operations](docs/OPERATIONS.md)
+- [Tool reference](docs/TOOLS.md)
+- [Operation file format](docs/NUMASEC_FILE_FORMAT.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 
 ## Development
 
-Use Bun `1.3.11`, matching the repository `packageManager` field.
-
 ```bash
 bun install
-bun dev
-cd packages/numasec
 bun typecheck
+
+cd packages/numasec
 bun test --timeout 30000
 bun run build
+bun run bench:cyber --domain appsec
+bun run bench:cyber --domain pentest
 ```
 
-Do not run `bun test` from the repository root; package tests run from their package directories.
+Do not run package tests from the repo root. numasec uses Bun-first package-local workflows.
+
+## Contributing
+
+numasec is looking for contributions that make the operator better:
+
+- new runbooks with clear scope and proof semantics
+- better parsers that turn tool output into provenance-backed facts
+- adapters for real security tools
+- benchmark scenarios that are hard to fake
+- report templates that reduce overclaiming
+- TUI polish that makes operations easier to read under pressure
+
+If a change creates a confirmed security claim, it needs evidence. If a finding is reportable, it needs replay or a structured exemption.
+
+## Community
+
+The best feedback is real operator feedback:
+
+- what target class you tested
+- what numasec helped you do faster
+- where it overclaimed, stalled, or missed context
+- which local tools you want first-class adapters for
+- which runbook should exist next
+
+Use GitHub issues and discussions for bugs, ideas, security workflow feedback, and release questions.
+
+## Star the project
+
+If you believe cyber security deserves a serious terminal-native AI operator, star the repo and share what you are using it for.
+
+This project is early, but the direction is clear: make AI agents useful for real security work by giving them the environment, memory, tools, and proof discipline the domain requires.
 
 ## License
 
-[MIT](./LICENSE). Use it for authorized work, research and education.
+[MIT](./LICENSE). Use numasec for authorized security work, research, education, and defensive operations.
 
 <p align="center">
   Built by <a href="https://www.linkedin.com/in/francesco-stabile-dev">Francesco Stabile</a>
   | <a href="https://x.com/Francesco_Sta">@Francesco_Sta</a>
-  <br/><sub>If numasec helps you, <a href="https://github.com/FrancescoStabile/numasec/stargazers">drop a star</a>. Thanks for the support.</sub>
+  <br/><sub>If numasec helps you, <a href="https://github.com/FrancescoStabile/numasec/stargazers">drop a star</a> and share the workflow.</sub>
 </p>

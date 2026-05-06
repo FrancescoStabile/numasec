@@ -16,10 +16,11 @@ const play: Play = {
   ],
   steps: [
     {
-      kind: "skill",
-      label: "enumerate passive subdomains",
-      skill: "passive-osint",
-      brief: "enumerate subdomains of {{domain|target hostname}} using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
+      if: "domain",
+      then: {
+        skill: "passive-osint",
+        brief: "enumerate subdomains of {{domain}} using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
+      },
     },
     {
       kind: "tool",

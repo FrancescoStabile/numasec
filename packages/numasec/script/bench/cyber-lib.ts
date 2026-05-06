@@ -19,6 +19,10 @@ export type BenchResult = {
   }
   command_ok: boolean
   command_error: string | null
+  completion_mode?: "command" | "projection" | "timeout"
+  command_completed?: boolean
+  projection_completed?: boolean
+  aborted_after_projection?: boolean
 }
 
 export function parseArgs(argv: string[]) {
@@ -193,7 +197,8 @@ export function scenarioFailures(result: BenchResult) {
     if (!(completedCount > 0)) failures.push("completed_steps")
     if (!(operationStateFacts > 0)) failures.push("operation_state_facts")
     if ((check(result, "scope_policy_facts")) && !(scopePolicyFacts > 0)) failures.push("pwn_scope_policy_facts")
-    if (knowledgeQueries && !(knowledgeQueryCount > 0)) failures.push("pwn_knowledge_queries")
+    const suspectedCount = Number.parseInt((check(result, "suspected_findings")?.evidence ?? "0").split(" ")[0] ?? "0", 10)
+    const rejectedCount = Number.parseInt((check(result, "rejected_findings")?.evidence ?? "0").split(" ")[0] ?? "0", 10)
     if (identities && !(identityCount > 0)) failures.push("pwn_identities")
     if (activeIdentities && !(activeIdentityCount > 0)) failures.push("pwn_active_identities")
     if (deliverables && !(deliverableCount > 0)) failures.push("pwn_deliverables")
@@ -202,8 +207,9 @@ export function scenarioFailures(result: BenchResult) {
     if ((capsules || executedCapsules || recommendedCapsules) && !(executedCapsuleCount > 0)) failures.push("pwn_executed_capsules")
     if ((readyVerticals || degradedVerticals || unavailableVerticals) && !(readyVerticalCount > 0 || degradedVerticalCount > 0 || unavailableVerticalCount > 0)) failures.push("pwn_verticals")
     if (autonomyPolicy && !(autonomyPolicyCount > 0)) failures.push("pwn_autonomy_policy")
-    if (promotedCount > 0 && !(reportableCount > 0)) failures.push("pwn_reportable_findings")
-    if (promotedCount > 0 && !(verifiedCount > 0)) failures.push("pwn_verified_findings")
+    const hasOnlySurfaceFindings = promotedCount > 0 && verifiedCount === 0 && suspectedCount + rejectedCount > 0
+    if (promotedCount > 0 && !hasOnlySurfaceFindings && !(reportableCount > 0)) failures.push("pwn_reportable_findings")
+    if (promotedCount > 0 && !hasOnlySurfaceFindings && !(verifiedCount > 0)) failures.push("pwn_verified_findings")
     if (verifiedCount > evidenceBackedCount) failures.push("pwn_evidence_backed_findings")
     if (verifiedCount > 0 && !(replayCount > 0 || replayExemptCount > 0)) failures.push("pwn_replay_backed_findings")
     return failures

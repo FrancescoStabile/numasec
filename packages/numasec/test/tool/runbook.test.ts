@@ -101,6 +101,7 @@ describe("tool/runbook", () => {
         const result: any = await exec({ action: "status" })
         expect(result.metadata.action).toBe("status")
         expect(Array.isArray(result.metadata.recommended)).toBe(true)
+        expect(result.metadata.recommended).toContain("appsec-web-triage")
         expect(result.metadata.recommended).toContain("appsec-triage")
         expect(result.output).toContain("Active operation kind: appsec")
         expect(result.output).toContain("Recommended runbooks:")

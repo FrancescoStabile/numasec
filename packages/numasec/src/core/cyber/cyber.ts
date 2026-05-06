@@ -729,6 +729,7 @@ export namespace Cyber {
     services: number
     web_pages: number
     route_facts: number
+    http_forms: number
     identities: number
     active_identities: number
     tool_adapters_present: number
@@ -1574,6 +1575,7 @@ export namespace Cyber {
     const services = facts.filter((fact) => fact.entity_kind === "service").length
     const web_pages = facts.filter((fact) => fact.entity_kind === "web_page" && fact.fact_name === "fetch_result").length
     const route_facts = facts.filter((fact) => fact.entity_kind === "http_route").length
+    const http_forms = facts.filter((fact) => fact.entity_kind === "http_form").length
     const identities = facts.filter((fact) => fact.entity_kind === "identity" && fact.fact_name === "descriptor").length
     const active_identities = facts.filter(
       (fact) => fact.entity_kind === "identity" && fact.fact_name === "active" && fact.value_json === true,
@@ -1705,6 +1707,7 @@ export namespace Cyber {
       services,
       web_pages,
       route_facts,
+      http_forms,
       identities,
       active_identities,
       tool_adapters_present,

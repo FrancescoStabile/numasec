@@ -69,7 +69,7 @@ describe("browser passive appsec analysis", () => {
         {
           action: "https://app.example.test/update",
           method: "post",
-          inputs: [{ name: "note", type: "text", value: "csrf_token" }],
+          inputs: [{ name: "note", type: "text" }],
         },
       ],
     })

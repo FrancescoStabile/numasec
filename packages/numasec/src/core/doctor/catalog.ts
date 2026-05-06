@@ -70,6 +70,11 @@ export const PLAY_CAPABILITIES: CapabilitySpec[] = [
     ],
   },
   {
+    id: "appsec-web-triage",
+    label: "AppSec Web Triage",
+    requirements: [browserOptional],
+  },
+  {
     id: "osint-target",
     label: "Passive Target Profile",
     requirements: [

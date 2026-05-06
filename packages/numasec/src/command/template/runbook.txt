@@ -18,6 +18,7 @@ Common invocations:
 - `/runbook status web-surface`
 - `/runbook web-surface https://example.com`
 - `/runbook run web-surface https://example.com`
+- `/runbook run appsec-web-triage https://example.com`
 - `/runbook run appsec-triage ./src`
 - `/runbook run web-surface target=https://x.y domain=x.y`
 
@@ -30,7 +31,15 @@ Rules:
    - bind a single positional arg to the runbook's first required arg (`target`, `path`, etc.);
    - pass `key=value` pairs through as-is.
 4. Call the `runbook` tool **once** with the derived `{ action, id, args }`.
-5. If the runbook action is `run`, execute the returned trace in order by calling the referenced tool (`tool:` lines) with the given args, or the `skill` tool (`skill:` lines) with the named skill.
-6. If a referenced tool is not registered, say so plainly and continue with the remaining steps.
-7. After all steps complete, produce a short synthesis: what was found, what to do next.
-8. Do not invent additional steps or skip declared ones without telling the operator.
+5. If the runbook action is `run`, the returned trace becomes the authoritative workflow. Do not reinterpret it, do not call `runbook` again, and do not invent preparatory work outside that trace.
+6. Execute the returned trace strictly in order:
+   - call exactly one referenced tool per assistant message;
+   - wait for that tool result;
+   - then immediately call the next pending step;
+   - never batch multiple step tools in one response;
+   - never stop early while trace steps are still pending.
+7. Execute `tool:` lines by calling that tool with the given args. Execute `skill:` lines via the `skill` tool with the named skill and brief.
+8. If a referenced tool is not registered or a step fails, say so plainly and continue with the remaining declared steps unless the missing step makes the rest impossible.
+9. After all steps complete, produce a short synthesis: what was found, what to do next.
+10. Do not invent additional steps or skip declared ones without telling the operator.
+11. After the synthesis, stop. Do not call additional tools unless the operator sends a new request.

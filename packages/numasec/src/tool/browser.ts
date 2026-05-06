@@ -6,6 +6,7 @@ import DESCRIPTION from "./browser.txt"
 import { buildPassiveAppSecResult } from "../browser/passive-run"
 import { Cyber } from "@/core/cyber"
 import { Evidence } from "@/core/evidence"
+import { Observation } from "@/core/observation"
 import { Operation } from "@/core/operation"
 import { activeIdentity } from "@/core/vault"
 import { Instance } from "@/project/instance"
@@ -292,6 +293,14 @@ async function hydrate(context: any, page: any, params: Params) {
   return identity
 }
 
+async function navigateForPassiveAnalysis(page: any, url: string, timeout: number) {
+  const response = await page.goto(url, { timeout, waitUntil: "domcontentloaded" })
+  const settleTimeout = Math.min(timeout, 5_000)
+  await page.waitForLoadState("load", { timeout: settleTimeout }).catch(() => undefined)
+  await page.waitForLoadState("networkidle", { timeout: settleTimeout }).catch(() => undefined)
+  return response
+}
+
 function browserEvidenceMime(action: Params["action"]) {
   if (action === "screenshot") return "image/png"
   if (action === "dom_snapshot") return "text/html"
@@ -350,7 +359,42 @@ function browserEvidencePayload(params: Params, result: Tool.ExecuteResult) {
   )
 }
 
-function persistBrowserObservation(params: Params, result: Tool.ExecuteResult, ctx: Tool.Context) {
+function browserObservationDraft(params: Params, result: Tool.ExecuteResult, currentUrl?: string) {
+  if (params.action !== "passive_appsec" && params.action !== "dom_snapshot") return
+    const metadata = (result.metadata ?? {}) as Record<string, unknown>
+    if (params.action === "passive_appsec") {
+      const findings = Number(metadata.findings ?? 0)
+      const high = Number(metadata.high ?? 0)
+      const medium = Number(metadata.medium ?? 0)
+      const requestCount = Number(metadata.request_count ?? 0)
+      const forms = Array.isArray(metadata.forms) ? metadata.forms.length : 0
+      const scripts = Array.isArray(metadata.script_urls) ? metadata.script_urls.length : 0
+      const subtype: "risk" | "intel-fact" = findings > 0 ? "risk" : "intel-fact"
+      const severity: "medium" | "info" = high > 0 || medium > 0 ? "medium" : "info"
+      return {
+        subtype,
+        title: `Passive browser AppSec completed for ${currentUrl ?? "target"}`,
+        severity,
+        confidence: findings > 0 ? 0.6 : 0.5,
+        note: `${requestCount} requests, ${forms} input surfaces, ${scripts} scripts, ${findings} candidate signals.`,
+        tags: ["browser", "passive-appsec", "web"],
+    }
+  }
+  const summary = metadata.summary as { forms?: unknown[]; links?: unknown[]; scripts?: unknown[] } | undefined
+  const forms = Array.isArray(summary?.forms) ? summary.forms.length : 0
+  const links = Array.isArray(summary?.links) ? summary.links.length : 0
+  const scripts = Array.isArray(summary?.scripts) ? summary.scripts.length : 0
+  return {
+    subtype: "intel-fact" as const,
+    title: `DOM snapshot captured for ${currentUrl ?? "target"}`,
+    severity: "info" as const,
+    confidence: 0.5,
+    note: `${forms} forms, ${links} links, ${scripts} scripts observed in the DOM snapshot.`,
+    tags: ["browser", "dom", "web"],
+  }
+}
+
+export function persistBrowserObservation(params: Params, result: Tool.ExecuteResult, ctx: Tool.Context) {
   return Effect.gen(function* () {
     const currentUrl =
       typeof result.metadata?.url === "string"
@@ -539,6 +583,30 @@ function persistBrowserObservation(params: Params, result: Tool.ExecuteResult, c
           evidence_refs: evidenceRefs,
         }).pipe(Effect.catch(() => Effect.succeed("")))
       }
+      for (const form of (result.metadata?.forms as Array<{
+        action?: string
+        method?: string
+        source?: string
+        inputs?: unknown[]
+      }> | undefined) ?? []) {
+        if (!form.action || !form.method) continue
+        yield* Cyber.upsertFact({
+          entity_kind: "http_form",
+          entity_key: `${form.method}:${form.action}:${form.source ?? "form"}`,
+          fact_name: "shape",
+          value_json: {
+            action: form.action,
+            method: form.method,
+            source: form.source ?? "form",
+            inputs: Array.isArray(form.inputs) ? form.inputs : [],
+          },
+          writer_kind: "parser",
+          status: "observed",
+          confidence: 850,
+          source_event_id: eventID || undefined,
+          evidence_refs: evidenceRefs,
+        }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
       for (const item of (result.metadata?.script_urls as string[] | undefined) ?? []) {
         yield* Cyber.upsertFact({
           entity_kind: "artifact",
@@ -565,6 +633,12 @@ function persistBrowserObservation(params: Params, result: Tool.ExecuteResult, c
           evidence_refs: evidenceRefs,
         }).pipe(Effect.catch(() => Effect.succeed("")))
       }
+    }
+
+    const observation = browserObservationDraft(params, result, currentUrl)
+    if (slug && evidence && observation) {
+      const obs = yield* Effect.promise(() => Observation.add(workspace, slug, observation))
+      yield* Effect.promise(() => Observation.linkEvidence(workspace, slug, obs.id, evidence.sha256))
     }
   })
 }
@@ -617,9 +691,7 @@ async function run(params: Params, abort: AbortSignal): Promise<Tool.ExecuteResu
     if (!params.url) throw new Error("url is required for passive_appsec action")
     const networkStart = session.network.length
     const consoleStart = session.console.length
-    const response = await page
-      .goto(params.url, { timeout, waitUntil: "networkidle" })
-      .catch(() => page.goto(params.url!, { timeout, waitUntil: "domcontentloaded" }))
+    const response = await navigateForPassiveAnalysis(page, params.url, timeout)
     const title = (await page.title().catch(() => "")) || page.url() || params.url
     const headers = response ? await response.headers() : undefined
     return buildPassiveAppSecResult({

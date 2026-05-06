@@ -33,7 +33,7 @@ const TRACE = 0.033
 const TAIL = 1.8
 const TRACE_IN = 200
 const GLOW_OUT = 1600
-const PEAK = RGBA.fromInts(255, 255, 255)
+const PEAK = RGBA.fromInts(242, 255, 246)
 
 type Ring = {
   x: number
@@ -73,6 +73,8 @@ type Frame = {
   glow: Glow | undefined
   spark: number
 }
+
+type Theme = ReturnType<typeof useTheme>["theme"]
 
 const LEFT = logo.left[0]?.length ?? 0
 const FULL = logo.left.map((line, i) => line + " ".repeat(GAP) + logo.right[i])
@@ -117,14 +119,14 @@ function ramp(t: number, start: number, end: number) {
   return ease((t - start) / (end - start))
 }
 
-function glow(base: RGBA, theme: ReturnType<typeof useTheme>["theme"], n: number) {
+function glow(base: RGBA, theme: Theme, n: number) {
   const mid = tint(base, theme.primary, 0.84)
-  const top = tint(theme.primary, PEAK, 0.96)
+  const top = tint(theme.primary, PEAK, 0.88)
   if (n <= 1) return tint(base, mid, Math.min(1, Math.sqrt(Math.max(0, n)) * 1.14))
   return tint(mid, top, Math.min(1, 1 - Math.exp(-2.4 * (n - 1))))
 }
 
-function shade(base: RGBA, theme: ReturnType<typeof useTheme>["theme"], n: number) {
+function shade(base: RGBA, theme: Theme, n: number) {
   if (n >= 0) return glow(base, theme, n)
   return tint(base, theme.background, Math.min(0.82, -n * 0.64))
 }
@@ -141,6 +143,18 @@ function noise(x: number, y: number, t: number) {
 
 function lit(char: string) {
   return char !== " " && char !== "_" && char !== "~"
+}
+
+function logoInk(theme: Theme, part: "left" | "right") {
+  if (part === "left") return tint(theme.textMuted, theme.primary, 0.58)
+  return tint(theme.text, theme.primary, 0.24)
+}
+
+function phosphor(ink: RGBA, theme: Theme, x: number, y: number, bold: boolean) {
+  const scanline = y % 2 === 0 ? 0.052 : 0.018
+  const grain = noise(x, y, 31) * 0.05
+  const emphasis = bold ? 0.024 : 0
+  return tint(ink, theme.primary, Math.min(0.16, scanline + grain + emphasis))
 }
 
 function key(x: number, y: number) {
@@ -517,22 +531,25 @@ export function Logo() {
     frame: Frame,
     dusk: Frame,
   ): JSX.Element[] => {
-    const shadow = tint(theme.background, ink, 0.25)
+    const shadow = tint(theme.background, tint(ink, theme.primary, 0.68), bold ? 0.29 : 0.25)
     const attrs = bold ? TextAttributes.BOLD : undefined
 
     return Array.from(line).map((char, i) => {
-      const h = field(off + i, y, frame)
-      const n = wave(off + i, y, frame, lit(char)) + h
-      const s = wave(off + i, y, dusk, false) + h
-      const p = lit(char) ? pick(off + i, y, frame) : 0
-      const e = lit(char) ? trace(off + i, y, frame) : 0
-      const b = lit(char) ? bloom(off + i, y, frame) : 0
-      const q = shimmer(off + i, y, frame)
+      const x = off + i
+      const isLit = lit(char)
+      const cellInk = isLit ? phosphor(ink, theme, x, y, bold) : ink
+      const h = field(x, y, frame)
+      const n = wave(x, y, frame, isLit) + h
+      const s = wave(x, y, dusk, false) + h
+      const p = isLit ? pick(x, y, frame) : 0
+      const e = isLit ? trace(x, y, frame) : 0
+      const b = isLit ? bloom(x, y, frame) : 0
+      const q = shimmer(x, y, frame)
 
       if (char === "_") {
         return (
           <text
-            fg={shade(ink, theme, s * 0.08)}
+            fg={shade(cellInk, theme, s * 0.08)}
             bg={shade(shadow, theme, ghost(s, 0.24) + ghost(q, 0.06))}
             attributes={attrs}
             selectable={false}
@@ -545,7 +562,7 @@ export function Logo() {
       if (char === "^") {
         return (
           <text
-            fg={shade(ink, theme, n + p + e + b)}
+            fg={shade(cellInk, theme, n + p + e + b)}
             bg={shade(shadow, theme, ghost(s, 0.18) + ghost(q, 0.05) + ghost(b, 0.08))}
             attributes={attrs}
             selectable={false}
@@ -565,14 +582,14 @@ export function Logo() {
 
       if (char === " ") {
         return (
-          <text fg={ink} attributes={attrs} selectable={false}>
+          <text fg={cellInk} attributes={attrs} selectable={false}>
             {char}
           </text>
         )
       }
 
       return (
-        <text fg={shade(ink, theme, n + p + e + b)} attributes={attrs} selectable={false}>
+        <text fg={shade(cellInk, theme, n + p + e + b)} attributes={attrs} selectable={false}>
           {char}
         </text>
       )
@@ -621,9 +638,9 @@ export function Logo() {
       <For each={logo.left}>
         {(line, index) => (
           <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line, index(), theme.textMuted, false, 0, frame(), dusk())}</box>
+            <box flexDirection="row">{renderLine(line, index(), logoInk(theme, "left"), false, 0, frame(), dusk())}</box>
             <box flexDirection="row">
-              {renderLine(logo.right[index()], index(), theme.text, true, LEFT + GAP, frame(), dusk())}
+              {renderLine(logo.right[index()], index(), logoInk(theme, "right"), true, LEFT + GAP, frame(), dusk())}
             </box>
           </box>
         )}

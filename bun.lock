@@ -178,7 +178,7 @@
     },
     "packages/plugin": {
       "name": "@numasec/plugin",
-      "version": "1.4.6",
+      "version": "1.2.0",
       "dependencies": {
         "@numasec/sdk": "workspace:*",
         "effect": "catalog:",
@@ -213,7 +213,7 @@
     },
     "packages/sdk": {
       "name": "@numasec/sdk",
-      "version": "1.4.6",
+      "version": "1.2.0",
       "dependencies": {
         "cross-spawn": "catalog:",
       },

@@ -71,7 +71,7 @@ function summarizePlay(play: Play, environment: { binaries: Set<string>; runtime
 
 function recommendedPlayIDs(kind?: string): string[] {
   if (kind === "pentest" || kind === "bughunt") return ["web-surface", "api-surface", "auth-surface", "network-surface"]
-  if (kind === "appsec") return ["appsec-triage", "iac-triage", "container-surface", "cloud-posture", "binary-triage"]
+  if (kind === "appsec") return ["appsec-web-triage", "appsec-triage", "iac-triage", "container-surface", "cloud-posture", "binary-triage"]
   if (kind === "osint") return ["osint-target"]
   if (kind === "ctf" || kind === "hacking" || kind === "research") return ["ctf-warmup", "binary-triage"]
   return []

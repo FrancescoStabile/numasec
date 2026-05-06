@@ -1,28 +1,33 @@
 # Security
 
-## Disclaimer
+numasec is built for authorized cyber security work. Operators are responsible for ensuring they have explicit permission before testing any system, network, application, or account they do not control.
 
-numasec is a security workbench designed for **authorized operations**, you are solely responsible for ensuring you have explicit written authorization before testing any system or network that you do not own.
-Unauthorized access to computer systems is illegal and may result in criminal and civil penalties.
+## Public security reporting
 
-The authors, contributors, and maintainers of numasec assume **no liability** for misuse, damage, or legal consequences arising from the use of this software, by using numasec, you agree that:
+The current public intake path for security reports is GitHub Discussions:
 
-- You will only test systems you own or have explicit written permission to test.
-- You understand and comply with all applicable local, national, and international laws.
-- You accept full legal and ethical responsibility for your actions.
-- numasec is provided "as is", without warranty of any kind.
+- <https://github.com/FrancescoStabile/numasec/discussions>
 
-If you are unsure whether your use is authorized, **do not proceed**.
+When reporting an issue:
 
-## Threat Model
+- avoid posting exploit details publicly when the issue is sensitive
+- include the affected version or commit when known
+- describe impact clearly
+- provide reproduction steps when safe
+- attach logs, screenshots, traces, or artifacts when they help and do not expose sensitive material
 
-### Overview
+If a report requires redaction before public discussion, say so up front in the discussion thread.
 
-Numasec is an AI-powered cybersecurity agent that runs locally on your machine, it provides a multi-agent system with access to powerful tools including shell execution, file operations, browser automation, HTTP requests, and web access.
+## Scope
 
-# Reporting Security Issues
+Reports are most useful when they focus on issues in the numasec product itself, for example:
 
-We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
+- authorization or boundary bypasses
+- evidence, replay, or reporting integrity failures
+- secret exposure or unsafe storage behavior
+- remote code execution or privilege escalation paths in the product
+- supply chain or release integrity issues
 
-To report a security issue, please use the ["Discussions"](https://github.com/FrancescoStabile/numasec/discussions) tab.
+## Legal and operational note
 
+numasec is provided as-is, without warranty. The project and its maintainers are not responsible for misuse of the software.

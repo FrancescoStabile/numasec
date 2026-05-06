@@ -35,13 +35,18 @@ export type PassiveInputHeaders = NonNullable<PassiveInput["headers"]>
 export type PassiveFormInput = {
   name?: string
   type?: string
-  value?: string
+  id?: string
+  placeholder?: string
+  aria_label?: string
+  autocomplete?: string
+  required?: boolean
 }
 
 export type PassiveForm = {
   name?: string
   action: string
   method: string
+  source?: "form" | "standalone_control"
   inputs: PassiveFormInput[]
 }
 

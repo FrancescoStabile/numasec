@@ -29,12 +29,41 @@ type PassiveSnapshot = {
   scripts: NonNullable<PassiveInput["scripts"]>
 }
 
-type FormControlElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+const MAX_PASSIVE_FORM_ENTRIES = 25
+const MAX_PASSIVE_FORM_INPUTS = 10
+const MAX_PASSIVE_STRING = 120
+
+type FormControlElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
 
 function truncateOutput(output: string, max_bytes?: number) {
   const bytes = Buffer.byteLength(output)
   if (!max_bytes || bytes <= max_bytes) return output
   return `${Buffer.from(output).subarray(0, max_bytes).toString()}\n... (truncated, ${bytes} bytes total)`
+}
+
+function truncateField(value?: string) {
+  if (!value) return undefined
+  const normalized = value.trim()
+  if (!normalized) return undefined
+  return normalized.length > MAX_PASSIVE_STRING ? normalized.slice(0, MAX_PASSIVE_STRING) : normalized
+}
+
+function sanitizePassiveForms(forms: NonNullable<PassiveInput["forms"]>) {
+  return forms.map((form) => ({
+    name: form.name,
+    action: form.action,
+    method: form.method,
+    source: form.source,
+    inputs: form.inputs.map((input) => ({
+      name: input.name,
+      type: input.type,
+      id: input.id,
+      placeholder: input.placeholder,
+      aria_label: input.aria_label,
+      autocomplete: input.autocomplete,
+      required: input.required,
+    })),
+  }))
 }
 
 export async function collectPassiveInput(
@@ -52,6 +81,8 @@ export async function collectPassiveInput(
     context.cookies().catch(() => []),
     page
       .evaluate(() => {
+        const MAX_FORM_ENTRIES = 25
+        const MAX_FORM_INPUTS = 10
         const local: Record<string, string> = {}
         const sessionData: Record<string, string> = {}
 
@@ -68,36 +99,84 @@ export async function collectPassiveInput(
         const isFormControl = (input: Element): input is FormControlElement =>
           input instanceof HTMLInputElement ||
           input instanceof HTMLTextAreaElement ||
-          input instanceof HTMLSelectElement
+          input instanceof HTMLSelectElement ||
+          input instanceof HTMLButtonElement
+
+        const normalizeMethod = (value?: string | null) => {
+          const normalized = value?.trim().toLowerCase()
+          return normalized ? normalized : "get"
+        }
+
+        const truncateField = (value?: string | null) => {
+          if (!value) return undefined
+          const normalized = value.trim()
+          if (!normalized) return undefined
+          return normalized.length > 120 ? normalized.slice(0, 120) : normalized
+        }
+
+        const controlShape = (input: FormControlElement) => {
+          const base = {
+            name: truncateField("name" in input ? input.name : undefined),
+            type: truncateField("type" in input ? input.type : undefined),
+            id: truncateField(input.id),
+            placeholder:
+              "placeholder" in input ? truncateField((input as HTMLInputElement | HTMLTextAreaElement).placeholder) : undefined,
+            aria_label: truncateField(input.getAttribute("aria-label")),
+            autocomplete: "autocomplete" in input ? truncateField((input as HTMLInputElement).autocomplete) : undefined,
+            required: "required" in input ? Boolean(input.required) : undefined,
+          }
+          if (input instanceof HTMLButtonElement) {
+            return {
+              ...base,
+              type: truncateField(input.type || "button"),
+              name: base.name ?? truncateField(input.textContent ?? undefined),
+            }
+          }
+          return base
+        }
+
+        const belongsToForm = (input: Element) => {
+          if (typeof (input as Element & { closest?: unknown }).closest === "function") {
+            return Boolean((input as Element & { closest(selector: string): Element | null }).closest("form"))
+          }
+          return false
+        }
 
         // Keep form control collection local to the browser context so it serializes safely.
-        const forms = Array.from(document.querySelectorAll("form")).map((form) => ({
-          name: form.getAttribute("name") || undefined,
-          action: (form as HTMLFormElement).action,
-          method: (form as HTMLFormElement).method,
-          inputs: Array.from(form.querySelectorAll("input,textarea,select"))
-            .filter(isFormControl)
-            .map((input) => {
-              if (input instanceof HTMLTextAreaElement) {
-                return {
-                  name: input.name || undefined,
-                  value: input.value || undefined,
-                }
-              }
-
-              return {
-                name: input.name || undefined,
-                type: input.type || undefined,
-                value: input.value || undefined,
-              }
-            }),
-        }))
+        const forms = Array.from(document.querySelectorAll("form"))
+          .slice(0, MAX_FORM_ENTRIES)
+          .map((form) => ({
+            name: truncateField(form.getAttribute("name")),
+            action: truncateField((form as HTMLFormElement).action) ?? document.location?.href ?? "",
+            method: normalizeMethod((form as HTMLFormElement).method),
+            source: "form" as const,
+            inputs: Array.from(form.querySelectorAll("input,textarea,select,button"))
+              .slice(0, MAX_FORM_INPUTS)
+              .filter(isFormControl)
+              .filter((input) => !(input instanceof HTMLInputElement && input.type?.toLowerCase() === "hidden"))
+              .map(controlShape),
+          }))
+        const standaloneControls = Array.from(document.querySelectorAll("input,textarea,select,button"))
+          .filter(isFormControl)
+          .filter((input) => !belongsToForm(input))
+          .filter((input) => !(input instanceof HTMLInputElement && input.type?.toLowerCase() === "hidden"))
+          .slice(0, Math.max(0, MAX_FORM_ENTRIES - forms.length))
+          .map((input) => {
+            const shape = controlShape(input)
+            return {
+              name: shape.name,
+              action: document.location?.href ?? "",
+              method: "get",
+              source: "standalone_control" as const,
+              inputs: [shape],
+            }
+          })
 
         const scripts = Array.from(document.querySelectorAll("script"))
 
         return {
           storage: { local, session: sessionData },
-          forms,
+          forms: [...forms, ...standaloneControls].slice(0, MAX_FORM_ENTRIES),
           scripts: {
             inline_count: scripts.filter((script) => !script.getAttribute("src")).length,
             external: scripts.flatMap((script) => {
@@ -148,6 +227,7 @@ export function formatPassiveAppSecResult(input: {
   max_bytes?: number
 }): Tool.ExecuteResult {
   const passive = input.passive ?? { url: "" }
+  const sanitizedForms = sanitizePassiveForms(passive.forms ?? [])
   return {
     title: `Passive AppSec → ${input.title}`,
     metadata: {
@@ -159,6 +239,21 @@ export function formatPassiveAppSecResult(input: {
       request_count: input.report.summary.request_count,
       request_urls: (passive.requests ?? []).map((item) => item.url).slice(0, 100),
       form_actions: (passive.forms ?? []).map((item) => item.action).slice(0, 50),
+      forms: sanitizedForms.slice(0, MAX_PASSIVE_FORM_ENTRIES).map((form) => ({
+        name: truncateField(form.name),
+        action: truncateField(form.action),
+        method: truncateField(form.method),
+        source: form.source,
+        inputs: form.inputs.slice(0, MAX_PASSIVE_FORM_INPUTS).map((input) => ({
+          name: truncateField(input.name),
+          type: truncateField(input.type),
+          id: truncateField(input.id),
+          placeholder: truncateField(input.placeholder),
+          aria_label: truncateField(input.aria_label),
+          autocomplete: truncateField(input.autocomplete),
+          required: input.required,
+        })),
+      })),
       script_urls: (passive.scripts?.external ?? []).slice(0, 100),
       cookie_names: (passive.cookies ?? []).map((item) => item.name).slice(0, 50),
       finding_ids: input.report.findings.map((item) => item.id),
@@ -168,6 +263,7 @@ export function formatPassiveAppSecResult(input: {
         {
           title: input.title,
           summary: input.report.summary,
+          forms: sanitizedForms,
           findings: input.report.findings,
         },
         null,

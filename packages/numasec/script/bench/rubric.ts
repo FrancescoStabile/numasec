@@ -40,6 +40,7 @@ type OpContext = {
   workflows: number
   completed_steps: number
   route_facts: number
+  http_forms: number
   relations_projected: number
   workflow_step_statuses: number
   candidate_findings: number
@@ -74,6 +75,7 @@ type OpContext = {
 export function scoreWebSurface(corpus: string, opContext: OpContext): Score {
   const endpoints = countMatches(corpus, /\/(rest|api)\/[A-Za-z0-9_\-\/]+/g)
   const forms = countMatches(corpus, /<form[^>]*|type=["']password["']|name=["'](email|password|login|username)["']/gi)
+  const projectedForms = opContext.http_forms
   const secretsShape = /(api[_-]?key|secret|token|jwt|bearer|password)\s*[:=]\s*["'][A-Za-z0-9+/=_.\-]{16,}["']/i.test(
     corpus,
   ) || /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/.test(corpus)
@@ -90,8 +92,8 @@ export function scoreWebSurface(corpus: string, opContext: OpContext): Score {
       id: "forms",
       label: "≥3 forms / credential fields",
       points: 30,
-      earned: awardProRata(forms.length, 3, 30),
-      evidence: `${forms.length} hits`,
+      earned: awardProRata(Math.max(forms.length, projectedForms), 3, 30),
+      evidence: `${Math.max(forms.length, projectedForms)} raw/projection hits`,
     },
     {
       id: "secrets_shape",

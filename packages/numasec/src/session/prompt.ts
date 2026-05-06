@@ -261,7 +261,7 @@ export namespace SessionPrompt {
             })
           }
           const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
-          if (wasPlan && input.agent.name === "security") {
+          if (wasPlan && input.agent.name !== "plan") {
             userMessage.parts.push({
               id: PartID.ascending(),
               messageID: userMessage.info.id,
@@ -283,7 +283,7 @@ export namespace SessionPrompt {
             messageID: userMessage.info.id,
             sessionID: userMessage.info.sessionID,
             type: "text",
-            text: `${BUILD_SWITCH}\n\nA plan file exists at ${plan}. You should execute on the plan defined within it`,
+            text: `${BUILD_SWITCH}\n\nAn approved plan file exists at ${plan}. Use it as the execution guide and keep all actions within scope, ROE, opsec, and proof requirements.`,
             synthetic: true,
           })
           userMessage.parts.push(part)
@@ -301,74 +301,33 @@ export namespace SessionPrompt {
           sessionID: userMessage.info.sessionID,
           type: "text",
           text: `<system-reminder>
-Plan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits (with the exception of the plan file mentioned below), run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.
+# numasec Plan Agent
 
-## Plan File Info:
-${exists ? `A plan file already exists at ${plan}. You can read it and make incremental edits using the edit tool.` : `No plan file exists yet. You should create your plan at ${plan} using the write tool.`}
-You should build your plan incrementally by writing to or editing this file. NOTE that this is the only file you are allowed to edit - other than this you are only allowed to take READ-ONLY actions.
+Plan agent is active. The user indicated that they do not want execution yet -- you MUST NOT make any edits (except the plan file below), run non-readonly tools, change configs, make commits, start active probes, or otherwise alter the system. This supersedes any other instruction.
 
-## Plan Workflow
+## Plan File Info
+${exists ? `A plan file already exists at ${plan}. You can read it and make incremental edits using the edit tool.` : `No plan file exists yet. Create your plan at ${plan} using the write tool.`}
+This is the only file you may edit. All other work is read-only exploration, analysis, and planning.
 
-### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the explore subagent type.
+## Cyber Planning Responsibilities
 
-1. Focus on understanding the user's request and the code associated with their request
+Produce a concise, execution-ready plan for the relevant operator agent. Lock these decisions before execution:
 
-2. **Launch up to 3 explore agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
-   - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
-   - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
-   - Quality over quantity - 3 agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
-   - If using multiple agents: Provide each agent with a specific search focus or area to explore. Example: One agent searches for existing implementations, another explores related components, a third investigates testing patterns
+- target boundary, scope, ROE, testing window, destructive-test consent, and credential use;
+- opsec posture, including whether third-party lookups are allowed;
+- primary runbook/capsule path and why it fits the operation;
+- expected tool readiness and degraded behavior if tools are missing;
+- evidence to collect before claims can be promoted;
+- replay/proof policy for verified and reportable findings;
+- candidate/observed/verified/rejected/stale finding lifecycle;
+- report/deliverable exit criteria;
+- stop conditions and unanswered questions.
 
-3. After exploring the code, use the question tool to clarify ambiguities in the user request up front.
+Use read/search tools and, when useful, explore agents to ground the plan in repo or target context. Do not ask questions that inspection can answer. Ask the user only for authorization, scope, ROE, opsec, or tradeoff decisions that cannot be derived locally.
 
-### Phase 2: Design
-Goal: Design an implementation approach.
+For AppSec and Pentest, prefer release-gated runbooks first and targeted manual follow-up second. For OSINT, CTF/Hacking, cloud, container, IaC, or forensics work, label maturity honestly and do not imply benchmark-gated coverage.
 
-Launch general agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
-
-You can launch up to 1 agent(s) in parallel.
-
-**Guidelines:**
-- **Default**: Launch at least 1 Plan agent for most tasks - it helps validate your understanding and consider alternatives
-- **Skip agents**: Only for truly trivial tasks (typo fixes, single-line changes, simple renames)
-
-Examples of when to use multiple agents:
-- The task touches multiple parts of the codebase
-- It's a large refactor or architectural change
-- There are many edge cases to consider
-- You'd benefit from exploring different approaches
-
-Example perspectives by task type:
-- New feature: simplicity vs performance vs maintainability
-- Bug fix: root cause vs workaround vs prevention
-- Refactoring: minimal change vs clean architecture
-
-In the agent prompt:
-- Provide comprehensive background context from Phase 1 exploration including filenames and code path traces
-- Describe requirements and constraints
-- Request a detailed implementation plan
-
-### Phase 3: Review
-Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
-1. Read the critical files identified by agents to deepen your understanding
-2. Ensure that the plans align with the user's original request
-3. Use question tool to clarify any remaining questions with the user
-
-### Phase 4: Final Plan
-Goal: Write your final plan to the plan file (the only file you can edit).
-- Include only your recommended approach, not all alternatives
-- Ensure that the plan file is concise enough to scan quickly, but detailed enough to execute effectively
-- Include the paths of critical files to be modified
-- Include a verification section describing how to test the changes end-to-end (run the code, use MCP tools, run tests)
-
-### Phase 5: Call plan_exit tool
-At the very end of your turn, once you have asked the user questions and are happy with your final plan file - you should always call plan_exit to indicate to the user that you are done planning.
-This is critical - your turn should only end with either asking the user a question or calling plan_exit. Do not stop unless it's for these 2 reasons.
-
-**Important:** Use question tool to clarify requirements/approach, use plan_exit to request plan approval. Do NOT use question tool to ask "Is this plan okay?" - that's what plan_exit does.
-
-NOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.
+At the end of planning, after questions are resolved and the plan file is complete, call plan_exit. Do not use question to ask for plan approval; plan_exit handles that.
 </system-reminder>`,
           synthetic: true,
         })
@@ -1444,6 +1403,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           const slog = elog.with({ sessionID })
           let structured: unknown | undefined
           let step = 0
+          let emptyAssistantRetries = 0
           const session = yield* sessions.get(sessionID)
 
           while (true) {
@@ -1629,6 +1589,31 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 model,
                 toolChoice: format.type === "json_schema" ? "required" : undefined,
               })
+
+              const producedMeaningfulOutput = MessageV2.parts(handle.message.id).some((part) => {
+                if (part.type === "text") return part.text.trim().length > 0
+                if (part.type === "tool") return true
+                if (part.type === "reasoning") return part.text.trim().length > 0
+                if (part.type === "patch") return part.files.length > 0
+                return false
+              })
+
+              if (!producedMeaningfulOutput && !handle.message.error) {
+                emptyAssistantRetries += 1
+                yield* slog.info("empty_assistant_response", { step, retries: emptyAssistantRetries })
+                if (emptyAssistantRetries >= 2) {
+                  handle.message.error = new NamedError.Unknown({
+                    message: "Model returned an empty response twice in a row",
+                  }).toObject()
+                  yield* sessions.updateMessage(handle.message)
+                  return "break" as const
+                }
+                handle.message.finish = undefined
+                yield* sessions.updateMessage(handle.message)
+                return "continue" as const
+              }
+
+              emptyAssistantRetries = 0
 
               if (structured !== undefined) {
                 handle.message.structured = structured

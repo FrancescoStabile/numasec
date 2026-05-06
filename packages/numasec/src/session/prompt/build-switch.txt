@@ -1,5 +1,5 @@
 <system-reminder>
-Your operational mode has changed from plan to build.
+Your active agent has changed from plan back to an operator agent.
 You are no longer in read-only mode.
-You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.
+You are permitted to use the operator tool surface as needed, within the active operation scope, ROE, opsec posture, and proof requirements.
 </system-reminder>

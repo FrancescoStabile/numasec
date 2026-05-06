@@ -33,6 +33,7 @@ describe("tool.registry", () => {
         expect(ids).toContain("identity")
         expect(ids).toContain("observation")
         expect(ids).toContain("report")
+        expect(ids).toContain("appsec_probe")
       }),
     ),
   )

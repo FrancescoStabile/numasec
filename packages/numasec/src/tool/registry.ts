@@ -33,6 +33,7 @@ import { CVETool } from "./cve"
 import { PlayTool } from "./play"
 import { PwnBootstrapTool } from "./pwn-bootstrap"
 import { ScannerTool } from "./scanner"
+import { AppsecProbeTool } from "./appsec-probe"
 import { OpsecTool } from "./opsec"
 import { RemediateTool } from "./remediate"
 import { ShareTool } from "./share"
@@ -153,6 +154,7 @@ export const layer: Layer.Layer<
     const playTool = yield* PlayTool
     const pwnBootstrapTool = yield* PwnBootstrapTool
     const scannerTool = yield* ScannerTool
+    const appsecProbeTool = yield* AppsecProbeTool
     const opsecTool = yield* OpsecTool
     const shareTool = yield* ShareTool
     const remediateTool = yield* RemediateTool
@@ -259,6 +261,7 @@ export const layer: Layer.Layer<
           play: Tool.init(playTool),
           pwn_bootstrap: Tool.init(pwnBootstrapTool),
           scanner: Tool.init(scannerTool),
+          appsec_probe: Tool.init(appsecProbeTool),
           opsec: Tool.init(opsecTool),
           share: Tool.init(shareTool),
           methodology: Tool.init(methodologyTool),
@@ -320,6 +323,7 @@ export const layer: Layer.Layer<
             tool.play,
             tool.pwn_bootstrap,
             tool.scanner,
+            tool.appsec_probe,
             tool.opsec,
             tool.share,
             tool.methodology,

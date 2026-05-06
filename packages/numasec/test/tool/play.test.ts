@@ -89,6 +89,12 @@ describe("tool/play", () => {
     expect(tool.parameters.shape.id.description).toContain("cloud-posture")
   })
 
+  test("documents appsec-web-triage in the tool description and id schema", async () => {
+    const tool: any = await init()
+    expect(tool.description).toContain("appsec-web-triage")
+    expect(tool.parameters.shape.id.description).toContain("appsec-web-triage")
+  })
+
   test("api-surface: skips browser step when browser runtime unavailable", async () => {
     const saved = _deps.probe
     _deps.probe = fakeProbe(false) as any
@@ -246,6 +252,25 @@ describe("tool/play", () => {
       expect(result.output).toContain('tool: grep')
       expect(result.output).not.toContain('tool: bash')
       expect(result.output).not.toContain('"description":"hard-coded secrets"')
+    } finally {
+      _deps.probe = saved
+    }
+  })
+
+  test("appsec-web-triage: exposes semantic DAST probe step", async () => {
+    const saved = _deps.probe
+    _deps.probe = fakeProbe(false) as any
+    try {
+      const result: any = await exec({
+        id: "appsec-web-triage",
+        args: { target: "https://example.com" },
+      })
+      expect(result.metadata.available).toBe(true)
+      expect(result.metadata.skipped).toBe(0)
+      expect(result.metadata.degraded).toBe(false)
+      expect(result.output).toContain("AppSec Web Triage")
+      expect(result.output).toContain("appsec_probe")
+      expect(result.output).toContain("sqli_search")
     } finally {
       _deps.probe = saved
     }

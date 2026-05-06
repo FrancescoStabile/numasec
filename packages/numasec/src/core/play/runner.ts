@@ -193,9 +193,12 @@ export namespace PlayRunner {
       for (const s of result.skipped) lines.push(`- ${s.reason}`)
     }
     lines.push("")
-    lines.push(
-      "Now execute each step above by calling the referenced tool (or `skill` tool with the named skill) with the given args. If a referenced tool is not registered, report it and continue with the remaining steps.",
-    )
+    lines.push("## Execution Contract")
+    lines.push("- The step list above is authoritative for this run.")
+    lines.push("- Execute exactly one step per assistant message.")
+    lines.push("- Wait for the result of that step before calling the next one.")
+    lines.push("- Do not re-run the play/runbook while steps remain pending.")
+    lines.push("- If a referenced tool is not registered, report it and continue with the remaining steps.")
     return lines.join("\n")
   }
 }

@@ -35,7 +35,7 @@ A consumer that fails to parse any line MUST stop and report the line number.
   "title": "<human title>",
   "created_at": "2026-04-17T08:34:12Z",
   "exported_at": "2026-04-18T11:02:00Z",
-  "numasec_version": "1.1.7",
+  "numasec_version": "1.2.0",
   "model": { "provider": "anthropic", "id": "claude-opus-4.7" },
   "redacted": false
 }

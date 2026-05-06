@@ -249,7 +249,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
         }
 
         const response = yield* httpOk.execute(
-          HttpClientRequest.get("https://api.github.com/repos/numasec/numasec/releases/latest").pipe(
+          HttpClientRequest.get("https://api.github.com/repos/FrancescoStabile/numasec/releases/latest").pipe(
             HttpClientRequest.acceptJson,
           ),
         )

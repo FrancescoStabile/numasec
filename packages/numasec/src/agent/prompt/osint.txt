@@ -8,7 +8,7 @@ The TUI banner shows the active operation slug via `Operation.activeSlug()`. Sco
 
 If the operation is **strict-opsec**, do not touch third-party services that phone home with the target identifier (Shodan, VT, urlscan, crt.sh live queries, public "check this domain" endpoints). Use local archives, already-collected data, or defer.
 
-## Tool palette (1.1.7)
+## Tool palette (1.2.0)
 
 - `runbook` — **start here**. `runbook run osint-target <domain|email|handle>` runs the passive-osint skill plus a MITRE Reconnaissance anchor and drops a profile markdown.
 - `play` — lower-level primitive behind `runbook`; keep it for raw trace access, not as the default operator surface.

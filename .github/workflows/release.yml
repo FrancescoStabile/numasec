@@ -201,6 +201,7 @@ jobs:
           mkdir -p publish-packages/numasec
           cp -r packages/numasec/bin publish-packages/numasec/bin
           cp packages/numasec/script/postinstall.mjs publish-packages/numasec/postinstall.mjs
+          cp README.md publish-packages/numasec/README.md
           cp LICENSE publish-packages/numasec/LICENSE
           node -e "
             const fs = require('fs');
@@ -218,7 +219,27 @@ jobs:
                 {
                   name: source.name,
                   version: process.env.RELEASE_VERSION,
+                  description: 'Terminal-native AI cyber operator harness',
                   license: source.license,
+                  repository: {
+                    type: 'git',
+                    url: 'https://github.com/FrancescoStabile/numasec'
+                  },
+                  homepage: 'https://github.com/FrancescoStabile/numasec',
+                  bugs: {
+                    url: 'https://github.com/FrancescoStabile/numasec/issues'
+                  },
+                  keywords: [
+                    'cybersecurity',
+                    'appsec',
+                    'pentest',
+                    'security',
+                    'agent',
+                    'terminal'
+                  ],
+                  engines: {
+                    bun: '>=1.3.11'
+                  },
                   bin: source.bin,
                   scripts: {
                     postinstall: 'bun ./postinstall.mjs || node ./postinstall.mjs',
@@ -276,14 +297,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: ghcr
-        shell: bash
-        run: echo "owner=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -293,5 +306,3 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/numasec:${{ needs.version.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/numasec:latest
-            ghcr.io/${{ steps.ghcr.outputs.owner }}/numasec:${{ needs.version.outputs.version }}
-            ghcr.io/${{ steps.ghcr.outputs.owner }}/numasec:latest

@@ -900,7 +900,7 @@ export const Info = z
       .string()
       .optional()
       .describe(
-        "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
+        "Default agent to use when none is specified. Must be a primary visible agent. Falls back to 'security' when not set.",
       ),
     username: z.string().optional().describe("Custom username to display in conversations instead of system username"),
     mode: z

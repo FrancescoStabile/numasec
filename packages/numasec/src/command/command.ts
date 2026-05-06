@@ -110,7 +110,7 @@ export const layer = Layer.effect(
       }
       commands[Default.RUNBOOK] = {
         name: Default.RUNBOOK,
-        description: "run a semantic runbook such as web-surface, appsec-triage, or osint-target",
+        description: "run a semantic runbook such as web-surface or appsec-web-triage",
         source: "command",
         priority: 20,
         get template() {

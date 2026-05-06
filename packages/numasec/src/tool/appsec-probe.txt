@@ -1,0 +1,24 @@
+Run a lightweight, evidence-first AppSec web probe against an in-scope HTTP target.
+
+This is not a deep scanner and it does not confirm vulnerabilities by itself. It performs low-risk HTTP probes for common web application weakness classes, stores the raw request/response bundle as evidence, projects observations into the cyber kernel, and records candidate findings only when a relevant route or response shape is observed.
+
+Args:
+- target: absolute HTTP(S) URL to probe.
+- checks: optional subset of checks. Defaults to all checks.
+- timeout: per-request timeout in milliseconds, capped by the tool.
+
+Checks:
+- sqli_search: probes observed search/query/form input surfaces with a SQL-oriented marker payload.
+- xss_search: probes observed search/query/form input surfaces with an XSS marker payload.
+- broken_auth_jwt: inspects observed auth-like routes, forms, and JWT-shaped responses as candidate review surfaces.
+- idor_basket: probes observed object routes with numeric ids as BOLA/IDOR candidates.
+- weak_cors: probes observed same-origin endpoints with a hostile Origin header and inspects CORS headers.
+
+The tool does not invent common paths. If the operation has not observed a suitable surface for a check, that check degrades honestly instead of fabricating a finding.
+
+Evidence model:
+- Raw probe bundle is stored under the active operation evidence store.
+- Candidate findings are status=candidate and evidence-linked.
+- Confirmed/reportable findings still require explicit promotion with evidence plus replay or a structured replay exemption.
+
+Use this when a target is a running web application and the operator needs AppSec signal, not just surface inventory.

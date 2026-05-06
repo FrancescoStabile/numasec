@@ -9,10 +9,13 @@ describe("doctor readiness evaluator", () => {
     })
 
     const appsec = surface.plays.find((item) => item.id === "appsec-triage")
+    const appsecWeb = surface.plays.find((item) => item.id === "appsec-web-triage")
     const webSurface = surface.plays.find((item) => item.id === "web-surface")
     const browserVertical = surface.verticals.find((item) => item.id === "browser-inspection")
 
     expect(appsec?.status).toBe("ready")
+    expect(appsecWeb?.status).toBe("degraded")
+    expect(appsecWeb?.missing_optional).toContain("browser runtime")
     expect(webSurface?.status).toBe("degraded")
     expect(webSurface?.missing_optional).toContain("browser runtime")
     expect(browserVertical?.status).toBe("unavailable")

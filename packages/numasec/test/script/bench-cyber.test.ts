@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { parseArgs, passesScenario, scenarioFailures, scenariosFor, type BenchResult } from "../../script/bench/cyber-lib"
+import { scoreWebSurface } from "../../script/bench/rubric"
 
 function result(input: Partial<BenchResult> & Pick<BenchResult, "scenario">): BenchResult {
   return {
     scenario: input.scenario,
     command_ok: input.command_ok ?? true,
     command_error: input.command_error ?? null,
+    completion_mode: input.completion_mode ?? "command",
+    command_completed: input.command_completed ?? true,
+    projection_completed: input.projection_completed ?? false,
+    aborted_after_projection: input.aborted_after_projection ?? false,
     result: {
       score: input.result?.score ?? 100,
       max: input.result?.max ?? 100,
@@ -26,6 +31,30 @@ describe("script/bench/cyber-lib", () => {
     expect(scenariosFor("appsec")).toEqual(["appsec-triage"])
     expect(scenariosFor("pentest")).toEqual(["web-surface", "pwn"])
     expect(scenariosFor("all")).toEqual(["web-surface", "appsec-triage", "pwn"])
+  })
+
+  test("bench result can represent projection-based completion without forcing command failure", () => {
+    const bench = result({
+      scenario: "web-surface",
+      completion_mode: "projection",
+      command_completed: false,
+      projection_completed: true,
+      aborted_after_projection: true,
+      result: {
+        score: 90,
+        max: 100,
+        checks: [
+          { id: "endpoints", label: "endpoints", points: 50, earned: 50 },
+          { id: "forms", label: "forms", points: 30, earned: 30 },
+          { id: "workflow_artifacts", label: "wf", points: 0, earned: 0, evidence: "1 files" },
+          { id: "workflow_completed_steps", label: "wfc", points: 0, earned: 0, evidence: "1 steps" },
+          { id: "route_facts", label: "routes", points: 0, earned: 0, evidence: "1 facts" },
+          { id: "relations_projected", label: "rels", points: 0, earned: 0, evidence: "1 relations" },
+          { id: "workflow_step_statuses", label: "steps", points: 0, earned: 0, evidence: "1 facts" },
+        ],
+      },
+    })
+    expect(passesScenario(bench)).toBe(true)
   })
 
   test("fails appsec when threshold check is not passed", () => {
@@ -539,6 +568,49 @@ describe("script/bench/cyber-lib", () => {
     expect(scenarioFailures(bench)).toContain("endpoints")
   })
 
+  test("scores web-surface forms from projected http_form facts", () => {
+    const scored = scoreWebSurface("", {
+      slug: "op-1",
+      observations: 0,
+      observations_projected: 0,
+      context_artifacts: 0,
+      workflows: 1,
+      completed_steps: 1,
+      route_facts: 1,
+      http_forms: 3,
+      relations_projected: 1,
+      workflow_step_statuses: 1,
+      candidate_findings: 0,
+      findings: 0,
+      knowledge_queries: 0,
+      identities: 0,
+      active_identities: 0,
+      deliverables: 0,
+      tool_adapters_present: 0,
+      tool_adapters_missing: 0,
+      capsules: 0,
+      executed_capsules: 0,
+      recommended_capsules: 0,
+      ready_capsules: 0,
+      degraded_capsules: 0,
+      unavailable_capsules: 0,
+      ready_verticals: 0,
+      degraded_verticals: 0,
+      unavailable_verticals: 0,
+      reportable_findings: 0,
+      suspected_findings: 0,
+      rejected_findings: 0,
+      verified_findings: 0,
+      evidence_backed_findings: 0,
+      replay_backed_findings: 0,
+      replay_exempt_findings: 0,
+      operation_state_facts: 0,
+      scope_policy_facts: 0,
+      autonomy_policy_facts: 0,
+    })
+    expect(scored.checks.find((item) => item.id === "forms")?.earned).toBe(30)
+  })
+
   test("requires operation creation and observations for pwn", () => {
     const bench = result({
       scenario: "pwn",
@@ -720,7 +792,7 @@ describe("script/bench/cyber-lib", () => {
     expect(scenarioFailures(pwn)).toContain("operation_state_facts")
   })
 
-  test("fails pwn when knowledge queries are expected but none were projected", () => {
+  test("does not fail pwn solely because no knowledge queries were projected", () => {
     const bench = result({
       scenario: "pwn",
       result: {
@@ -743,7 +815,7 @@ describe("script/bench/cyber-lib", () => {
         ],
       },
     })
-    expect(scenarioFailures(bench)).toContain("pwn_knowledge_queries")
+    expect(scenarioFailures(bench)).not.toContain("pwn_knowledge_queries")
   })
 
   test("fails pwn when identity checks are present but no identity state was projected", () => {
@@ -920,7 +992,7 @@ describe("script/bench/cyber-lib", () => {
     expect(scenarioFailures(bench)).toContain("pwn_deliverables")
   })
 
-  test("fails pwn when promoted findings exist without verified status or replay-backed proof", () => {
+  test("allows suspected-only pwn findings without forcing verified or reportable promotion", () => {
     const bench = result({
       scenario: "pwn",
       result: {
@@ -942,8 +1014,8 @@ describe("script/bench/cyber-lib", () => {
         ],
       },
     })
-    expect(scenarioFailures(bench)).toContain("pwn_reportable_findings")
-    expect(scenarioFailures(bench)).toContain("pwn_verified_findings")
+    expect(scenarioFailures(bench)).not.toContain("pwn_reportable_findings")
+    expect(scenarioFailures(bench)).not.toContain("pwn_verified_findings")
 
     const replayMissing = result({
       scenario: "pwn",

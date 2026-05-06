@@ -5,6 +5,9 @@ import { ScannerTool } from "../../src/tool/scanner"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
+import { Cyber } from "../../src/core/cyber"
+import { Operation } from "../../src/core/operation"
+import { Observation } from "../../src/core/observation"
 import { Truncate } from "../../src/tool"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -178,6 +181,47 @@ describe("tool/scanner", () => {
           expect(data.found[0].path).toBe("/admin")
           expect(data.found[0].status).toBe(403)
           expect(r.metadata.mode).toBe("dir-fuzz")
+        },
+      })
+    })
+  })
+
+  test("scanner projects observations for evidence-backed web recon modes under an active operation", async () => {
+    await using fixture = await tmpdir()
+    await withFetchMock(async (url) => scannerResponse(url), async () => {
+      await Instance.provide({
+        directory: fixture.path,
+        fn: async () => {
+          const op = await Operation.create({
+            workspace: fixture.path,
+            label: "Surface Map",
+            kind: "pentest",
+            target: "https://scanner.test",
+          })
+
+          await exec({
+            mode: "crawl",
+            target: "https://scanner.test",
+            options: { maxUrls: 10, maxDepth: 2, timeout: 3000 },
+          })
+          await exec({
+            mode: "js",
+            target: "https://scanner.test/",
+            options: { maxFiles: 5, timeout: 3000 },
+          })
+          await exec({
+            mode: "dir-fuzz",
+            target: "https://scanner.test",
+            options: { wordlist: ["admin"], timeout: 3000, concurrency: 1, filterStatus: [403] },
+          })
+
+          const projected = await Cyber.readProjectedState(fixture.path, op.slug)
+          const observations = await Observation.listProjected(fixture.path, op.slug)
+          expect(projected.summary.observations_projected).toBeGreaterThanOrEqual(3)
+          expect(observations.length).toBeGreaterThanOrEqual(3)
+          expect(observations.every((item) => item.evidence.length > 0)).toBe(true)
+          expect(projected.summary.verified_findings).toBe(0)
+          expect(projected.summary.reportable_findings).toBe(0)
         },
       })
     })

@@ -3,9 +3,9 @@ import { PlayRegistry, PlayRunner, PlayArgError, PlayNotFoundError } from "../..
 import type { Play, NormalizedToolStep, NormalizedSkillStep, PlayEnvironment } from "../../../src/core/play"
 
 describe("core/play/runner", () => {
-  test("registry exposes the 11 GA plays", () => {
+  test("registry exposes the 12 GA plays", () => {
     const ids = PlayRegistry.ids().sort()
-    expect(ids).toEqual(["api-surface", "appsec-triage", "auth-surface", "binary-triage", "cloud-posture", "container-surface", "ctf-warmup", "iac-triage", "network-surface", "osint-target", "web-surface"])
+    expect(ids).toEqual(["api-surface", "appsec-triage", "appsec-web-triage", "auth-surface", "binary-triage", "cloud-posture", "container-surface", "ctf-warmup", "iac-triage", "network-surface", "osint-target", "web-surface"])
     for (const id of ids) {
       const p = PlayRegistry.get(id)!
       expect(p.id).toBe(id)
@@ -53,19 +53,24 @@ describe("core/play/runner", () => {
   describe("web-surface play", () => {
     const TARGET = "https://app.example.com"
 
-    test("omitted domain: passive-osint brief uses readable fallback string", () => {
+    test("omitted domain: skips passive-osint so local web mapping starts immediately", () => {
       const res = PlayRunner.run({
         id: "web-surface",
         args: { target: TARGET },
         environment: { binaries: new Set<string>(), runtimes: { browser: true } },
       })
-      const osintStep = res.trace[0]
-      expect(osintStep.kind).toBe("skill")
-      if (osintStep.kind === "skill") {
-        expect(osintStep.brief).toBe(
-          "enumerate subdomains of target hostname using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
-        )
-      }
+      expect(res.trace[0]).toEqual({
+        kind: "tool",
+        label: "crawl target",
+        tool: "scanner",
+        args: {
+          mode: "crawl",
+          target: TARGET,
+          options: { maxUrls: 50, maxDepth: 2, timeout: 10_000 },
+        },
+      })
+      expect(res.skipped.length).toBe(1)
+      expect(res.skipped[0].reason).toBe('if "domain" was falsy')
     })
 
     test("degraded path: resolves passive osint, crawl, js, dir-fuzz and skips browser passive when browser runtime is unavailable", () => {
@@ -78,7 +83,6 @@ describe("core/play/runner", () => {
       expect(res.trace).toEqual([
         {
           kind: "skill",
-          label: "enumerate passive subdomains",
           skill: "passive-osint",
           brief: "enumerate subdomains of example.com using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
         },
@@ -133,7 +137,6 @@ describe("core/play/runner", () => {
       expect(res.trace).toEqual([
         {
           kind: "skill",
-          label: "enumerate passive subdomains",
           skill: "passive-osint",
           brief: "enumerate subdomains of example.com using crt.sh, wayback, theHarvester, holehe — no active probes, passive only",
         },
@@ -327,6 +330,25 @@ describe("core/play/runner", () => {
           tool: "methodology",
           args: { framework: "wstg", phase: "WSTG-INPV" },
         },
+      ])
+      expect(res.skipped).toEqual([])
+    })
+  })
+
+  describe("appsec-web-triage play", () => {
+    test("resolves web DAST steps through semantic probe completion", () => {
+      const res = PlayRunner.run({
+        id: "appsec-web-triage",
+        args: { target: "https://app.example.com" },
+        environment: { binaries: new Set<string>(), runtimes: { browser: false } },
+      })
+
+      expect(res.trace.map((item) => (item.kind === "tool" ? item.tool : item.skill))).toEqual([
+        "doctor",
+        "knowledge",
+        "scanner",
+        "scanner",
+        "appsec_probe",
       ])
       expect(res.skipped).toEqual([])
     })

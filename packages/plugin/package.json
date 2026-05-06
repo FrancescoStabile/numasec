@@ -1,9 +1,28 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@numasec/plugin",
-  "version": "1.4.6",
+  "version": "1.2.0",
+  "description": "Plugin API for the numasec terminal-native cyber operator harness",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FrancescoStabile/numasec"
+  },
+  "homepage": "https://github.com/FrancescoStabile/numasec",
+  "bugs": {
+    "url": "https://github.com/FrancescoStabile/numasec/issues"
+  },
+  "keywords": [
+    "numasec",
+    "plugin",
+    "cybersecurity",
+    "appsec",
+    "pentest"
+  ],
+  "engines": {
+    "bun": ">=1.3.11"
+  },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "build": "tsc"

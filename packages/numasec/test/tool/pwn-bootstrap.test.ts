@@ -12,6 +12,7 @@ import { Operation } from "../../src/core/operation"
 import { Cyber } from "../../src/core/cyber"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { tmpdir } from "../fixture/fixture"
+import { Session } from "../../src/session"
 
 const runtime = ManagedRuntime.make(
   Layer.mergeAll(
@@ -20,27 +21,36 @@ const runtime = ManagedRuntime.make(
     Bus.layer,
     Truncate.defaultLayer,
     Agent.defaultLayer,
+    Session.defaultLayer,
   ),
 )
 
-const baseCtx = {
-  sessionID: SessionID.make("ses_test"),
-  messageID: MessageID.make(""),
-  callID: "",
-  agent: "security",
-  abort: AbortSignal.any([]),
-  messages: [],
-  metadata: () => Effect.void,
-  extra: {},
-  ask: () => Effect.succeed(undefined as any),
-} as any
+async function createSessionID(permission?: Array<{ permission: string; pattern: string; action: "allow" | "ask" | "deny" }>) {
+  return await runtime.runPromise(
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const created = yield* session.create({ permission })
+      return created.id
+    }) as any,
+  )
+}
 
-async function exec(params: { target: string }) {
+async function exec(sessionID: string, params: { target: string }) {
   return await runtime.runPromise(
     Effect.gen(function* () {
       const info = yield* PwnBootstrapTool
       const tool = yield* info.init()
-      return yield* tool.execute(params, baseCtx)
+      return yield* tool.execute(params, {
+        sessionID,
+        messageID: MessageID.make(""),
+        callID: "",
+        agent: "security",
+        abort: AbortSignal.any([]),
+        messages: [],
+        metadata: () => Effect.void,
+        extra: {},
+        ask: () => Effect.succeed(undefined as any),
+      } as any)
     }) as any,
   )
 }
@@ -51,7 +61,8 @@ describe("tool/pwn-bootstrap", () => {
     await Instance.provide({
       directory: fixture.path,
       fn: async () => {
-        const r: any = await exec({ target: "https://acme.example.com" })
+        const sessionID = await createSessionID([{ permission: "*", pattern: "*", action: "allow" }])
+        const r: any = await exec(String(sessionID), { target: "https://acme.example.com" })
         expect(r.metadata.ok).toBe(true)
         expect(r.metadata.shape).toBe("url")
         expect(r.metadata.kind).toBe("pentest")
@@ -75,6 +86,42 @@ describe("tool/pwn-bootstrap", () => {
               item.fact_name === "operation_state",
           ),
         ).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "operation" &&
+              item.entity_key === r.metadata.slug &&
+              item.fact_name === "autonomy_policy" &&
+              (item.value_json as { mode?: string } | null)?.mode === "auto",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) => item.entity_kind === "tool_adapter" && item.fact_name === "presence",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) => item.entity_kind === "vertical" && item.fact_name === "readiness",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "identity" &&
+              item.entity_key === "anonymous" &&
+              item.fact_name === "descriptor",
+          ),
+        ).toBe(true)
+        expect(
+          facts.some(
+            (item) =>
+              item.entity_kind === "identity" &&
+              item.entity_key === "anonymous" &&
+              item.fact_name === "active" &&
+              item.value_json === true,
+          ),
+        ).toBe(true)
       },
     })
   })
@@ -84,14 +131,15 @@ describe("tool/pwn-bootstrap", () => {
     await Instance.provide({
       directory: fixture.path,
       fn: async () => {
-        const r: any = await exec({ target: "10.0.0.0/24" })
+        const sessionID = await createSessionID()
+        const r: any = await exec(String(sessionID), { target: "10.0.0.0/24" })
         expect(r.metadata.ok).toBe(true)
         expect(r.metadata.shape).toBe("ip")
         expect(r.metadata.kind).toBe("hacking")
         expect(r.metadata.agent).toBe("hacking")
         expect(r.metadata.play_id).toBe("network-surface")
 
-        const r2: any = await exec({ target: "192.168.1.42" })
+        const r2: any = await exec(String(sessionID), { target: "192.168.1.42" })
         expect(r2.metadata.shape).toBe("ip")
         expect(r2.metadata.kind).toBe("hacking")
         expect(r2.metadata.play_id).toBe("network-surface")
@@ -104,7 +152,8 @@ describe("tool/pwn-bootstrap", () => {
     await Instance.provide({
       directory: fixture.path,
       fn: async () => {
-        const r: any = await exec({ target: "acme.com" })
+        const sessionID = await createSessionID()
+        const r: any = await exec(String(sessionID), { target: "acme.com" })
         expect(r.metadata.ok).toBe(true)
         expect(r.metadata.shape).toBe("domain")
         expect(r.metadata.kind).toBe("osint")
@@ -119,7 +168,8 @@ describe("tool/pwn-bootstrap", () => {
     await Instance.provide({
       directory: fixture.path,
       fn: async () => {
-        const r: any = await exec({ target: "??? not a target" })
+        const sessionID = await createSessionID()
+        const r: any = await exec(String(sessionID), { target: "??? not a target" })
         expect(r.metadata.ok).toBe(false)
         expect(r.metadata.reason).toContain("target shape unclear")
         expect(r.output).toContain("Could not classify")

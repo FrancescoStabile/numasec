@@ -12,6 +12,7 @@ import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util"
+import { isSelectableAgent, isSwitchableAgent } from "@/agent/switching"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -42,10 +43,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const agent = iife(() => {
-      const agents = createMemo(() => sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden))
+      const selectableAgents = createMemo(() => sync.data.agent.filter(isSelectableAgent))
+      const agents = createMemo(() => sync.data.agent.filter(isSwitchableAgent))
       const visibleAgents = createMemo(() => sync.data.agent.filter((x) => !x.hidden))
       const [agentStore, setAgentStore] = createStore({
         current: undefined as string | undefined,
+        previous: undefined as string | undefined,
       })
       const { theme } = useTheme()
       const colors = createMemo(() => [
@@ -62,23 +65,36 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return agents()
         },
         current() {
-          return agents().find((x) => x.name === agentStore.current) ?? agents().at(0)
+          return selectableAgents().find((x) => x.name === agentStore.current) ?? selectableAgents().at(0)
+        },
+        previous() {
+          const previous = selectableAgents().find((x) => x.name === agentStore.previous && x.name !== "plan")
+          return previous?.name ?? agents().at(0)?.name ?? "security"
+        },
+        has(name: string | undefined) {
+          if (!name) return false
+          return selectableAgents().some((x) => x.name === name)
         },
         set(name: string) {
-          if (!agents().some((x) => x.name === name))
+          const current = selectableAgents().find((x) => x.name === agentStore.current)
+          if (!selectableAgents().some((x) => x.name === name))
             return toast.show({
               variant: "warning",
               message: `Agent not found: ${name}`,
               duration: 3000,
             })
+          if (name === "plan" && current?.name && current.name !== "plan") setAgentStore("previous", current.name)
           setAgentStore("current", name)
         },
         move(direction: 1 | -1) {
           batch(() => {
-            let next = agents().findIndex((x) => x.name === agentStore.current) + direction
-            if (next < 0) next = agents().length - 1
-            if (next >= agents().length) next = 0
-            const value = agents()[next]
+            const list = agents()
+            if (list.length === 0) return
+            const current = list.findIndex((x) => x.name === agentStore.current)
+            let next = current === -1 ? (direction === 1 ? 0 : list.length - 1) : current + direction
+            if (next < 0) next = list.length - 1
+            if (next >= list.length) next = 0
+            const value = list[next]
             setAgentStore("current", value.name)
           })
         },

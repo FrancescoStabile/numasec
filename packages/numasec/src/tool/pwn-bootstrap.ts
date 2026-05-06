@@ -1,9 +1,13 @@
 import z from "zod"
 import { Effect } from "effect"
 import * as Tool from "./tool"
+import { inferMode } from "./autonomy"
+import { persistDoctorProjection } from "./doctor"
 import { Instance } from "@/project/instance"
 import { Operation, KIND_AGENT, type OperationKind, type OperationAgentID } from "@/core/operation"
 import { Cyber } from "@/core/cyber"
+import { Doctor } from "@/core/doctor"
+import { Session } from "@/session"
 
 const parameters = z.object({
   target: z.string().min(1).describe("raw target string — URL, IP, CIDR, or bare domain"),
@@ -49,9 +53,20 @@ const DESCRIPTION = [
   "Returns { slug, kind, agent, playId } on success, or an error payload if the target shape is unclear.",
 ].join("\n")
 
-export const PwnBootstrapTool = Tool.define<typeof parameters, Metadata, never>(
+function anonymousIdentityDescriptor(target: string) {
+  return {
+    mode: "anonymous",
+    header_keys: [],
+    has_cookies: false,
+    target,
+    note: "Unauthenticated baseline identity for the bootstrapped operation. No secret material is stored.",
+  }
+}
+
+export const PwnBootstrapTool = Tool.define<typeof parameters, Metadata, Session.Service>(
   "pwn_bootstrap",
   Effect.gen(function* () {
+    const session = yield* Session.Service
     return {
       description: DESCRIPTION,
       parameters,
@@ -115,6 +130,74 @@ export const PwnBootstrapTool = Tool.define<typeof parameters, Metadata, never>(
             source: "pwn_bootstrap",
             summary: `scope policy ${info.slug}`,
           }).pipe(Effect.catch(() => Effect.succeed("")))
+          const currentSession = yield* Effect.exit(session.get(ctx.sessionID))
+          const permission = currentSession._tag === "Success" ? currentSession.value.permission : undefined
+          yield* Cyber.upsertFact({
+            operation_slug: info.slug,
+            entity_kind: "operation",
+            entity_key: info.slug,
+            fact_name: "autonomy_policy",
+            value_json: {
+              mode: inferMode(permission),
+              rules: permission,
+              session_id: ctx.sessionID,
+            },
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          const identityEventID = yield* Cyber.appendLedger({
+            operation_slug: info.slug,
+            kind: "fact.observed",
+            source: "pwn_bootstrap",
+            status: "completed",
+            session_id: ctx.sessionID,
+            message_id: ctx.messageID,
+            summary: "active identity set to anonymous",
+            data: {
+              action: "seed_anonymous_identity",
+              key: "anonymous",
+              mode: "anonymous",
+            },
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertFact({
+            operation_slug: info.slug,
+            entity_kind: "identity",
+            entity_key: "anonymous",
+            fact_name: "descriptor",
+            value_json: anonymousIdentityDescriptor(params.target),
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+            source_event_id: identityEventID || undefined,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertFact({
+            operation_slug: info.slug,
+            entity_kind: "identity",
+            entity_key: "anonymous",
+            fact_name: "active",
+            value_json: true,
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+            source_event_id: identityEventID || undefined,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          yield* Cyber.upsertRelation({
+            operation_slug: info.slug,
+            src_kind: "operation",
+            src_key: info.slug,
+            relation: "uses_identity",
+            dst_kind: "identity",
+            dst_key: "anonymous",
+            writer_kind: "tool",
+            status: "observed",
+            confidence: 1000,
+            source_event_id: identityEventID || undefined,
+          }).pipe(Effect.catch(() => Effect.succeed("")))
+          const doctorReport = yield* Doctor.probe(workspace).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (doctorReport) {
+            yield* persistDoctorProjection({ report: doctorReport })
+          }
 
           return {
             title: `pwn: ${info.slug} · ${plan.kind} · ${plan.playId}`,

@@ -8,9 +8,9 @@ Scope your review to the active operation's `target:` (typically a repo path). T
 
 If the operation is **strict-opsec**, do not submit code or snippets to third-party analyzers, online sandboxes, or public LLM APIs outside the numasec stack. Stay local.
 
-## Tool palette (1.1.7)
+## Tool palette (1.2.0)
 
-- `runbook` — semantic capsule surface. Start with `runbook run appsec-triage <path>` on a fresh tree.
+- `runbook` — semantic capsule surface. Start with `runbook run appsec-web-triage <url>` for a live web app and `runbook run appsec-triage <path>` for a fresh source tree.
 - `read` — deep-read functions end-to-end, not just the flagged line. Context determines exploitability.
 - `grep` — your most-used tool. Search for dangerous sinks, hardcoded secrets, and bypassed framework protections. Scope with globs: `grep "eval\\(" --glob "*.js"`.
 - `glob` — map the codebase: entry points, config files, deps manifests (`**/package.json`, `**/requirements.txt`, `**/go.mod`, `**/pom.xml`).
@@ -23,7 +23,9 @@ If the operation is **strict-opsec**, do not submit code or snippets to third-pa
 
 ## Plays first
 
-When you get a fresh repo, call `runbook run appsec-triage <path>` before you start hunting. It detects the stack, flags secrets, eval/deserialization sinks, SQL concat, and anchors you to WSTG. Treat its output as a map; then drill by hand where signal is strongest.
+When you get a live web target, call `runbook run appsec-web-triage <url>` before improvising. It records tool readiness, knowledge context, web surface inventory, and evidence-backed AppSec candidate probes. When you get a fresh repo, call `runbook run appsec-triage <path>`; it detects the stack, flags secrets, eval/deserialization sinks, SQL concat, and anchors you to WSTG. Treat runbook output as a map; then drill by hand where signal is strongest.
+
+When a runbook returns an execution trace, that trace is authoritative for the current workflow. Execute exactly one trace step per assistant message, wait for the result, then continue to the next pending step. Do not re-run the runbook, do not batch multiple step tools, and do not stop while declared trace steps are still pending.
 
 ## Skills
 

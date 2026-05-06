@@ -17,6 +17,16 @@ function getLastModel(sessionID: SessionID) {
   return undefined
 }
 
+function getPreviousAgent(sessionID: SessionID, messages: MessageV2.WithParts[]) {
+  const ignored = new Set(["plan", "title", "summary", "compaction"])
+  const fromMessages = messages.toReversed().find((item) => item.info.agent && !ignored.has(item.info.agent))
+  if (fromMessages?.info.agent) return fromMessages.info.agent
+  for (const item of MessageV2.stream(sessionID)) {
+    if (item.info.agent && !ignored.has(item.info.agent)) return item.info.agent
+  }
+  return "security"
+}
+
 export const PlanExitTool = Tool.define(
   "plan_exit",
   Effect.gen(function* () {
@@ -35,11 +45,11 @@ export const PlanExitTool = Tool.define(
             sessionID: ctx.sessionID,
             questions: [
               {
-                question: `Plan at ${plan} is complete. Would you like to switch to the build agent and start implementing?`,
-                header: "Build Agent",
+                question: `Plan at ${plan} is complete. Would you like to switch back to the operator agent and start executing?`,
+                header: "Operator",
                 custom: false,
                 options: [
-                  { label: "Yes", description: "Switch to build agent and start implementing the plan" },
+                  { label: "Yes", description: "Switch back to the operator agent and execute the plan" },
                   { label: "No", description: "Stay with plan agent to continue refining the plan" },
                 ],
               },
@@ -50,13 +60,14 @@ export const PlanExitTool = Tool.define(
           if (answers[0]?.[0] === "No") yield* new Question.RejectedError()
 
           const model = getLastModel(ctx.sessionID) ?? (yield* provider.defaultModel())
+          const previousAgent = getPreviousAgent(ctx.sessionID, ctx.messages)
 
           const msg: MessageV2.User = {
             id: MessageID.ascending(),
             sessionID: ctx.sessionID,
             role: "user",
             time: { created: Date.now() },
-            agent: "security",
+            agent: previousAgent,
             model,
           }
           yield* session.updateMessage(msg)
@@ -65,14 +76,14 @@ export const PlanExitTool = Tool.define(
             messageID: msg.id,
             sessionID: ctx.sessionID,
             type: "text",
-            text: `The plan at ${plan} has been approved, you can now edit files. Execute the plan`,
+            text: `The plan at ${plan} has been approved. Switch back to the operator context and execute the plan.`,
             synthetic: true,
           } satisfies MessageV2.TextPart)
 
           return {
-            title: "Switching to build agent",
-            output: "User approved switching to build agent. Wait for further instructions.",
-            metadata: {},
+            title: `Switching to ${previousAgent}`,
+            output: `User approved leaving plan agent. Continue with ${previousAgent}.`,
+            metadata: { agent: previousAgent },
           }
         }).pipe(Effect.orDie),
     }

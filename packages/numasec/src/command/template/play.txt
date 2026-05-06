@@ -1,5 +1,5 @@
 ---
-description: Run a reusable play — a named, deterministic pipeline of tool/skill calls (e.g. web-surface, network-surface, appsec-triage, osint-target, ctf-warmup).
+description: Run a reusable play — a named, deterministic pipeline of tool/skill calls (e.g. web-surface, network-surface, appsec-web-triage, appsec-triage, osint-target, ctf-warmup).
 ---
 
 # /play $ARGUMENTS
@@ -10,6 +10,7 @@ Parse the argument string into an id (first token) and a positional/keyword arg 
 
 - `/play web-surface https://example.com`
 - `/play network-surface 10.0.0.0/24`
+- `/play appsec-web-triage https://example.com`
 - `/play appsec-triage ./src`
 - `/play osint-target acme.com`
 - `/play ctf-warmup ./chal.bin`
