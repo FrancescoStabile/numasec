@@ -169,7 +169,7 @@ function createFetch(log: Hit[]) {
 
       throw new Error(`unexpected request: ${req.method} ${url.pathname}`)
     },
-    { preconnect: fetch.preconnect.bind(fetch) },
+    { preconnect: typeof fetch.preconnect === "function" ? fetch.preconnect.bind(fetch) : () => {} },
   ) satisfies typeof fetch
 }
 
