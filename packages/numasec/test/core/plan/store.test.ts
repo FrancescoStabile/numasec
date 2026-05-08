@@ -5,7 +5,6 @@ import path from "path"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { AppFileSystem } from "@numasec/shared/filesystem"
 import { Agent } from "../../../src/agent/agent"
-import { AppRuntime } from "../../../src/effect/app-runtime"
 import { Format } from "../../../src/format"
 import { Instance } from "../../../src/project/instance"
 import { Plan } from "../../../src/core/plan"
@@ -99,7 +98,7 @@ describe("core/plan store", () => {
       })
     } finally {
       cleanup()
-      await AppRuntime.dispose()
+      await runtime.dispose()
     }
   })
 })
