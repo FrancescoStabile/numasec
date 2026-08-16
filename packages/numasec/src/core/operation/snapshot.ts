@@ -1120,18 +1120,19 @@ function withoutContextStale(items: string[]) {
 
 export function renderContext(snapshot: OperationSnapshot, options: RenderContextOptions = {}): string {
   const writeContext = options.mode === "write_context"
-  const staleContext = writeContext ? false : snapshot.stale_context
-  const contextFileStale = writeContext ? false : snapshot.context_file_stale
-  const stale = staleContext || snapshot.stale_capability_readiness
-  const sourceContextMtime = writeContext ? snapshot.generated_at : (snapshot.source_context_mtime?.iso ?? "-")
-  const warnings = writeContext ? withoutContextStale(snapshot.warnings) : snapshot.warnings
-  const recommendedNextActions = writeContext
-    ? withoutContextStale(snapshot.recommended_next_actions)
-    : snapshot.recommended_next_actions
+  // The prompt render (every mode except write_context) is embedded in the
+  // system prompt of each LLM request. Wall-clock fields (generated_at,
+  // projection_lag_ms) change on every request and context-file-mtime fields
+  // change on every derived-context refresh; any of them invalidates provider
+  // prefix caching for the whole conversation. Render those only into the
+  // on-disk context file.
+  const stale = snapshot.stale_capability_readiness
+  const warnings = withoutContextStale(snapshot.warnings)
+  const recommendedNextActions = withoutContextStale(snapshot.recommended_next_actions)
   if (!snapshot.operation) {
     return [
       "# Active Operation Context",
-      `generated_at: ${snapshot.generated_at}`,
+      ...(writeContext ? [`generated_at: ${snapshot.generated_at}`] : []),
       `stale: ${stale ? "true" : "false"}`,
       "",
       "No active operation.",
@@ -1139,21 +1140,24 @@ export function renderContext(snapshot: OperationSnapshot, options: RenderContex
   }
   return [
     "# Active Operation Context",
-    `generated_at: ${snapshot.generated_at}`,
+    ...(writeContext ? [`generated_at: ${snapshot.generated_at}`] : []),
     `source_latest: ${snapshot.source_latest?.iso ?? "-"}`,
     `source_semantic_latest: ${snapshot.source_semantic_latest?.iso ?? "-"}`,
     `source_audit_latest: ${snapshot.source_audit_latest?.iso ?? "-"}`,
     `source_ledger_latest: ${snapshot.source_ledger_latest?.iso ?? "-"}`,
     `source_fact_latest: ${snapshot.source_fact_latest?.iso ?? "-"}`,
     `source_evidence_latest: ${snapshot.source_evidence_latest?.iso ?? "-"}`,
-    `source_context_mtime: ${sourceContextMtime}`,
+    ...(writeContext ? [`source_context_mtime: ${snapshot.generated_at}`] : []),
     `capability_source_latest: ${snapshot.capability_source_latest?.iso ?? "-"}`,
-    `audit_after_context: ${snapshot.audit_after_context ? "true" : "false"}`,
-    `projection_lag_ms: ${snapshot.projection_lag_ms ?? "-"}`,
+    ...(writeContext
+      ? [
+          `audit_after_context: ${snapshot.audit_after_context ? "true" : "false"}`,
+          `projection_lag_ms: ${snapshot.projection_lag_ms ?? "-"}`,
+        ]
+      : []),
     `stale: ${stale ? "true" : "false"}`,
-    `stale_context: ${staleContext ? "true" : "false"}`,
     `stale_capability_readiness: ${snapshot.stale_capability_readiness ? "true" : "false"}`,
-    `context_file_stale: ${contextFileStale ? "true" : "false"}`,
+    ...(writeContext ? [`stale_context: false`, `context_file_stale: false`] : []),
     "",
     "Active operation",
     "",
