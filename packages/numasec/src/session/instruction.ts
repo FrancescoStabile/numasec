@@ -59,6 +59,7 @@ export namespace Instruction {
     readonly clear: (messageID: MessageID) => Effect.Effect<void>
     readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
     readonly system: (sessionID?: SessionID | string) => Effect.Effect<string[], AppFileSystem.Error>
+    readonly context: (sessionID?: SessionID | string) => Effect.Effect<string | undefined>
     readonly find: (dir: string) => Effect.Effect<string | undefined, AppFileSystem.Error>
     readonly resolve: (
       messages: MessageV2.WithParts[],
@@ -176,30 +177,35 @@ export namespace Instruction {
           return paths
         })
 
+        // The operation context pack changes whenever operation data changes (every
+        // tool completion appends a ledger event). It is exposed separately from
+        // system() so the prompt loop can inject it at the message tail instead of
+        // the system prompt — keeping it in the prefix invalidates provider prefix
+        // caching for the entire conversation on every tool step.
+        const context = Effect.fn("Instruction.context")(function* (sessionID?: SessionID | string) {
+          const operation: OperationResolver.OperationResolution = yield* Effect.tryPromise({
+            try: () => OperationResolver.resolveOperation({ workspace: Instance.directory, sessionID }),
+            catch: () => ({ source: "none" as const }),
+          }).pipe(Effect.catch(() => Effect.succeed({ source: "none" as const })))
+          if (!operation.slug) return undefined
+          const snapshot = yield* Effect.tryPromise({
+            try: () => OperationSnapshot.build(Instance.directory, { slug: operation.slug, includeDoctor: false }),
+            catch: () => undefined,
+          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          return snapshot ? OperationSnapshot.renderContext(snapshot) : undefined
+        })
+
         const system = Effect.fn("Instruction.system")(function* (sessionID?: SessionID | string) {
           const config = yield* cfg.get()
           const paths = yield* systemPaths()
           const urls = (config.instructions ?? []).filter(
             (item) => item.startsWith("https://") || item.startsWith("http://"),
           )
-          const operation: OperationResolver.OperationResolution = yield* Effect.tryPromise({
-            try: () => OperationResolver.resolveOperation({ workspace: Instance.directory, sessionID }),
-            catch: () => ({ source: "none" as const }),
-          }).pipe(Effect.catch(() => Effect.succeed({ source: "none" as const })))
-          const snapshot =
-            !operation.slug
-              ? undefined
-              : yield* Effect.tryPromise({
-                  try: () => OperationSnapshot.build(Instance.directory, { slug: operation.slug, includeDoctor: false }),
-                  catch: () => undefined,
-                }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-          const contextPack = snapshot ? OperationSnapshot.renderContext(snapshot) : undefined
 
           const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
           const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
           return [
-            ...(contextPack ? [contextPack] : []),
             ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
             ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
           ]
@@ -256,7 +262,7 @@ export namespace Instruction {
           return results
         })
 
-        return Service.of({ clear, systemPaths, system, find, resolve })
+        return Service.of({ clear, systemPaths, system, context, find, resolve })
       }),
     )
 

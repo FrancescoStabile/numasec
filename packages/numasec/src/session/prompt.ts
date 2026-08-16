@@ -1568,10 +1568,11 @@ At the end of planning, after questions are resolved and the plan file is comple
 
               yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-              const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+              const [skills, env, instructions, operationContext, modelMsgs] = yield* Effect.all([
                 sys.skills(agent),
                 Effect.sync(() => sys.environment(model)),
                 instruction.system(sessionID).pipe(Effect.orDie),
+                instruction.context(sessionID).pipe(Effect.orDie),
                 MessageV2.toModelMessagesEffect(msgs, model),
               ])
               const system = [...env, ...(skills ? [skills] : []), ...instructions]
@@ -1584,7 +1585,26 @@ At the end of planning, after questions are resolved and the plan file is comple
                 sessionID,
                 parentSessionID: session.parentID,
                 system,
-                messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
+                // The operation context refreshes on every tool step, so it must stay
+                // out of the system prompt (and the cacheable prefix); appended at the
+                // tail only the last few KB miss the provider prefix cache.
+                messages: [
+                  ...modelMsgs,
+                  ...(operationContext
+                    ? [
+                        {
+                          role: "user" as const,
+                          content: [
+                            "<system-reminder>",
+                            "Current operation context (auto-refreshed each step; do not reply to this block directly):",
+                            operationContext,
+                            "</system-reminder>",
+                          ].join("\n"),
+                        },
+                      ]
+                    : []),
+                  ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+                ],
                 tools,
                 model,
                 toolChoice: format.type === "json_schema" ? "required" : undefined,
