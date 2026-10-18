@@ -146,6 +146,8 @@ export const TuiThreadCommand = cmd({
       }
 
       const client = Rpc.client<typeof rpc>(worker)
+      const spawned = Date.now()
+      void client.ready.then(() => Log.Default.info("worker ready", { ms: Date.now() - spawned }))
       const error = (e: unknown) => {
         Log.Default.error("process error", { error: errorMessage(e) })
       }
