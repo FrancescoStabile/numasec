@@ -26,6 +26,7 @@ function setup() {
     throw stop
   })
   spyOn(Rpc, "client").mockImplementation(() => ({
+    ready: Promise.resolve(),
     call: async () => ({ url: "http://127.0.0.1" }) as never,
     on: () => () => {},
   }))
